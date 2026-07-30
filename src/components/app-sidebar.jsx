@@ -47,15 +47,15 @@ const menuItems = [
     {
     group: "Masters",
     items: [
+       {
+        title: "Department Master",
+        href: "/dashboard/departments",
+        icon: Building2,
+      },
       {
         title: "Leave Master",
         href: "/dashboard/leave-master",
         icon: Pill,
-      },
-      {
-        title: "Department Master",
-        href: "/dashboard/departments",
-        icon: Building2,
       },
     ],
   },
