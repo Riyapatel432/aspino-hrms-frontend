@@ -9,6 +9,7 @@ import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DataTable } from "@/components/ui/data-table";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 import { toast } from "sonner";
 import {
   GraduationCap,
@@ -35,8 +36,11 @@ export default function PerformanceTrainingPage() {
   const [newCycle, setNewCycle] = useState({ name: "Annual Appraisal Cycle FY26", startDate: "", endDate: "" });
   const [newGoal, setNewGoal] = useState({ employeeId: "", cycleId: "", title: "", description: "", weightage: 50 });
   const [newReview, setNewReview] = useState({ employeeId: "", cycleId: "", selfRating: 8, selfComments: "", managerRating: 8, managerComments: "", finalRating: 8, status: "COMPLETED" });
-  const [newTraining, setNewTraining] = useState({ employeeId: "", trainingName: "GMP Standard Operating Procedures", trainingType: "COMPLIANCE", completionDate: "", expiryDate: "" });
+  const [newTraining, setNewTraining] = useState({ id: null, employeeId: "", trainingName: "GMP Standard Operating Procedures", trainingType: "COMPLIANCE", completionDate: "", expiryDate: "" });
   const [certificateData, setCertificateData] = useState(null);
+
+  const [deleteTarget, setDeleteTarget] = useState(null); // { id, type, label }
+  const [deleting, setDeleting] = useState(false);
 
   const [formErrors, setFormErrors] = useState({});
 
@@ -269,6 +273,27 @@ export default function PerformanceTrainingPage() {
     }
   };
 
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      if (deleteTarget.type === "cycle") {
+        await handleDeleteCycle(deleteTarget.id);
+      } else if (deleteTarget.type === "goal") {
+        await handleDeleteGoal(deleteTarget.id);
+      } else if (deleteTarget.type === "review") {
+        await handleDeleteReview(deleteTarget.id);
+      } else if (deleteTarget.type === "training") {
+        await handleDeleteTraining(deleteTarget.id);
+      }
+      setDeleteTarget(null);
+    } catch (err) {
+      console.error("Delete error:", err);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   // DataTable column definitions
   const cycleColumns = [
     { key: "name", label: "Cycle Name" },
@@ -304,8 +329,8 @@ export default function PerformanceTrainingPage() {
             <Edit className="w-4 h-4" />
           </button>
           <button
-            onClick={() => handleDeleteCycle(row.id)}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+            onClick={() => setDeleteTarget({ id: row.id, name: `cycle "${row.name}"`, type: "cycle", label: "Appraisal Cycle" })}
+            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
             title="Delete"
           >
             <Trash2 className="w-4 h-4" />
@@ -373,8 +398,8 @@ export default function PerformanceTrainingPage() {
             <Edit className="w-4 h-4" />
           </button>
           <button
-            onClick={() => handleDeleteGoal(row.id)}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+            onClick={() => setDeleteTarget({ id: row.id, name: `goal "${row.title}"`, type: "goal", label: "Performance Goal" })}
+            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
             title="Delete"
           >
             <Trash2 className="w-4 h-4" />
@@ -436,8 +461,8 @@ export default function PerformanceTrainingPage() {
             <Edit className="w-4 h-4" />
           </button>
           <button
-            onClick={() => handleDeleteReview(row.id)}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+            onClick={() => setDeleteTarget({ id: row.id, name: `review for ${row.employee?.firstName || 'employee'}`, type: "review", label: "Performance Review" })}
+            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
             title="Delete"
           >
             <Trash2 className="w-4 h-4" />
@@ -519,8 +544,8 @@ export default function PerformanceTrainingPage() {
             <Edit className="w-4 h-4" />
           </button>
           <button
-            onClick={() => handleDeleteTraining(row.id)}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+            onClick={() => setDeleteTarget({ id: row.id, name: `training "${row.trainingName}"`, type: "training", label: "Training Log" })}
+            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
             title="Delete"
           >
             <Trash2 className="w-4 h-4" />
@@ -1034,6 +1059,20 @@ export default function PerformanceTrainingPage() {
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+        loading={deleting}
+        title={deleteTarget ? `Delete ${deleteTarget.label}` : "Delete Confirmation"}
+        description={
+          deleteTarget
+            ? `Are you sure you want to delete ${deleteTarget.name}? This cannot be undone.`
+            : ""
+        }
+      />
     </div>
   );
 }

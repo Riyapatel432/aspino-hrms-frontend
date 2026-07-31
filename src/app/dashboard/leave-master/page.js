@@ -12,6 +12,7 @@ import {
   Loader2,
   Trash2,
 } from "lucide-react";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 import {
   fetchLeaveMasters,
   createLeaveMaster,
@@ -45,6 +46,9 @@ export default function LeaveMasterPage() {
     effectiveFrom: new Date().toISOString().split('T')[0] 
   });
   const [formErrors, setFormErrors] = useState({});
+
+  const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
+  const [deleting, setDeleting] = useState(false);
 
   const validateLeaveMaster = () => {
     const errs = {};
@@ -85,13 +89,18 @@ export default function LeaveMasterPage() {
     }
   };
 
-  const handleDeleteLeaveMaster = async (id) => {
+  const handleDeleteLeaveMaster = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await dispatch(deleteLeaveMaster(id)).unwrap();
+      await dispatch(deleteLeaveMaster(deleteTarget.id)).unwrap();
+      setDeleteTarget(null);
       toast.success("Leave Master deleted successfully");
     } catch (err) {
       console.error(err);
       toast.error("Failed to delete Leave Master");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -119,8 +128,8 @@ export default function LeaveMasterPage() {
       sortable: false,
       render: (row) => (
         <button
-          onClick={() => handleDeleteLeaveMaster(row.id)}
-          className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+          onClick={() => setDeleteTarget({ id: row.id, name: `${row.department} (${row.fiscalYear})` })}
+          className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
         >
           <Trash2 className="w-4 h-4" />
         </button>
@@ -237,14 +246,27 @@ export default function LeaveMasterPage() {
         {/* Leave Master DataTable */}
         <div className="lg:col-span-2">
           <DataTable
-            title="Department Leave Master"
+            title="Active Leave Master Quotas"
             data={leaveMasters}
             columns={leaveMasterColumns}
             searchKeys={["department", "fiscalYear"]}
-            emptyMessage="No leave master configured."
+            emptyMessage="No leave master entries configured."
           />
         </div>
       </div>
+
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteLeaveMaster}
+        loading={deleting}
+        title="Delete Leave Master"
+        description={
+          deleteTarget
+            ? `Are you sure you want to delete the leave master for "${deleteTarget.name}"? This cannot be undone.`
+            : ""
+        }
+      />
     </div>
   );
 }

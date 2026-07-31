@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { DataTable } from "@/components/ui/data-table";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 import {
   CalendarDays,
   Clock,
@@ -108,7 +109,10 @@ export default function AttendanceLeavePage() {
   });
   const [newLeave, setNewLeave] = useState({ employeeId: "", leaveType: "Casual", startDate: "", endDate: "", reason: "" });
   const [newHoliday, setNewHoliday] = useState({ name: "", date: "" });
-  const [newLeaveMaster, setNewLeaveMaster] = useState({ department: "", fiscalYear: "FY26", casualLeave: 12, sickLeave: 10, earnedLeave: 15, otherLeave: 0, effectiveFrom: new Date().toISOString().split('T')[0] });
+  const [newLeaveMaster, setNewLeaveMaster] = useState({ id: null, department: "", fiscalYear: "FY26", casualLeave: 12, sickLeave: 10, earnedLeave: 15, otherLeave: 0, effectiveFrom: new Date().toISOString().split('T')[0] });
+
+  const [deleteTarget, setDeleteTarget] = useState(null); // { id, type, label, name }
+  const [deleting, setDeleting] = useState(false);
   const [balanceEmpId, setBalanceEmpId] = useState("ALL");
   const [formErrors, setFormErrors] = useState({});
 
@@ -466,6 +470,31 @@ export default function AttendanceLeavePage() {
     }
   };
 
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      if (deleteTarget.type === "attendance") {
+        await handleDeleteAttendance(deleteTarget.id);
+      } else if (deleteTarget.type === "roster") {
+        await handleDeleteRoster(deleteTarget.id);
+      } else if (deleteTarget.type === "shift") {
+        await handleDeleteShift(deleteTarget.id);
+      } else if (deleteTarget.type === "leave") {
+        await handleDeleteLeave(deleteTarget.id);
+      } else if (deleteTarget.type === "holiday") {
+        await handleDeleteHoliday(deleteTarget.id);
+      } else if (deleteTarget.type === "leaveMaster") {
+        await handleDeleteLeaveMaster(deleteTarget.id);
+      }
+      setDeleteTarget(null);
+    } catch (err) {
+      console.error("Delete error:", err);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
 
 
   // Helper function to calculate leave days inclusive of start/end dates
@@ -674,8 +703,8 @@ export default function AttendanceLeavePage() {
             <Edit className="w-4 h-4" />
           </button>
           <button
-            onClick={() => handleDeleteAttendance(row.id)}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+            onClick={() => setDeleteTarget({ id: row.id, name: `attendance record for ${row.employee?.firstName || 'employee'} on ${new Date(row.date).toLocaleDateString()}`, type: "attendance", label: "Attendance Record" })}
+            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
             title="Delete"
           >
             <Trash2 className="w-4 h-4" />
@@ -736,8 +765,8 @@ export default function AttendanceLeavePage() {
             <Edit className="w-4 h-4" />
           </button>
           <button
-            onClick={() => handleDeleteRoster(row.id)}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+            onClick={() => setDeleteTarget({ id: row.id, name: `roster for ${row.employee?.firstName || 'employee'} on ${new Date(row.date).toLocaleDateString()}`, type: "roster", label: "Shift Roster" })}
+            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
             title="Delete"
           >
             <Trash2 className="w-4 h-4" />
@@ -773,8 +802,8 @@ export default function AttendanceLeavePage() {
             <Edit className="w-4 h-4" />
           </button>
           <button
-            onClick={() => handleDeleteShift(row.id)}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+            onClick={() => setDeleteTarget({ id: row.id, name: `shift "${row.name}"`, type: "shift", label: "Work Shift" })}
+            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
             title="Delete"
           >
             <Trash2 className="w-4 h-4" />
@@ -870,8 +899,8 @@ export default function AttendanceLeavePage() {
             <Edit className="w-4 h-4" />
           </button>
           <button
-            onClick={() => handleDeleteLeave(row.id)}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+            onClick={() => setDeleteTarget({ id: row.id, name: `${row.leaveType} leave for ${row.employee?.firstName || 'employee'}`, type: "leave", label: "Leave Application" })}
+            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
             title="Delete"
           >
             <Trash2 className="w-4 h-4" />
@@ -925,8 +954,8 @@ export default function AttendanceLeavePage() {
             <Edit className="w-4 h-4" />
           </button>
           <button
-            onClick={() => handleDeleteLeaveMaster(row.id)}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+            onClick={() => setDeleteTarget({ id: row.id, name: `leave master for ${row.department} (${row.fiscalYear})`, type: "leaveMaster", label: "Leave Master" })}
+            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
             title="Delete"
           >
             <Trash2 className="w-4 h-4" />
@@ -969,8 +998,8 @@ export default function AttendanceLeavePage() {
             <Edit className="w-4 h-4" />
           </button>
           <button
-            onClick={() => handleDeleteHoliday(row.id)}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+            onClick={() => setDeleteTarget({ id: row.id, name: `holiday "${row.name}"`, type: "holiday", label: "Holiday Entry" })}
+            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
             title="Delete"
           >
             <Trash2 className="w-4 h-4" />
@@ -1689,6 +1718,20 @@ export default function AttendanceLeavePage() {
           )}
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+        loading={deleting}
+        title={deleteTarget ? `Delete ${deleteTarget.label}` : "Delete Confirmation"}
+        description={
+          deleteTarget
+            ? `Are you sure you want to delete ${deleteTarget.name}? This cannot be undone.`
+            : ""
+        }
+      />
     </div>
   );
 }

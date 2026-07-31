@@ -1,123 +1,165 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { API_URL, apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DataTable } from "@/components/ui/data-table";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 import {
   FolderTree,
   Plus,
   Trash2,
   Edit,
-  Loader2
+  Loader2,
 } from "lucide-react";
 
+// ---------------------------------------------------------------------------
+// Validation helper
+// ---------------------------------------------------------------------------
+const DEPT_NAME_MIN_LENGTH = 2;
+
+function validateDepartmentName(name) {
+  if (!name?.trim()) return "Department name is required.";
+  if (name.trim().length < DEPT_NAME_MIN_LENGTH)
+    return `Department name must be at least ${DEPT_NAME_MIN_LENGTH} characters.`;
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 export default function DepartmentsPage() {
   const [departments, setDepartments] = useState([]);
   const [requisitions, setRequisitions] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Form states
-  const [newDeptName, setNewDeptName] = useState("");
-  const [editingDeptId, setEditingDeptId] = useState(null);
-  const [editingDeptName, setEditingDeptName] = useState("");
-  const [formErrors, setFormErrors] = useState({});
+  // Form state
+  const [formName, setFormName] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [nameError, setNameError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const validateDepartment = (name) => {
-    const errs = {};
-    if (!name?.trim()) errs.name = "Department name is required.";
-    else if (name.trim().length < 2) errs.name = "Department name must be at least 2 characters.";
-    setFormErrors(errs);
-    return Object.keys(errs).length === 0;
-  };
+  // Delete dialog state
+  const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
+  const [deleting, setDeleting] = useState(false);
 
-  const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-
-  const fetchData = async () => {
+  // ---------------------------------------------------------------------------
+  // Data fetching
+  // ---------------------------------------------------------------------------
+  async function fetchData() {
     setLoading(true);
     try {
       const [deptRes, reqRes] = await Promise.all([
-        apiFetch(`${backendUrl}/staff-hrms/recruitment/departments`),
-        apiFetch(`${backendUrl}/staff-hrms/recruitment/requisitions?limit=1000`),
+        apiFetch(`${API_URL}/staff-hrms/recruitment/departments`),
+        apiFetch(`${API_URL}/staff-hrms/recruitment/requisitions?limit=1000`),
       ]);
 
-      setDepartments(await deptRes.json());
+      const deptData = await deptRes.json();
       const reqData = await reqRes.json();
-      setRequisitions(reqData.data || []);
+
+      setDepartments(Array.isArray(deptData) ? deptData : []);
+      setRequisitions(Array.isArray(reqData.data) ? reqData.data : []);
     } catch (e) {
       console.error("Error loading department data:", e);
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   useEffect(() => {
-    fetchData();
+    async function load() { await fetchData(); }
+    load();
   }, []);
 
-  const handleCreateDepartment = async (e) => {
+
+  // ---------------------------------------------------------------------------
+  // Form helpers
+  // ---------------------------------------------------------------------------
+  function startEditing(dept) {
+    setEditingId(dept.id);
+    setFormName(dept.name);
+    setNameError(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setFormName("");
+    setNameError(null);
+  }
+
+  // ---------------------------------------------------------------------------
+  // CRUD handlers
+  // ---------------------------------------------------------------------------
+  async function handleSubmit(e) {
     e.preventDefault();
-    if (!validateDepartment(newDeptName)) return;
+    const error = validateDepartmentName(formName);
+    if (error) {
+      setNameError(error);
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/departments`, {
-        method: "POST",
+      const url = editingId
+        ? `${API_URL}/staff-hrms/recruitment/departments/${editingId}`
+        : `${API_URL}/staff-hrms/recruitment/departments`;
+      const method = editingId ? "PATCH" : "POST";
+
+      const res = await apiFetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newDeptName }),
+        body: JSON.stringify({ name: formName.trim() }),
       });
+
       if (res.ok) {
-        setNewDeptName("");
+        cancelEdit();
         fetchData();
+      } else {
+        console.error("Department save failed:", await res.text());
       }
     } catch (err) {
-      console.error(err);
+      console.error("Department save error:", err);
+    } finally {
+      setSubmitting(false);
     }
-  };
+  }
 
-  const handleUpdateDepartment = async (e) => {
-    e.preventDefault();
-    if (!editingDeptId || !validateDepartment(editingDeptName)) return;
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/departments/${editingDeptId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: editingDeptName }),
-      });
-      if (res.ok) {
-        setEditingDeptId(null);
-        setEditingDeptName("");
-        fetchData();
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleDeleteDepartment = async (id) => {
-    try {
-      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/departments/${id}`, {
+      const res = await apiFetch(`${API_URL}/staff-hrms/recruitment/departments/${deleteTarget.id}`, {
         method: "DELETE",
       });
       if (res.ok) {
+        setDeleteTarget(null);
         fetchData();
+      } else {
+        console.error("Department delete failed:", await res.text());
       }
     } catch (err) {
-      console.error(err);
+      console.error("Department delete error:", err);
+    } finally {
+      setDeleting(false);
     }
-  };
+  }
 
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-          <FolderTree className="w-6 h-6 text-sky-500" />
+          <FolderTree className="w-6 h-6 text-sky-500" aria-hidden="true" />
           Department Master
         </h2>
       </div>
 
       {loading ? (
-        <div className="flex justify-center items-center py-20">
+        <div className="flex justify-center items-center py-20" aria-label="Loading departments">
           <Loader2 className="w-8 h-8 text-sky-500 animate-spin" />
         </div>
       ) : (
@@ -125,40 +167,45 @@ export default function DepartmentsPage() {
           {/* Form Card */}
           <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
             <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-              <Plus className="w-5 h-5 text-sky-500" />
-              {editingDeptId ? "Edit Department" : "Create Department"}
+              <Plus className="w-5 h-5 text-sky-500" aria-hidden="true" />
+              {editingId ? "Edit Department" : "Create Department"}
             </h3>
-            <form onSubmit={editingDeptId ? handleUpdateDepartment : handleCreateDepartment} className="space-y-3">
+            <form onSubmit={handleSubmit} className="space-y-3" noValidate>
               <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Department Name</Label>
+                <Label htmlFor="dept-name" className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  Department Name
+                </Label>
                 <Input
+                  id="dept-name"
                   placeholder="e.g. Quality Control"
-                  value={editingDeptId ? editingDeptName : newDeptName}
+                  value={formName}
+                  aria-invalid={!!nameError}
+                  aria-describedby={nameError ? "dept-name-error" : undefined}
                   onChange={(e) => {
-                    if (editingDeptId) {
-                      setEditingDeptName(e.target.value);
-                    } else {
-                      setNewDeptName(e.target.value);
-                    }
-                    if (formErrors.name) setFormErrors({ ...formErrors, name: null });
+                    setFormName(e.target.value);
+                    if (nameError) setNameError(null);
                   }}
                 />
-                {formErrors.name && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.name}</span>}
+                {nameError && (
+                  <span id="dept-name-error" className="text-rose-500 text-[10.5px] font-bold block mt-0.5" role="alert">
+                    {nameError}
+                  </span>
+                )}
               </div>
               <div className="flex gap-2 pt-2">
-                <Button type="submit" className="flex-1 bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl">
-                  {editingDeptId ? "Update" : "Save"}
+                <Button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl"
+                >
+                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : editingId ? "Update" : "Save"}
                 </Button>
-                {editingDeptId && (
+                {editingId && (
                   <Button
                     type="button"
                     variant="outline"
                     className="rounded-xl font-bold"
-                    onClick={() => {
-                      setEditingDeptId(null);
-                      setEditingDeptName("");
-                      setFormErrors({});
-                    }}
+                    onClick={cancelEdit}
                   >
                     Cancel
                   </Button>
@@ -199,21 +246,20 @@ export default function DepartmentsPage() {
                   render: (row) => (
                     <div className="flex items-center gap-1.5">
                       <button
-                        onClick={() => {
-                          setEditingDeptId(row.id);
-                          setEditingDeptName(row.name);
-                        }}
+                        onClick={() => startEditing(row)}
                         className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all cursor-pointer"
-                        title="Edit"
+                        title={`Edit department ${row.name}`}
+                        aria-label={`Edit department ${row.name}`}
                       >
-                        <Edit className="w-4 h-4" />
+                        <Edit className="w-4 h-4" aria-hidden="true" />
                       </button>
                       <button
-                        onClick={() => handleDeleteDepartment(row.id)}
-                        className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all cursor-pointer"
-                        title="Delete"
+                        onClick={() => setDeleteTarget({ id: row.id, name: row.name })}
+                        className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all cursor-pointer"
+                        title={`Delete department ${row.name}`}
+                        aria-label={`Delete department ${row.name}`}
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-4 h-4" aria-hidden="true" />
                       </button>
                     </div>
                   ),
@@ -223,6 +269,20 @@ export default function DepartmentsPage() {
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        loading={deleting}
+        title="Delete Department"
+        description={
+          deleteTarget
+            ? `Are you sure you want to delete "${deleteTarget.name}"? This cannot be undone.`
+            : ""
+        }
+      />
     </div>
   );
 }

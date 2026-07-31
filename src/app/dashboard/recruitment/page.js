@@ -9,6 +9,7 @@ import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DataTable } from "@/components/ui/data-table";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 import {
   Briefcase,
   UserCheck,
@@ -85,6 +86,9 @@ export default function RecruitmentPage() {
   const [feedbackCandidateId, setFeedbackCandidateId] = useState("ALL");
   // Offer Form State
   const [newOffer, setNewOffer] = useState({ candidateId: "", role: "", salary: 600000, joiningDate: "" });
+
+  const [deleteTarget, setDeleteTarget] = useState(null); // { id, name, type, label }
+  const [deleting, setDeleting] = useState(false);
   
   // Edit States
   const [editingRequisition, setEditingRequisition] = useState(null);
@@ -429,6 +433,27 @@ export default function RecruitmentPage() {
     }
   };
 
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      if (deleteTarget.type === "requisition") {
+        await handleDeleteRequisition(deleteTarget.id);
+      } else if (deleteTarget.type === "candidate") {
+        await handleDeleteCandidate(deleteTarget.id);
+      } else if (deleteTarget.type === "schedule") {
+        await handleDeleteSchedule(deleteTarget.id);
+      } else if (deleteTarget.type === "offer") {
+        await handleDeleteOffer(deleteTarget.id);
+      }
+      setDeleteTarget(null);
+    } catch (err) {
+      console.error("Delete failed:", err);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleAcceptOffer = async (id) => {
     try {
       await dispatch(updateOfferStatus({ id, status: 'ACCEPTED' })).unwrap();
@@ -637,8 +662,8 @@ export default function RecruitmentPage() {
                             <Edit className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleDeleteRequisition(row.id)}
-                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+                            onClick={() => setDeleteTarget({ id: row.id, name: `requisition "${row.title}"`, type: "requisition", label: "Job Requisition" })}
+                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
                             title="Delete"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -861,8 +886,8 @@ export default function RecruitmentPage() {
                             <Edit className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleDeleteCandidate(row.id)}
-                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+                            onClick={() => setDeleteTarget({ id: row.id, name: `candidate "${row.name}"`, type: "candidate", label: "Candidate Profile" })}
+                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
                             title="Delete"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -1161,8 +1186,8 @@ export default function RecruitmentPage() {
                             <Edit className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleDeleteSchedule(row.id)}
-                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+                            onClick={() => setDeleteTarget({ id: row.id, name: `interview round "${row.roundName}" for ${row.candidate?.name || 'candidate'}`, type: "schedule", label: "Interview Schedule" })}
+                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
                             title="Delete"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -1353,8 +1378,8 @@ export default function RecruitmentPage() {
                             <Edit className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleDeleteOffer(row.id)}
-                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+                            onClick={() => setDeleteTarget({ id: row.id, name: `offer letter for "${row.candidate?.name || 'candidate'}"`, type: "offer", label: "Offer Letter" })}
+                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
                             title="Delete"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -1369,6 +1394,20 @@ export default function RecruitmentPage() {
           )}
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+        loading={deleting}
+        title={deleteTarget ? `Delete ${deleteTarget.label}` : "Delete Confirmation"}
+        description={
+          deleteTarget
+            ? `Are you sure you want to delete ${deleteTarget.name}? This cannot be undone.`
+            : ""
+        }
+      />
     </div>
   );
 }

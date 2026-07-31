@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { DataTable } from "@/components/ui/data-table";
+import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 import {
   UserCheck,
   FileCheck,
@@ -41,6 +42,9 @@ export default function OnboardingPage() {
     attendanceApp: false,
     vpn: false,
   });
+
+  const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
+  const [deleting, setDeleting] = useState(false);
 
   const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -82,16 +86,22 @@ export default function OnboardingPage() {
     fetchEmployees();
   }, []);
 
-  const handleDeleteEmployee = async (empId) => {
+  const handleDeleteEmployee = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/employees/${empId}`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/employees/${deleteTarget.id}`, {
         method: "DELETE",
       });
       if (res.ok) {
+        if (selectedEmp?.id === deleteTarget.id) setSelectedEmp(null);
+        setDeleteTarget(null);
         fetchEmployees();
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -305,6 +315,13 @@ export default function OnboardingPage() {
           >
             {selectedEmp?.id === row.id ? "Selected" : "Manage"}
           </Button>
+          <button
+            onClick={() => setDeleteTarget({ id: row.id, name: `${row.firstName} ${row.lastName}` })}
+            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all cursor-pointer"
+            title="Delete Employee"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
         </div>
       ),
     },
@@ -598,6 +615,20 @@ export default function OnboardingPage() {
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteEmployee}
+        loading={deleting}
+        title="Delete Employee Profile"
+        description={
+          deleteTarget
+            ? `Are you sure you want to delete employee "${deleteTarget.name}"? This cannot be undone.`
+            : ""
+        }
+      />
     </div>
   );
 }
