@@ -1,11 +1,12 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+import { apiFetch } from "@/lib/api";
 
 const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 // Leaves
 export const fetchLeaves = createAsyncThunk("leave/fetchLeaves", async (_, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/leave/leaves`);
+    const res = await apiFetch(`${backendUrl}/staff-hrms/leave/leaves`);
     if (!res.ok) throw new Error("Failed to fetch leaves");
     return await res.json();
   } catch (err) {
@@ -15,7 +16,7 @@ export const fetchLeaves = createAsyncThunk("leave/fetchLeaves", async (_, { rej
 
 export const createLeave = createAsyncThunk("leave/createLeave", async (data, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/leave/leaves/apply`, {
+    const res = await apiFetch(`${backendUrl}/staff-hrms/leave/leaves/apply`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -29,7 +30,7 @@ export const createLeave = createAsyncThunk("leave/createLeave", async (data, { 
 
 export const updateLeaveStatus = createAsyncThunk("leave/updateLeaveStatus", async ({ id, status }, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/leave/leaves/${id}/status`, {
+    const res = await apiFetch(`${backendUrl}/staff-hrms/leave/leaves/${id}/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
@@ -43,7 +44,7 @@ export const updateLeaveStatus = createAsyncThunk("leave/updateLeaveStatus", asy
 
 export const deleteLeave = createAsyncThunk("leave/deleteLeave", async (id, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/leave/leaves/${id}`, { method: "DELETE" });
+    const res = await apiFetch(`${backendUrl}/staff-hrms/leave/leaves/${id}`, { method: "DELETE" });
     if (!res.ok) throw new Error("Failed to delete leave");
     return id;
   } catch (err) {
@@ -54,7 +55,7 @@ export const deleteLeave = createAsyncThunk("leave/deleteLeave", async (id, { re
 // Leave Master
 export const fetchLeaveMasters = createAsyncThunk("leave/fetchLeaveMasters", async (_, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/leave/leave-master`);
+    const res = await apiFetch(`${backendUrl}/staff-hrms/leave/leave-master`);
     if (!res.ok) throw new Error("Failed to fetch leave masters");
     const data = await res.json();
     return Array.isArray(data) ? data : (data?.data || []);
@@ -65,7 +66,7 @@ export const fetchLeaveMasters = createAsyncThunk("leave/fetchLeaveMasters", asy
 
 export const createLeaveMaster = createAsyncThunk("leave/createLeaveMaster", async (data, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/leave/leave-master`, {
+    const res = await apiFetch(`${backendUrl}/staff-hrms/leave/leave-master`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -79,7 +80,7 @@ export const createLeaveMaster = createAsyncThunk("leave/createLeaveMaster", asy
 
 export const deleteLeaveMaster = createAsyncThunk("leave/deleteLeaveMaster", async (id, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/leave/leave-master/${id}`, { method: "DELETE" });
+    const res = await apiFetch(`${backendUrl}/staff-hrms/leave/leave-master/${id}`, { method: "DELETE" });
     if (!res.ok) throw new Error("Failed to delete leave master");
     return id;
   } catch (err) {
@@ -90,7 +91,7 @@ export const deleteLeaveMaster = createAsyncThunk("leave/deleteLeaveMaster", asy
 // Holidays
 export const fetchHolidays = createAsyncThunk("leave/fetchHolidays", async (_, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/leave/holidays`);
+    const res = await apiFetch(`${backendUrl}/staff-hrms/leave/holidays`);
     if (!res.ok) throw new Error("Failed to fetch holidays");
     return await res.json();
   } catch (err) {
@@ -100,7 +101,7 @@ export const fetchHolidays = createAsyncThunk("leave/fetchHolidays", async (_, {
 
 export const createHoliday = createAsyncThunk("leave/createHoliday", async (data, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/leave/holidays`, {
+    const res = await apiFetch(`${backendUrl}/staff-hrms/leave/holidays`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -114,7 +115,7 @@ export const createHoliday = createAsyncThunk("leave/createHoliday", async (data
 
 export const deleteHoliday = createAsyncThunk("leave/deleteHoliday", async (id, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/leave/holidays/${id}`, { method: "DELETE" });
+    const res = await apiFetch(`${backendUrl}/staff-hrms/leave/holidays/${id}`, { method: "DELETE" });
     if (!res.ok) throw new Error("Failed to delete holiday");
     return id;
   } catch (err) {

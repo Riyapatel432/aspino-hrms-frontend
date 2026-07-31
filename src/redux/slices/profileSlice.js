@@ -1,10 +1,11 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+import { apiFetch } from "@/lib/api";
 
 const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 export const fetchProfile = createAsyncThunk("profile/fetchProfile", async (_, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/auth/profile`);
+    const res = await apiFetch(`${backendUrl}/auth/profile`);
     if (!res.ok) throw new Error("Failed to fetch profile");
     const data = await res.json();
     return data?.data || data || {};

@@ -1,11 +1,12 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+import { apiFetch } from "@/lib/api";
 
 const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 // Requisitions
 export const fetchRequisitions = createAsyncThunk("recruitment/fetchRequisitions", async (_, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/recruitment/requisitions?limit=1000`);
+    const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/requisitions?limit=1000`);
     if (!res.ok) throw new Error("Failed to fetch requisitions");
     const data = await res.json();
     return Array.isArray(data) ? data : (data?.data || []);
@@ -16,7 +17,7 @@ export const fetchRequisitions = createAsyncThunk("recruitment/fetchRequisitions
 
 export const createRequisition = createAsyncThunk("recruitment/createRequisition", async (data, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/recruitment/requisitions`, {
+    const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/requisitions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -31,7 +32,7 @@ export const createRequisition = createAsyncThunk("recruitment/createRequisition
 // Candidates
 export const fetchCandidates = createAsyncThunk("recruitment/fetchCandidates", async (_, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/recruitment/candidates?limit=1000`);
+    const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/candidates?limit=1000`);
     if (!res.ok) throw new Error("Failed to fetch candidates");
     const data = await res.json();
     return Array.isArray(data) ? data : (data?.data || []);
@@ -42,7 +43,7 @@ export const fetchCandidates = createAsyncThunk("recruitment/fetchCandidates", a
 
 export const createCandidate = createAsyncThunk("recruitment/createCandidate", async (data, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/recruitment/candidates`, {
+    const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/candidates`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -56,7 +57,7 @@ export const createCandidate = createAsyncThunk("recruitment/createCandidate", a
 
 export const updateCandidateStatus = createAsyncThunk("recruitment/updateCandidateStatus", async ({ id, status }, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/recruitment/candidates/${id}/status`, {
+    const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/candidates/${id}/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
@@ -71,7 +72,7 @@ export const updateCandidateStatus = createAsyncThunk("recruitment/updateCandida
 // Schedules
 export const fetchSchedules = createAsyncThunk("recruitment/fetchSchedules", async (_, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/recruitment/schedules`);
+    const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/schedules`);
     if (!res.ok) throw new Error("Failed to fetch schedules");
     return await res.json();
   } catch (err) {
@@ -81,7 +82,7 @@ export const fetchSchedules = createAsyncThunk("recruitment/fetchSchedules", asy
 
 export const createSchedule = createAsyncThunk("recruitment/createSchedule", async (data, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/recruitment/schedules`, {
+    const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/schedules`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -96,7 +97,7 @@ export const createSchedule = createAsyncThunk("recruitment/createSchedule", asy
 // Offers
 export const fetchOffers = createAsyncThunk("recruitment/fetchOffers", async (_, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/recruitment/offers`);
+    const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/offers`);
     if (!res.ok) throw new Error("Failed to fetch offers");
     return await res.json();
   } catch (err) {
@@ -106,7 +107,7 @@ export const fetchOffers = createAsyncThunk("recruitment/fetchOffers", async (_,
 
 export const createOffer = createAsyncThunk("recruitment/createOffer", async (data, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/recruitment/offers`, {
+    const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/offers`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -120,7 +121,7 @@ export const createOffer = createAsyncThunk("recruitment/createOffer", async (da
 
 export const updateOfferStatus = createAsyncThunk("recruitment/updateOfferStatus", async ({ id, status }, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/recruitment/offers/${id}/accept`, {
+    const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/offers/${id}/accept`, {
       method: "POST", // The backend uses accept but let's pass status generically or assume accept
     });
     if (!res.ok) throw new Error("Failed to accept offer");
@@ -133,7 +134,7 @@ export const updateOfferStatus = createAsyncThunk("recruitment/updateOfferStatus
 // Departments
 export const fetchDepartments = createAsyncThunk("recruitment/fetchDepartments", async (_, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/recruitment/departments`);
+    const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/departments`);
     if (!res.ok) throw new Error("Failed to fetch departments");
     return await res.json();
   } catch (err) {

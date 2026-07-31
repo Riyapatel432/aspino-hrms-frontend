@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api";
 import Link from "next/link";
 import {
   Users,
@@ -32,12 +33,12 @@ export default function DashboardOverview() {
         const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
         
         const [userRes, reqRes, candRes, schedRes, exitRes, trainRes] = await Promise.all([
-          fetch(`${backendUrl}/users`),
-          fetch(`${backendUrl}/staff-hrms/recruitment/requisitions`),
-          fetch(`${backendUrl}/staff-hrms/recruitment/candidates`),
-          fetch(`${backendUrl}/staff-hrms/recruitment/schedules`),
-          fetch(`${backendUrl}/staff-hrms/exit/exits`),
-          fetch(`${backendUrl}/staff-hrms/training/trainings`),
+          apiFetch(`${backendUrl}/users`),
+          apiFetch(`${backendUrl}/staff-hrms/recruitment/requisitions`),
+          apiFetch(`${backendUrl}/staff-hrms/recruitment/candidates`),
+          apiFetch(`${backendUrl}/staff-hrms/recruitment/schedules`),
+          apiFetch(`${backendUrl}/staff-hrms/exit/exits`),
+          apiFetch(`${backendUrl}/staff-hrms/training/trainings`),
         ]);
 
         const users = await userRes.json();
@@ -47,13 +48,20 @@ export default function DashboardOverview() {
         const exits = await exitRes.json();
         const trains = await trainRes.json();
 
+        const safeUsers = Array.isArray(users) ? users : [];
+        const safeReqs = Array.isArray(reqs) ? reqs : (Array.isArray(reqs?.data) ? reqs.data : []);
+        const safeCands = Array.isArray(cands) ? cands : (Array.isArray(cands?.data) ? cands.data : []);
+        const safeScheds = Array.isArray(scheds) ? scheds : [];
+        const safeExits = Array.isArray(exits) ? exits : [];
+        const safeTrains = Array.isArray(trains) ? trains : [];
+
         setStats({
-          users: users.length || 0,
-          requisitions: reqs.length || 0,
-          candidates: cands.length || 0,
-          schedules: scheds.filter(s => s.status === 'SCHEDULED').length || 0,
-          exits: exits.filter(e => e.status === 'CLEARANCE_IN_PROGRESS').length || 0,
-          trainings: trains.length || 0,
+          users: safeUsers.length || 0,
+          requisitions: safeReqs.length || 0,
+          candidates: safeCands.length || 0,
+          schedules: safeScheds.filter(s => s.status === 'SCHEDULED').length || 0,
+          exits: safeExits.filter(e => e.status === 'CLEARANCE_IN_PROGRESS').length || 0,
+          trainings: safeTrains.length || 0,
         });
       } catch (err) {
         console.error("Error fetching stats:", err);

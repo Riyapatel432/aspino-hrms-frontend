@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,8 +32,19 @@ export default function ExitPage() {
   const [selectedExit, setSelectedExit] = useState(null);
   const [editingExitId, setEditingExitId] = useState(null);
 
+  const getCalculatedLwd = (resDate, noticeDays) => {
+    if (!resDate) return "";
+    const dateObj = new Date(resDate);
+    if (isNaN(dateObj.getTime())) return "";
+    dateObj.setDate(dateObj.getDate() + Number(noticeDays || 0));
+    return dateObj.toISOString().split('T')[0];
+  };
+
+  const defaultResDate = new Date().toISOString().split('T')[0];
+  const defaultLwd = getCalculatedLwd(defaultResDate, 30);
+
   // Forms state
-  const [newExit, setNewExit] = useState({ employeeId: "", type: "RESIGNATION", resignationDate: new Date().toISOString().split('T')[0], noticePeriodDays: 30, lastWorkingDay: "", reason: "" });
+  const [newExit, setNewExit] = useState({ employeeId: "", type: "RESIGNATION", resignationDate: defaultResDate, noticePeriodDays: 30, lastWorkingDay: defaultLwd, reason: "" });
   const [settlement, setSettlement] = useState({ pendingSalary: 50000, leaveEncashment: 15000, bonus: 10000, recoveries: 2000 });
   const [letterTemplate, setLetterTemplate] = useState("relieving"); // relieving or experience
 
@@ -44,8 +56,8 @@ export default function ExitPage() {
     setLoading(true);
     try {
       const [empRes, exitRes] = await Promise.all([
-        fetch(`${backendUrl}/staff-hrms/onboarding/employees?limit=1000`),
-        fetch(`${backendUrl}/staff-hrms/exit/exits`),
+        apiFetch(`${backendUrl}/staff-hrms/onboarding/employees?limit=1000`),
+        apiFetch(`${backendUrl}/staff-hrms/exit/exits`),
       ]);
 
       const empData = await empRes.json();
@@ -82,6 +94,9 @@ export default function ExitPage() {
     if (!newExit.resignationDate) errs.resignationDate = "Resignation/Termination date is required.";
     if (newExit.noticePeriodDays === undefined || newExit.noticePeriodDays === null || newExit.noticePeriodDays < 0) {
       errs.noticePeriodDays = "Notice period days must be 0 or more.";
+    }
+    if (newExit.resignationDate && newExit.lastWorkingDay && new Date(newExit.lastWorkingDay) < new Date(newExit.resignationDate)) {
+      errs.lastWorkingDay = "Last working day cannot be before resignation/termination date.";
     }
     if (!newExit.reason?.trim()) errs.reason = "Reason for exit is required.";
     else if (newExit.reason.trim().length < 5) errs.reason = "Reason must be at least 5 characters.";
@@ -124,7 +139,7 @@ export default function ExitPage() {
         
       const method = editingExitId ? "PATCH" : "POST";
 
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...newExit, lastWorkingDay: lwd }),
@@ -142,7 +157,7 @@ export default function ExitPage() {
   const handleDeleteExit = async (id) => {
     if (!confirm("Are you sure you want to delete this exit record?")) return;
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/exit/exits/${id}`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/exit/exits/${id}`, {
         method: "DELETE",
       });
       if (res.ok) {
@@ -156,7 +171,7 @@ export default function ExitPage() {
 
   const handleUpdateClearance = async (taskId, status) => {
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/exit/clearances/${taskId}/status`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/exit/clearances/${taskId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status, clearedBy: "HR Manager" }),
@@ -174,7 +189,7 @@ export default function ExitPage() {
     if (!selectedExit) return;
     if (!validateSettlement()) return;
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/exit/settlements`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/exit/settlements`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ exitProcessId: selectedExit.id, ...settlement }),
@@ -189,7 +204,7 @@ export default function ExitPage() {
 
   const handleCompleteExit = async (id) => {
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/exit/exits/${id}/complete`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/exit/exits/${id}/complete`, {
         method: "POST",
       });
       if (res.ok) {
@@ -250,17 +265,25 @@ export default function ExitPage() {
                   <form onSubmit={handleInitiateExit} className="space-y-3">
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Employee</Label>
-                      <Select value={newExit.employeeId} onValueChange={(val) => {
-                        setNewExit({ ...newExit, employeeId: val });
-                        if (formErrors.employeeId) setFormErrors({ ...formErrors, employeeId: null });
-                      }}>
+                      <Select 
+                        disabled={!!editingExitId}
+                        value={newExit.employeeId} 
+                        onValueChange={(val) => {
+                          setNewExit({ ...newExit, employeeId: val });
+                          if (formErrors.employeeId) setFormErrors({ ...formErrors, employeeId: null });
+                        }}
+                      >
                         <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
                           <SelectValue placeholder="Select..." />
                         </SelectTrigger>
                         <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                          {employees.filter(e => e.status === 'ACTIVE').map((e) => (
-                            <SelectItem key={e.id} value={String(e.id)}>{e.firstName} {e.lastName}</SelectItem>
-                          ))}
+                          {employees.filter(e => e.status === 'ACTIVE' || String(e.id) === String(newExit.employeeId)).length > 0 ? (
+                            employees.filter(e => e.status === 'ACTIVE' || String(e.id) === String(newExit.employeeId)).map((e) => (
+                              <SelectItem key={e.id} value={String(e.id)}>{e.firstName} {e.lastName}</SelectItem>
+                            ))
+                          ) : (
+                            <div className="p-3 text-xs text-slate-400 italic text-center">No active employees found. Please confirm employee onboarding first.</div>
+                          )}
                         </SelectContent>
                       </Select>
                       {formErrors.employeeId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.employeeId}</span>}
@@ -284,8 +307,10 @@ export default function ExitPage() {
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Resignation Date</Label>
                       <DateTimePicker type="date" date={newExit.resignationDate} setDate={(val) => {
-                        setNewExit({ ...newExit, resignationDate: val });
+                        const calculatedLwd = getCalculatedLwd(val, newExit.noticePeriodDays);
+                        setNewExit({ ...newExit, resignationDate: val, lastWorkingDay: calculatedLwd });
                         if (formErrors.resignationDate) setFormErrors({ ...formErrors, resignationDate: null });
+                        if (formErrors.lastWorkingDay) setFormErrors({ ...formErrors, lastWorkingDay: null });
                       }} />
                       {formErrors.resignationDate && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.resignationDate}</span>}
                     </div>
@@ -296,15 +321,22 @@ export default function ExitPage() {
                           type="number"
                           value={newExit.noticePeriodDays}
                           onChange={(e) => {
-                            setNewExit({ ...newExit, noticePeriodDays: Number(e.target.value) });
+                            const days = Number(e.target.value);
+                            const calculatedLwd = getCalculatedLwd(newExit.resignationDate, days);
+                            setNewExit({ ...newExit, noticePeriodDays: days, lastWorkingDay: calculatedLwd });
                             if (formErrors.noticePeriodDays) setFormErrors({ ...formErrors, noticePeriodDays: null });
+                            if (formErrors.lastWorkingDay) setFormErrors({ ...formErrors, lastWorkingDay: null });
                           }}
                         />
                         {formErrors.noticePeriodDays && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.noticePeriodDays}</span>}
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Last Working Day</Label>
-                        <DateTimePicker type="date" date={newExit.lastWorkingDay} setDate={(val) => setNewExit({ ...newExit, lastWorkingDay: val })} />
+                        <DateTimePicker type="date" date={newExit.lastWorkingDay} setDate={(val) => {
+                          setNewExit({ ...newExit, lastWorkingDay: val });
+                          if (formErrors.lastWorkingDay) setFormErrors({ ...formErrors, lastWorkingDay: null });
+                        }} />
+                        {formErrors.lastWorkingDay && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.lastWorkingDay}</span>}
                       </div>
                     </div>
                     <div className="space-y-1">
@@ -511,6 +543,24 @@ export default function ExitPage() {
                       </p>
                     </div>
 
+                    {/* Accrued Leave Balances for Encashment Calculation */}
+                    {selectedExit.employee?.leaveBalances && selectedExit.employee.leaveBalances.length > 0 && (
+                      <div className="bg-slate-50 dark:bg-slate-800 p-4 border border-slate-100 dark:border-slate-800/80 rounded-2xl space-y-2">
+                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Unused Leave Balances (for Encashment Reference)</span>
+                        <div className="flex flex-wrap gap-3">
+                          {selectedExit.employee.leaveBalances.map((bal) => {
+                            const unused = Math.max(0, bal.allocated - bal.used);
+                            return (
+                              <div key={bal.id} className="text-xs bg-white dark:bg-slate-900 border dark:border-slate-800 px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5">
+                                <span className="font-bold text-slate-700 dark:text-slate-200">{bal.leaveType}:</span>
+                                <strong className="text-sky-500">{unused} Days</strong>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     <form onSubmit={handleProcessSettlement} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1">
                         <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Pending Salary Dues (INR)</Label>
@@ -642,79 +692,124 @@ export default function ExitPage() {
 
               {selectedExit ? (
                 /* Print Letter Frame */
-                <div className="bg-white dark:bg-slate-900 text-black dark:text-white p-8 sm:p-12 shadow-2xl rounded-3xl border border-slate-200 dark:border-slate-800 max-w-[800px] mx-auto min-h-[1000px] flex flex-col justify-between font-serif relative">
-                  {/* Watermark Logo / Top Header */}
-                  <div className="flex justify-between items-start border-b-2 border-[#1e40af] pb-6">
-                    <div className="flex flex-col">
-                      <h1 className="text-2xl font-black tracking-tight text-[#1e40af] font-sans leading-none">
-                        Aspino Speciality Chemicals Pvt. Ltd.
-                      </h1>
-                      <span className="text-[10px] font-sans font-bold text-slate-500 uppercase tracking-wider mt-1.5">
-                        FDA & GMP Certified Manufacturing Facility | Corporate HQ
-                      </span>
+                <>
+                  <style dangerouslySetInnerHTML={{__html: `
+                    @media print {
+                      /* Hide layout elements */
+                      aside, nav, header, footer, button, .print\\:hidden {
+                        display: none !important;
+                      }
+                      /* Reset layout container padding & margins */
+                      main, .flex-1, .w-full, body, html {
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        background: white !important;
+                        color: black !important;
+                        min-height: auto !important;
+                        box-shadow: none !important;
+                      }
+                      /* Print letter styling */
+                      .print-letter-card {
+                        border: none !important;
+                        box-shadow: none !important;
+                        border-radius: 0 !important;
+                        min-height: auto !important;
+                        height: auto !important;
+                        padding: 1.5cm !important;
+                        margin: 0 auto !important;
+                        max-width: 100% !important;
+                        font-size: 11pt !important;
+                        line-height: 1.6 !important;
+                        display: flex !important;
+                        flex-direction: column !important;
+                        justify-content: space-between !important;
+                      }
+                      /* Keep header blue color */
+                      .print-letter-card h1 {
+                        color: #1e40af !important;
+                      }
+                      /* Avoid breaking sign-off section */
+                      .print-signoff {
+                        page-break-inside: avoid !important;
+                        break-inside: avoid !important;
+                        margin-top: 1.5cm !important;
+                      }
+                    }
+                  `}} />
+                  <div className="bg-white dark:bg-slate-900 text-black dark:text-white p-8 sm:p-12 shadow-2xl rounded-3xl border border-slate-200 dark:border-slate-800 max-w-[800px] mx-auto min-h-[1000px] flex flex-col justify-between font-serif relative print-letter-card">
+                    {/* Watermark Logo / Top Header */}
+                    <div className="flex justify-between items-start border-b-2 border-[#1e40af] pb-6">
+                      <div className="flex flex-col">
+                        <h1 className="text-2xl font-black tracking-tight text-[#1e40af] font-sans leading-none">
+                          Aspino Speciality Chemicals Pvt. Ltd.
+                        </h1>
+                        <span className="text-[10px] font-sans font-bold text-slate-500 uppercase tracking-wider mt-1.5">
+                          FDA & GMP Certified Manufacturing Facility | Corporate HQ
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Body Content */}
+                    <div className="flex-1 py-10 space-y-6 text-sm leading-relaxed">
+                      <div className="flex justify-between text-xs font-sans font-bold text-slate-500">
+                        <span>Ref: ASP/HR/EXIT/{selectedExit.id}</span>
+                        <span>Date: {new Date().toLocaleDateString()}</span>
+                      </div>
+
+                      <div className="space-y-0.5">
+                        <div className="font-extrabold">TO WHOMSOEVER IT MAY CONCERN</div>
+                      </div>
+
+                      {letterTemplate === 'relieving' ? (
+                        /* Relieving Letter template */
+                        <div className="space-y-4 text-justify">
+                          <p>
+                            This is to confirm that <strong>{selectedExit.employee?.firstName} {selectedExit.employee?.lastName}</strong> (Employee ID: <strong>{selectedExit.employee?.employeeId}</strong>) was employed with Aspino Speciality Chemicals Private Limited as a <strong>{selectedExit.employee?.designation}</strong> from <strong>{new Date(selectedExit.employee?.dateOfJoining).toLocaleDateString()}</strong> to <strong>{new Date(selectedExit.lastWorkingDay).toLocaleDateString()}</strong>.
+                          </p>
+                          <p>
+                            Consequent to their resignation dated <strong>{new Date(selectedExit.resignationDate).toLocaleDateString()}</strong>, we hereby confirm that they are relieved of all duties and responsibilities with effect from the close of business hours on <strong>{new Date(selectedExit.lastWorkingDay).toLocaleDateString()}</strong>.
+                          </p>
+                          <p>
+                            We confirm that all departmental clearances (including IT assets, stores, library, and finance dues) have been completed successfully. Their Full & Final settlement has been processed and paid.
+                          </p>
+                          <p>
+                            We wish them success in their future endeavors.
+                          </p>
+                        </div>
+                      ) : (
+                        /* Experience Letter template */
+                        <div className="space-y-4 text-justify">
+                          <p>
+                            This is to certify that <strong>{selectedExit.employee?.firstName} {selectedExit.employee?.lastName}</strong> was employed with Aspino Speciality Chemicals Private Limited from <strong>{new Date(selectedExit.employee?.dateOfJoining).toLocaleDateString()}</strong> to <strong>{new Date(selectedExit.lastWorkingDay).toLocaleDateString()}</strong>.
+                          </p>
+                          <p>
+                            During their tenure, they held the designation of <strong>{selectedExit.employee?.designation}</strong> in the <strong>{selectedExit.employee?.department}</strong> department.
+                          </p>
+                          <p>
+                            Their duties included supervising and operating chemical processing units, quality control analysis, and maintaining regulatory GMP safety compliance records. They have consistently demonstrated a professional attitude and strong execution capability.
+                          </p>
+                          <p>
+                            Their conduct was exemplary during their tenure. We wish them all the best in their future career.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Sign-off */}
+                    <div className="pt-12 border-t border-slate-100 dark:border-slate-800 flex justify-between items-end text-xs font-sans print-signoff">
+                      <div className="flex flex-col space-y-1">
+                        <span className="font-bold">Human Resources Dept.</span>
+                        <span className="text-slate-500">Aspino Speciality Chemicals Pvt. Ltd.</span>
+                      </div>
+                      <div className="flex flex-col items-end space-y-1">
+                        <div className="w-32 h-10 border-b border-slate-350 flex items-center justify-center italic text-slate-400">
+                          [Digital Signature]
+                        </div>
+                        <span className="font-bold">Authorized Signatory</span>
+                      </div>
                     </div>
                   </div>
-
-                  {/* Body Content */}
-                  <div className="flex-1 py-10 space-y-6 text-sm leading-relaxed">
-                    <div className="flex justify-between text-xs font-sans font-bold text-slate-500">
-                      <span>Ref: ASP/HR/EXIT/{selectedExit.id}</span>
-                      <span>Date: {new Date().toLocaleDateString()}</span>
-                    </div>
-
-                    <div className="space-y-0.5">
-                      <div className="font-extrabold">TO WHOMSOEVER IT MAY CONCERN</div>
-                    </div>
-
-                    {letterTemplate === 'relieving' ? (
-                      /* Relieving Letter template */
-                      <div className="space-y-4 text-justify">
-                        <p>
-                          This is to confirm that <strong>{selectedExit.employee?.firstName} {selectedExit.employee?.lastName}</strong> (Employee ID: <strong>{selectedExit.employee?.employeeId}</strong>) was employed with Aspino Speciality Chemicals Private Limited as a <strong>{selectedExit.employee?.designation}</strong> from <strong>{new Date(selectedExit.employee?.dateOfJoining).toLocaleDateString()}</strong> to <strong>{new Date(selectedExit.lastWorkingDay).toLocaleDateString()}</strong>.
-                        </p>
-                        <p>
-                          Consequent to their resignation dated <strong>{new Date(selectedExit.resignationDate).toLocaleDateString()}</strong>, we hereby confirm that they are relieved of all duties and responsibilities with effect from the close of business hours on <strong>{new Date(selectedExit.lastWorkingDay).toLocaleDateString()}</strong>.
-                        </p>
-                        <p>
-                          We confirm that all departmental clearances (including IT assets, stores, library, and finance dues) have been completed successfully. Their Full & Final settlement has been processed and paid.
-                        </p>
-                        <p>
-                          We wish them success in their future endeavors.
-                        </p>
-                      </div>
-                    ) : (
-                      /* Experience Letter template */
-                      <div className="space-y-4 text-justify">
-                        <p>
-                          This is to certify that <strong>{selectedExit.employee?.firstName} {selectedExit.employee?.lastName}</strong> was employed with Aspino Speciality Chemicals Private Limited from <strong>{new Date(selectedExit.employee?.dateOfJoining).toLocaleDateString()}</strong> to <strong>{new Date(selectedExit.lastWorkingDay).toLocaleDateString()}</strong>.
-                        </p>
-                        <p>
-                          During their tenure, they held the designation of <strong>{selectedExit.employee?.designation}</strong> in the <strong>{selectedExit.employee?.department}</strong> department.
-                        </p>
-                        <p>
-                          Their duties included supervising and operating chemical processing units, quality control analysis, and maintaining regulatory GMP safety compliance records. They have consistently demonstrated a professional attitude and strong execution capability.
-                        </p>
-                        <p>
-                          Their conduct was exemplary during their tenure. We wish them all the best in their future career.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Sign-off */}
-                  <div className="pt-12 border-t border-slate-100 dark:border-slate-800 flex justify-between items-end text-xs font-sans">
-                    <div className="flex flex-col space-y-1">
-                      <span className="font-bold">Human Resources Dept.</span>
-                      <span className="text-slate-500">Aspino Speciality Chemicals Pvt. Ltd.</span>
-                    </div>
-                    <div className="flex flex-col items-end space-y-1">
-                      <div className="w-32 h-10 border-b border-slate-350 flex items-center justify-center italic text-slate-400">
-                        [Digital Signature]
-                      </div>
-                      <span className="font-bold">Authorized Signatory</span>
-                    </div>
-                  </div>
-                </div>
+                </>
               ) : (
                 <p className="text-slate-500 text-sm print:hidden">Select an exit profile to display Relieving/Experience document preview.</p>
               )}

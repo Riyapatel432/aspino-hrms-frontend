@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Input } from "@/components/ui/input";
@@ -57,7 +58,7 @@ export default function OnboardingPage() {
   const fetchEmployees = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/onboarding/employees?limit=1000`);
+      const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/employees?limit=1000`);
       const result = await res.json();
       const data = result.data || [];
       setEmployees(data);
@@ -83,7 +84,7 @@ export default function OnboardingPage() {
 
   const handleDeleteEmployee = async (empId) => {
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/onboarding/employees/${empId}`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/employees/${empId}`, {
         method: "DELETE",
       });
       if (res.ok) {
@@ -96,7 +97,7 @@ export default function OnboardingPage() {
 
   const handleUpdateDocStatus = async (docId, status) => {
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/onboarding/documents/${docId}/status`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/documents/${docId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
@@ -113,7 +114,7 @@ export default function OnboardingPage() {
     e.preventDefault();
     if (!selectedEmp) return;
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/onboarding/inductions`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/inductions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ employeeId: selectedEmp.id, ...induc }),
@@ -129,7 +130,7 @@ export default function OnboardingPage() {
 
   const handleUpdateInductionStatus = async (indId, status) => {
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/onboarding/inductions/${indId}/status`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/inductions/${indId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
@@ -144,7 +145,7 @@ export default function OnboardingPage() {
 
   const handleUpdateProbation = async (empId, status) => {
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/onboarding/employees/${empId}/probation`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/employees/${empId}/probation`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
@@ -161,7 +162,7 @@ export default function OnboardingPage() {
     e.preventDefault();
     if (!selectedEmp) return;
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/onboarding/employees/${selectedEmp.id}/system-access`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/employees/${selectedEmp.id}/system-access`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(sysAccess),
@@ -179,7 +180,7 @@ export default function OnboardingPage() {
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/onboarding/documents/${docId}/upload`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/documents/${docId}/upload`, {
         method: "POST",
         body: formData,
       });

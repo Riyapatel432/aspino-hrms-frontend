@@ -46,19 +46,20 @@ export function DataTable({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(defaultPageSize);
 
+  const safeData = Array.isArray(data) ? data : [];
   const keys = searchKeys || columns.map((c) => c.key);
 
   // Filtered
   const filtered = useMemo(() => {
-    if (!search.trim()) return data;
+    if (!search.trim()) return safeData;
     const q = search.toLowerCase();
-    return data.filter((row) =>
+    return safeData.filter((row) =>
       keys.some((k) => {
         const val = k.split(".").reduce((o, p) => o?.[p], row);
         return String(val ?? "").toLowerCase().includes(q);
       })
     );
-  }, [data, search, keys]);
+  }, [safeData, search, keys]);
 
   // Sorted
   const sorted = useMemo(() => {

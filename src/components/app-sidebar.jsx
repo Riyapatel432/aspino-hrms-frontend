@@ -57,6 +57,11 @@ const menuItems = [
         href: "/dashboard/leave-master",
         icon: Pill,
       },
+        {
+        title: "Training Type",
+        href: "/dashboard/training-type",
+        icon: Pill,
+      },
     ],
   },
    {

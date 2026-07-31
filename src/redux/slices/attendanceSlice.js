@@ -1,10 +1,11 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+import { apiFetch } from "@/lib/api";
 
 const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 export const fetchShifts = createAsyncThunk("attendance/fetchShifts", async (_, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/attendance/shifts`);
+    const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/shifts`);
     if (!res.ok) throw new Error("Failed to fetch shifts");
     return await res.json();
   } catch (err) {
@@ -14,7 +15,7 @@ export const fetchShifts = createAsyncThunk("attendance/fetchShifts", async (_, 
 
 export const fetchEmployees = createAsyncThunk("attendance/fetchEmployees", async (_, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/onboarding/employees?limit=1000`);
+    const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/employees?limit=1000`);
     if (!res.ok) throw new Error("Failed to fetch employees");
     const data = await res.json();
     return Array.isArray(data) ? data : (data?.data || []);
@@ -25,7 +26,7 @@ export const fetchEmployees = createAsyncThunk("attendance/fetchEmployees", asyn
 
 export const createShift = createAsyncThunk("attendance/createShift", async (data, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/attendance/shifts`, {
+    const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/shifts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -39,7 +40,7 @@ export const createShift = createAsyncThunk("attendance/createShift", async (dat
 
 export const deleteShift = createAsyncThunk("attendance/deleteShift", async (id, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/attendance/shifts/${id}`, { method: "DELETE" });
+    const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/shifts/${id}`, { method: "DELETE" });
     if (!res.ok) throw new Error("Failed to delete shift");
     return id;
   } catch (err) {
@@ -49,7 +50,7 @@ export const deleteShift = createAsyncThunk("attendance/deleteShift", async (id,
 
 export const fetchRosters = createAsyncThunk("attendance/fetchRosters", async (_, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/attendance/rosters`);
+    const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/rosters`);
     if (!res.ok) throw new Error("Failed to fetch rosters");
     return await res.json();
   } catch (err) {
@@ -59,7 +60,7 @@ export const fetchRosters = createAsyncThunk("attendance/fetchRosters", async (_
 
 export const createRoster = createAsyncThunk("attendance/createRoster", async (data, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/attendance/rosters`, {
+    const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/rosters`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -73,7 +74,7 @@ export const createRoster = createAsyncThunk("attendance/createRoster", async (d
 
 export const deleteRoster = createAsyncThunk("attendance/deleteRoster", async (id, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/attendance/rosters/${id}`, { method: "DELETE" });
+    const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/rosters/${id}`, { method: "DELETE" });
     if (!res.ok) throw new Error("Failed to delete roster");
     return id;
   } catch (err) {
@@ -83,7 +84,7 @@ export const deleteRoster = createAsyncThunk("attendance/deleteRoster", async (i
 
 export const fetchAttendance = createAsyncThunk("attendance/fetchAttendance", async (_, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/attendance/attendance`);
+    const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/attendance`);
     if (!res.ok) throw new Error("Failed to fetch attendance");
     return await res.json();
   } catch (err) {
@@ -93,7 +94,7 @@ export const fetchAttendance = createAsyncThunk("attendance/fetchAttendance", as
 
 export const createAttendance = createAsyncThunk("attendance/createAttendance", async (data, { rejectWithValue }) => {
   try {
-    const res = await fetch(`${backendUrl}/staff-hrms/attendance/attendance`, {
+    const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/attendance`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),

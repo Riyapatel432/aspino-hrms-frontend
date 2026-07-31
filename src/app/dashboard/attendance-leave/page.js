@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -214,7 +215,7 @@ export default function AttendanceLeavePage() {
     if (!validateShift()) return;
     try {
       if (newShift.id) {
-        const res = await fetch(`${backendUrl}/staff-hrms/attendance/shifts/${newShift.id}`, {
+        const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/shifts/${newShift.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: newShift.name, startTime: newShift.startTime, endTime: newShift.endTime })
@@ -242,7 +243,7 @@ export default function AttendanceLeavePage() {
     if (!validateRoster()) return;
     try {
       if (newRoster.id) {
-        const res = await fetch(`${backendUrl}/staff-hrms/attendance/rosters/${newRoster.id}`, {
+        const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/rosters/${newRoster.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ employeeId: newRoster.employeeId, shiftId: newRoster.shiftId, date: newRoster.date })
@@ -301,7 +302,7 @@ export default function AttendanceLeavePage() {
       };
 
       if (newAtt.id) {
-        const res = await fetch(`${backendUrl}/staff-hrms/attendance/attendance/${newAtt.id}`, {
+        const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/attendance/${newAtt.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
@@ -345,7 +346,7 @@ export default function AttendanceLeavePage() {
     if (!validateLeave()) return;
     try {
       if (newLeave.id) {
-        const res = await fetch(`${backendUrl}/staff-hrms/leave/leaves/${newLeave.id}`, {
+        const res = await apiFetch(`${backendUrl}/staff-hrms/leave/leaves/${newLeave.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -399,7 +400,7 @@ export default function AttendanceLeavePage() {
     if (!validateHoliday()) return;
     try {
       if (newHoliday.id) {
-        const res = await fetch(`${backendUrl}/staff-hrms/leave/holidays/${newHoliday.id}`, {
+        const res = await apiFetch(`${backendUrl}/staff-hrms/leave/holidays/${newHoliday.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: newHoliday.name, date: newHoliday.date })
@@ -454,7 +455,7 @@ export default function AttendanceLeavePage() {
 
   const handleDeleteAttendance = async (id) => {
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/attendance/attendance/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/attendance/${id}`, { method: 'DELETE' });
       if (res.ok) {
         dispatch(fetchAttendance());
         toast.success("Attendance deleted successfully");

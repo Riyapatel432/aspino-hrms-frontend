@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -62,7 +63,7 @@ export default function RecruitmentPage() {
     
     // Fetch users for panel members dropdown
     const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-    fetch(`${backendUrl}/users`)
+    apiFetch(`${backendUrl}/users`)
       .then(res => res.json())
       .then(data => setUsers(data))
       .catch(err => console.error("Failed to fetch users:", err));
@@ -174,7 +175,7 @@ export default function RecruitmentPage() {
     try {
       if (newReq.id) {
         // Edit mode
-        const res = await fetch(`${backendUrl}/staff-hrms/recruitment/requisitions/${newReq.id}`, {
+        const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/requisitions/${newReq.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -204,7 +205,7 @@ export default function RecruitmentPage() {
 
   const handleDeleteRequisition = async (reqId) => {
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/recruitment/requisitions/${reqId}`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/requisitions/${reqId}`, {
         method: "DELETE",
       });
       if (res.ok) {
@@ -224,7 +225,7 @@ export default function RecruitmentPage() {
     formData.append("file", file);
     setUploadingFile(true);
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/recruitment/candidates/upload-resume`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/candidates/upload-resume`, {
         method: "POST",
         body: formData,
       });
@@ -246,7 +247,7 @@ export default function RecruitmentPage() {
     try {
       if (newCand.id) {
         // Edit mode
-        const res = await fetch(`${backendUrl}/staff-hrms/recruitment/candidates/${newCand.id}`, {
+        const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/candidates/${newCand.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -278,7 +279,7 @@ export default function RecruitmentPage() {
 
   const handleDeleteCandidate = async (candId) => {
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/recruitment/candidates/${candId}`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/candidates/${candId}`, {
         method: "DELETE",
       });
       if (res.ok) {
@@ -315,7 +316,7 @@ export default function RecruitmentPage() {
     try {
       if (newSched.id) {
         // Edit mode
-        const res = await fetch(`${backendUrl}/staff-hrms/recruitment/schedules/${newSched.id}`, {
+        const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/schedules/${newSched.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -346,7 +347,7 @@ export default function RecruitmentPage() {
 
   const handleDeleteSchedule = async (id) => {
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/recruitment/schedules/${id}`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/schedules/${id}`, {
         method: "DELETE",
       });
       if (res.ok) {
@@ -363,7 +364,7 @@ export default function RecruitmentPage() {
     e.preventDefault();
     if (!validateFeedback()) return;
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/recruitment/feedbacks`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/feedbacks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newFeedback),
@@ -384,7 +385,7 @@ export default function RecruitmentPage() {
     try {
       if (newOffer.id) {
         // Edit mode
-        const res = await fetch(`${backendUrl}/staff-hrms/recruitment/offers/${newOffer.id}`, {
+        const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/offers/${newOffer.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -415,7 +416,7 @@ export default function RecruitmentPage() {
 
   const handleDeleteOffer = async (id) => {
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/recruitment/offers/${id}`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/offers/${id}`, {
         method: "DELETE",
       });
       if (res.ok) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,6 +28,7 @@ export default function PerformanceTrainingPage() {
   const [goals, setGoals] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [trainings, setTrainings] = useState([]);
+  const [trainingTypes, setTrainingTypes] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Forms state
@@ -43,12 +45,13 @@ export default function PerformanceTrainingPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [empRes, cycleRes, goalRes, reviewRes, trainRes] = await Promise.all([
-        fetch(`${backendUrl}/staff-hrms/onboarding/employees?limit=1000`),
-        fetch(`${backendUrl}/staff-hrms/performance/appraisal-cycles`),
-        fetch(`${backendUrl}/staff-hrms/performance/goals`),
-        fetch(`${backendUrl}/staff-hrms/performance/reviews`),
-        fetch(`${backendUrl}/staff-hrms/training/trainings`),
+      const [empRes, cycleRes, goalRes, reviewRes, trainRes, typeRes] = await Promise.all([
+        apiFetch(`${backendUrl}/staff-hrms/onboarding/employees?limit=1000`),
+        apiFetch(`${backendUrl}/staff-hrms/performance/appraisal-cycles`),
+        apiFetch(`${backendUrl}/staff-hrms/performance/goals`),
+        apiFetch(`${backendUrl}/staff-hrms/performance/reviews`),
+        apiFetch(`${backendUrl}/staff-hrms/training/trainings`),
+        apiFetch(`${backendUrl}/staff-hrms/recruitment/trainingTypes`),
       ]);
 
       const empData = await empRes.json();
@@ -57,6 +60,8 @@ export default function PerformanceTrainingPage() {
       setGoals(await goalRes.json());
       setReviews(await reviewRes.json());
       setTrainings(await trainRes.json());
+      const typeData = await typeRes.json();
+      setTrainingTypes(Array.isArray(typeData) ? typeData : []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -118,7 +123,7 @@ export default function PerformanceTrainingPage() {
     const errs = {};
     if (!newTraining.employeeId) errs.employeeId = "Please select an employee.";
     if (!newTraining.trainingName?.trim()) errs.trainingName = "Training name is required.";
-    if (!newTraining.trainingType) errs.trainingType = "Training type must be COMPLIANCE, TECHNICAL, or SOFT_SKILLS.";
+    if (!newTraining.trainingType) errs.trainingType = "Training type is required.";
     if (!newTraining.completionDate) errs.completionDate = "Training completion date is required.";
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
@@ -132,7 +137,7 @@ export default function PerformanceTrainingPage() {
       const url = isUpdate 
         ? `${backendUrl}/staff-hrms/performance/appraisal-cycles/${newCycle.id}`
         : `${backendUrl}/staff-hrms/performance/appraisal-cycles`;
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: isUpdate ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newCycle),
@@ -149,7 +154,7 @@ export default function PerformanceTrainingPage() {
 
   const handleDeleteCycle = async (id) => {
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/performance/appraisal-cycles/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`${backendUrl}/staff-hrms/performance/appraisal-cycles/${id}`, { method: "DELETE" });
       if (res.ok) {
         fetchData();
         toast.success("Cycle deleted");
@@ -167,7 +172,7 @@ export default function PerformanceTrainingPage() {
       const url = isUpdate 
         ? `${backendUrl}/staff-hrms/performance/goals/${newGoal.id}`
         : `${backendUrl}/staff-hrms/performance/goals`;
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: isUpdate ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newGoal),
@@ -184,7 +189,7 @@ export default function PerformanceTrainingPage() {
 
   const handleDeleteGoal = async (id) => {
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/performance/goals/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`${backendUrl}/staff-hrms/performance/goals/${id}`, { method: "DELETE" });
       if (res.ok) {
         fetchData();
         toast.success("Goal deleted");
@@ -202,7 +207,7 @@ export default function PerformanceTrainingPage() {
       const url = isUpdate 
         ? `${backendUrl}/staff-hrms/performance/reviews/${newReview.id}`
         : `${backendUrl}/staff-hrms/performance/reviews`;
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: isUpdate ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newReview),
@@ -219,7 +224,7 @@ export default function PerformanceTrainingPage() {
 
   const handleDeleteReview = async (id) => {
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/performance/reviews/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`${backendUrl}/staff-hrms/performance/reviews/${id}`, { method: "DELETE" });
       if (res.ok) {
         fetchData();
         toast.success("Review deleted");
@@ -237,7 +242,7 @@ export default function PerformanceTrainingPage() {
       const url = isUpdate 
         ? `${backendUrl}/staff-hrms/training/trainings/${newTraining.id}`
         : `${backendUrl}/staff-hrms/training/trainings`;
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: isUpdate ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newTraining),
@@ -254,7 +259,7 @@ export default function PerformanceTrainingPage() {
 
   const handleDeleteTraining = async (id) => {
     try {
-      const res = await fetch(`${backendUrl}/staff-hrms/training/trainings/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`${backendUrl}/staff-hrms/training/trainings/${id}`, { method: "DELETE" });
       if (res.ok) {
         fetchData();
         toast.success("Training deleted");
@@ -903,10 +908,18 @@ export default function PerformanceTrainingPage() {
                       <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
                         <SelectValue placeholder="Select..." />
                       </SelectTrigger>
-                      <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                        <SelectItem value="COMPLIANCE">COMPLIANCE (FDA/GMP)</SelectItem>
-                        <SelectItem value="TECHNICAL">TECHNICAL SKILLS</SelectItem>
-                        <SelectItem value="SOFT_SKILLS">SOFT SKILLS</SelectItem>
+                       <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                        {trainingTypes.length > 0 ? (
+                          trainingTypes.map((t) => (
+                            <SelectItem key={t.id} value={t.name}>{t.name.toUpperCase()}</SelectItem>
+                          ))
+                        ) : (
+                          <>
+                            <SelectItem value="COMPLIANCE">COMPLIANCE (FDA/GMP)</SelectItem>
+                            <SelectItem value="TECHNICAL">TECHNICAL SKILLS</SelectItem>
+                            <SelectItem value="SOFT_SKILLS">SOFT SKILLS</SelectItem>
+                          </>
+                        )}
                       </SelectContent>
                     </Select>
                     {formErrors.trainingType && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.trainingType}</span>}

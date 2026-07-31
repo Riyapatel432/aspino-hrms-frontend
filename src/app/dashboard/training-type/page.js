@@ -14,9 +14,9 @@ import {
   Loader2
 } from "lucide-react";
 
-export default function DepartmentsPage() {
-  const [departments, setDepartments] = useState([]);
-  const [requisitions, setRequisitions] = useState([]);
+export default function TrainingTypesPage() {
+  const [trainingTypes, settrainingTypes] = useState([]);
+  const [trainings, setTrainings] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Form states
@@ -25,10 +25,10 @@ export default function DepartmentsPage() {
   const [editingDeptName, setEditingDeptName] = useState("");
   const [formErrors, setFormErrors] = useState({});
 
-  const validateDepartment = (name) => {
+  const validatetrainingType = (name) => {
     const errs = {};
-    if (!name?.trim()) errs.name = "Department name is required.";
-    else if (name.trim().length < 2) errs.name = "Department name must be at least 2 characters.";
+    if (!name?.trim()) errs.name = "trainingType name is required.";
+    else if (name.trim().length < 2) errs.name = "trainingType name must be at least 2 characters.";
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -38,16 +38,17 @@ export default function DepartmentsPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [deptRes, reqRes] = await Promise.all([
-        apiFetch(`${backendUrl}/staff-hrms/recruitment/departments`),
-        apiFetch(`${backendUrl}/staff-hrms/recruitment/requisitions?limit=1000`),
+      const [deptRes, trainRes] = await Promise.all([
+        apiFetch(`${backendUrl}/staff-hrms/recruitment/trainingTypes`),
+        apiFetch(`${backendUrl}/staff-hrms/training/trainings`),
       ]);
 
-      setDepartments(await deptRes.json());
-      const reqData = await reqRes.json();
-      setRequisitions(reqData.data || []);
+      const deptData = await deptRes.json();
+      settrainingTypes(Array.isArray(deptData) ? deptData : []);
+      const trainData = await trainRes.json();
+      setTrainings(Array.isArray(trainData) ? trainData : []);
     } catch (e) {
-      console.error("Error loading department data:", e);
+      console.error("Error loading trainingType data:", e);
     } finally {
       setLoading(false);
     }
@@ -57,11 +58,11 @@ export default function DepartmentsPage() {
     fetchData();
   }, []);
 
-  const handleCreateDepartment = async (e) => {
+  const handleCreatetrainingType = async (e) => {
     e.preventDefault();
-    if (!validateDepartment(newDeptName)) return;
+    if (!validatetrainingType(newDeptName)) return;
     try {
-      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/departments`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/trainingTypes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newDeptName }),
@@ -75,11 +76,11 @@ export default function DepartmentsPage() {
     }
   };
 
-  const handleUpdateDepartment = async (e) => {
+  const handleUpdatetrainingType = async (e) => {
     e.preventDefault();
-    if (!editingDeptId || !validateDepartment(editingDeptName)) return;
+    if (!editingDeptId || !validatetrainingType(editingDeptName)) return;
     try {
-      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/departments/${editingDeptId}`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/trainingTypes/${editingDeptId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: editingDeptName }),
@@ -94,9 +95,9 @@ export default function DepartmentsPage() {
     }
   };
 
-  const handleDeleteDepartment = async (id) => {
+  const handleDeletetrainingType = async (id) => {
     try {
-      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/departments/${id}`, {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/trainingTypes/${id}`, {
         method: "DELETE",
       });
       if (res.ok) {
@@ -112,7 +113,7 @@ export default function DepartmentsPage() {
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
           <FolderTree className="w-6 h-6 text-sky-500" />
-          Department Master
+          trainingType Master
         </h2>
       </div>
 
@@ -126,11 +127,11 @@ export default function DepartmentsPage() {
           <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
             <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
               <Plus className="w-5 h-5 text-sky-500" />
-              {editingDeptId ? "Edit Department" : "Create Department"}
+              {editingDeptId ? "Edit trainingType" : "Create trainingType"}
             </h3>
-            <form onSubmit={editingDeptId ? handleUpdateDepartment : handleCreateDepartment} className="space-y-3">
+            <form onSubmit={editingDeptId ? handleUpdatetrainingType : handleCreatetrainingType} className="space-y-3">
               <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Department Name</Label>
+                <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">trainingType Name</Label>
                 <Input
                   placeholder="e.g. Quality Control"
                   value={editingDeptId ? editingDeptName : newDeptName}
@@ -170,25 +171,25 @@ export default function DepartmentsPage() {
           {/* List Card */}
           <div className="lg:col-span-2">
             <DataTable
-              title="All Departments"
-              data={departments}
+              title="All trainingTypes"
+              data={trainingTypes}
               searchKeys={["name"]}
-              emptyMessage="No departments registered."
+              emptyMessage="No trainingTypes registered."
               columns={[
                 {
                   key: "name",
-                  label: "Department Name",
+                  label: "trainingType Name",
                   render: (row) => (
                     <span className="text-sm font-black text-slate-800 dark:text-white">{row.name}</span>
                   ),
                 },
                 {
-                  key: "requisitions",
-                  label: "Active Requisitions",
+                  key: "trainings",
+                  label: "Active Trainings",
                   sortable: false,
                   render: (row) => (
                     <span className="text-xs font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 border border-sky-100 dark:border-sky-500/20 px-2.5 py-1 rounded-full">
-                      {requisitions.filter((r) => r.departmentId === row.id).length}
+                      {trainings.filter((t) => t.trainingType === row.name).length}
                     </span>
                   ),
                 },
@@ -209,7 +210,7 @@ export default function DepartmentsPage() {
                         <Edit className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleDeleteDepartment(row.id)}
+                        onClick={() => handleDeletetrainingType(row.id)}
                         className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all cursor-pointer"
                         title="Delete"
                       >
