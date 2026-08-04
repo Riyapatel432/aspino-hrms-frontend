@@ -38,12 +38,12 @@ export default function LeaveMasterPage() {
 
   const [newLeaveMaster, setNewLeaveMaster] = useState({ 
     department: "", 
-    fiscalYear: "FY26", 
-    casualLeave: 12, 
-    sickLeave: 10, 
-    earnedLeave: 15, 
-    otherLeave: 0, 
-    effectiveFrom: new Date().toISOString().split('T')[0] 
+    fiscalYear: "", 
+    casualLeave: "", 
+    sickLeave: "", 
+    earnedLeave: "", 
+    otherLeave: "", 
+    effectiveFrom: "" 
   });
   const [formErrors, setFormErrors] = useState({});
 
@@ -54,14 +54,25 @@ export default function LeaveMasterPage() {
     const errs = {};
     if (!newLeaveMaster.department) errs.department = "Please select a department.";
     if (!newLeaveMaster.fiscalYear) errs.fiscalYear = "Please select a fiscal year.";
-    if (newLeaveMaster.casualLeave === undefined || newLeaveMaster.casualLeave === null || newLeaveMaster.casualLeave < 0) {
+    if (newLeaveMaster.casualLeave === "" || newLeaveMaster.casualLeave === undefined || newLeaveMaster.casualLeave === null) {
+      errs.casualLeave = "Casual leave is required.";
+    } else if (Number(newLeaveMaster.casualLeave) < 0) {
       errs.casualLeave = "Casual leave must be 0 or more.";
     }
-    if (newLeaveMaster.sickLeave === undefined || newLeaveMaster.sickLeave === null || newLeaveMaster.sickLeave < 0) {
+    if (newLeaveMaster.sickLeave === "" || newLeaveMaster.sickLeave === undefined || newLeaveMaster.sickLeave === null) {
+      errs.sickLeave = "Sick leave is required.";
+    } else if (Number(newLeaveMaster.sickLeave) < 0) {
       errs.sickLeave = "Sick leave must be 0 or more.";
     }
-    if (newLeaveMaster.earnedLeave === undefined || newLeaveMaster.earnedLeave === null || newLeaveMaster.earnedLeave < 0) {
+    if (newLeaveMaster.earnedLeave === "" || newLeaveMaster.earnedLeave === undefined || newLeaveMaster.earnedLeave === null) {
+      errs.earnedLeave = "Earned leave is required.";
+    } else if (Number(newLeaveMaster.earnedLeave) < 0) {
       errs.earnedLeave = "Earned leave must be 0 or more.";
+    }
+    if (newLeaveMaster.otherLeave === "" || newLeaveMaster.otherLeave === undefined || newLeaveMaster.otherLeave === null) {
+      errs.otherLeave = "Other leave is required.";
+    } else if (Number(newLeaveMaster.otherLeave) < 0) {
+      errs.otherLeave = "Other leave must be 0 or more.";
     }
     if (!newLeaveMaster.effectiveFrom) errs.effectiveFrom = "Effective From date is required.";
     setFormErrors(errs);
@@ -80,7 +91,7 @@ export default function LeaveMasterPage() {
         otherLeave: Number(newLeaveMaster.otherLeave),
       })).unwrap();
       
-      setNewLeaveMaster({ department: "", fiscalYear: "FY26", casualLeave: 12, sickLeave: 10, earnedLeave: 15, otherLeave: 0, effectiveFrom: new Date().toISOString().split('T')[0] });
+      setNewLeaveMaster({ department: "", fiscalYear: "", casualLeave: "", sickLeave: "", earnedLeave: "", otherLeave: "", effectiveFrom: "" });
       setFormErrors({});
       toast.success("Leave Master created successfully");
     } catch (err) {
@@ -161,7 +172,7 @@ export default function LeaveMasterPage() {
             <Plus className="w-5 h-5 text-sky-500" />
             Define Leave Master
           </h3>
-          <form onSubmit={handleCreateLeaveMaster} className="space-y-3">
+          <form onSubmit={handleCreateLeaveMaster} className="space-y-3" noValidate>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Department</Label>
@@ -203,16 +214,16 @@ export default function LeaveMasterPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Casual Leave</Label>
-                <Input type="number" value={newLeaveMaster.casualLeave} onChange={(e) => {
-                  setNewLeaveMaster({ ...newLeaveMaster, casualLeave: Number(e.target.value) });
+                <Input type="number" min="0" value={newLeaveMaster.casualLeave} onChange={(e) => {
+                  setNewLeaveMaster({ ...newLeaveMaster, casualLeave: e.target.value });
                   if (formErrors.casualLeave) setFormErrors({ ...formErrors, casualLeave: null });
                 }} />
                 {formErrors.casualLeave && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.casualLeave}</span>}
               </div>
               <div className="space-y-1">
                 <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Sick Leave</Label>
-                <Input type="number" value={newLeaveMaster.sickLeave} onChange={(e) => {
-                  setNewLeaveMaster({ ...newLeaveMaster, sickLeave: Number(e.target.value) });
+                <Input type="number" min="0" value={newLeaveMaster.sickLeave} onChange={(e) => {
+                  setNewLeaveMaster({ ...newLeaveMaster, sickLeave: e.target.value });
                   if (formErrors.sickLeave) setFormErrors({ ...formErrors, sickLeave: null });
                 }} />
                 {formErrors.sickLeave && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.sickLeave}</span>}
@@ -221,15 +232,19 @@ export default function LeaveMasterPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Earned Leave</Label>
-                <Input type="number" value={newLeaveMaster.earnedLeave} onChange={(e) => {
-                  setNewLeaveMaster({ ...newLeaveMaster, earnedLeave: Number(e.target.value) });
+                <Input type="number" min="0" value={newLeaveMaster.earnedLeave} onChange={(e) => {
+                  setNewLeaveMaster({ ...newLeaveMaster, earnedLeave: e.target.value });
                   if (formErrors.earnedLeave) setFormErrors({ ...formErrors, earnedLeave: null });
                 }} />
                 {formErrors.earnedLeave && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.earnedLeave}</span>}
               </div>
               <div className="space-y-1">
                 <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Other Leave</Label>
-                <Input type="number" value={newLeaveMaster.otherLeave} onChange={(e) => setNewLeaveMaster({ ...newLeaveMaster, otherLeave: Number(e.target.value) })} />
+                <Input type="number" min="0" value={newLeaveMaster.otherLeave} onChange={(e) => {
+                  setNewLeaveMaster({ ...newLeaveMaster, otherLeave: e.target.value });
+                  if (formErrors.otherLeave) setFormErrors({ ...formErrors, otherLeave: null });
+                }} />
+                {formErrors.otherLeave && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.otherLeave}</span>}
               </div>
             </div>
             <div className="space-y-1">

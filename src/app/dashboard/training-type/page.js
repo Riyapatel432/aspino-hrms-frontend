@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { API_URL, apiFetch } from "@/lib/api";
+import { API_URL, apiFetch, getErrorMessage } from "@/lib/api";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -114,13 +115,16 @@ export default function TrainingTypesPage() {
       });
 
       if (res.ok) {
+        toast.success(editingId ? "Training type updated successfully" : "Training type created successfully");
         cancelEdit();
         fetchData();
       } else {
-        console.error("Training type save failed:", await res.text());
+        const msg = await getErrorMessage(res, "Training type save failed");
+        toast.error(msg);
       }
     } catch (err) {
       console.error("Training type save error:", err);
+      toast.error("An unexpected error occurred");
     } finally {
       setSubmitting(false);
     }

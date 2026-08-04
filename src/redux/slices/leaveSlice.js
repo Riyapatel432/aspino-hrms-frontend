@@ -3,6 +3,19 @@ import { apiFetch } from "@/lib/api";
 
 const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
+async function getErrorMsg(res, defaultMsg) {
+  try {
+    const data = await res.json();
+    if (data && data.message) {
+      if (Array.isArray(data.message)) {
+        return data.message.join(", ");
+      }
+      return data.message;
+    }
+  } catch (e) {}
+  return defaultMsg;
+}
+
 // Leaves
 export const fetchLeaves = createAsyncThunk("leave/fetchLeaves", async (_, { rejectWithValue }) => {
   try {
@@ -21,7 +34,7 @@ export const createLeave = createAsyncThunk("leave/createLeave", async (data, { 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Failed to create leave");
+    if (!res.ok) throw new Error(await getErrorMsg(res, "Failed to create leave"));
     return await res.json();
   } catch (err) {
     return rejectWithValue(err.message);
@@ -71,7 +84,7 @@ export const createLeaveMaster = createAsyncThunk("leave/createLeaveMaster", asy
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Failed to create leave master");
+    if (!res.ok) throw new Error(await getErrorMsg(res, "Failed to create leave master"));
     return await res.json();
   } catch (err) {
     return rejectWithValue(err.message);
@@ -106,7 +119,7 @@ export const createHoliday = createAsyncThunk("leave/createHoliday", async (data
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Failed to create holiday");
+    if (!res.ok) throw new Error(await getErrorMsg(res, "Failed to create holiday"));
     return await res.json();
   } catch (err) {
     return rejectWithValue(err.message);

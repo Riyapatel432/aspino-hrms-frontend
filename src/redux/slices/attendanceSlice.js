@@ -3,6 +3,19 @@ import { apiFetch } from "@/lib/api";
 
 const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
+async function getErrorMsg(res, defaultMsg) {
+  try {
+    const data = await res.json();
+    if (data && data.message) {
+      if (Array.isArray(data.message)) {
+        return data.message.join(", ");
+      }
+      return data.message;
+    }
+  } catch (e) {}
+  return defaultMsg;
+}
+
 export const fetchShifts = createAsyncThunk("attendance/fetchShifts", async (_, { rejectWithValue }) => {
   try {
     const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/shifts`);
@@ -31,7 +44,7 @@ export const createShift = createAsyncThunk("attendance/createShift", async (dat
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Failed to create shift");
+    if (!res.ok) throw new Error(await getErrorMsg(res, "Failed to create shift"));
     return await res.json();
   } catch (err) {
     return rejectWithValue(err.message);
@@ -65,7 +78,7 @@ export const createRoster = createAsyncThunk("attendance/createRoster", async (d
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Failed to create roster");
+    if (!res.ok) throw new Error(await getErrorMsg(res, "Failed to create roster"));
     return await res.json();
   } catch (err) {
     return rejectWithValue(err.message);
@@ -99,7 +112,7 @@ export const createAttendance = createAsyncThunk("attendance/createAttendance", 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Failed to create attendance");
+    if (!res.ok) throw new Error(await getErrorMsg(res, "Failed to create attendance"));
     return await res.json();
   } catch (err) {
     return rejectWithValue(err.message);

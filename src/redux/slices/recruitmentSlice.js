@@ -3,6 +3,19 @@ import { apiFetch } from "@/lib/api";
 
 const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
+async function getErrorMsg(res, defaultMsg) {
+  try {
+    const data = await res.json();
+    if (data && data.message) {
+      if (Array.isArray(data.message)) {
+        return data.message.join(", ");
+      }
+      return data.message;
+    }
+  } catch (e) {}
+  return defaultMsg;
+}
+
 // Requisitions
 export const fetchRequisitions = createAsyncThunk("recruitment/fetchRequisitions", async (_, { rejectWithValue }) => {
   try {
@@ -22,7 +35,7 @@ export const createRequisition = createAsyncThunk("recruitment/createRequisition
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Failed to create requisition");
+    if (!res.ok) throw new Error(await getErrorMsg(res, "Failed to create requisition"));
     return await res.json();
   } catch (err) {
     return rejectWithValue(err.message);
@@ -48,7 +61,7 @@ export const createCandidate = createAsyncThunk("recruitment/createCandidate", a
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Failed to create candidate");
+    if (!res.ok) throw new Error(await getErrorMsg(res, "Failed to create candidate"));
     return await res.json();
   } catch (err) {
     return rejectWithValue(err.message);
@@ -87,7 +100,7 @@ export const createSchedule = createAsyncThunk("recruitment/createSchedule", asy
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Failed to create schedule");
+    if (!res.ok) throw new Error(await getErrorMsg(res, "Failed to create schedule"));
     return await res.json();
   } catch (err) {
     return rejectWithValue(err.message);
@@ -112,7 +125,7 @@ export const createOffer = createAsyncThunk("recruitment/createOffer", async (da
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Failed to create offer");
+    if (!res.ok) throw new Error(await getErrorMsg(res, "Failed to create offer"));
     return await res.json();
   } catch (err) {
     return rejectWithValue(err.message);
@@ -124,7 +137,7 @@ export const updateOfferStatus = createAsyncThunk("recruitment/updateOfferStatus
     const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/offers/${id}/accept`, {
       method: "POST", // The backend uses accept but let's pass status generically or assume accept
     });
-    if (!res.ok) throw new Error("Failed to accept offer");
+    if (!res.ok) throw new Error(await getErrorMsg(res, "Failed to accept offer"));
     return { id, status: 'ACCEPTED' };
   } catch (err) {
     return rejectWithValue(err.message);

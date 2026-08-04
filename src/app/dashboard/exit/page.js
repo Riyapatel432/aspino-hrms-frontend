@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 
 import {
   Select,
@@ -26,6 +26,10 @@ import {
   Printer,
   Edit2,
   Trash2,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
 import { useExitWorkflow, calculateLwd } from "@/hooks/useExitWorkflow";
 
@@ -74,19 +78,51 @@ function StatusBadge({ status }) {
 // ---------------------------------------------------------------------------
 const LETTER_PRINT_CSS = `
   @media print {
-    aside, nav, header, footer, button, .print\\:hidden { display: none !important; }
-    main, .flex-1, .w-full, body, html {
-      padding: 0 !important; margin: 0 !important;
-      background: white !important; color: black !important;
-      min-height: auto !important; box-shadow: none !important;
+    @page {
+      size: A4 portrait !important;
+      margin: 1cm !important;
+    }
+    [data-slot="sidebar"],
+    [data-slot="sidebar-container"],
+    [data-slot="sidebar-gap"],
+    aside, nav, header, footer, button, .print\\:hidden, [role="tablist"], [role="tab"] {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+      visibility: hidden !important;
+    }
+    body, html {
+      padding: 0 !important;
+      margin: 0 !important;
+      background: white !important;
+      color: black !important;
+      min-height: auto !important;
+      box-shadow: none !important;
+      width: 100% !important;
+      overflow: visible !important;
+    }
+    main, .flex-1, .w-full, .bg-muted\\/20, [data-slot="sidebar-wrapper"] {
+      padding: 0 !important;
+      margin: 0 !important;
+      background: white !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      display: block !important;
     }
     .print-letter-card {
-      border: none !important; box-shadow: none !important;
-      border-radius: 0 !important; min-height: auto !important;
-      height: auto !important; padding: 1.5cm !important;
-      margin: 0 auto !important; max-width: 100% !important;
-      font-size: 11pt !important; line-height: 1.6 !important;
-      display: flex !important; flex-direction: column !important;
+      border: none !important;
+      box-shadow: none !important;
+      border-radius: 0 !important;
+      min-height: 85vh !important;
+      height: auto !important;
+      padding: 1.5cm 1cm !important;
+      margin: 0 auto !important;
+      max-width: 100% !important;
+      width: 100% !important;
+      font-size: 11pt !important;
+      line-height: 1.6 !important;
+      display: flex !important;
+      flex-direction: column !important;
       justify-content: space-between !important;
     }
     .print-letter-card h1 { color: #1e40af !important; }
@@ -132,6 +168,8 @@ export default function ExitPage() {
 
   const [activeTab, setActiveTab] = useState("exits");
 
+
+
   useEffect(() => {
     async function load() { await fetchData(); }
     load();
@@ -140,10 +178,10 @@ export default function ExitPage() {
 
 
   const netPayable =
-    settlement.pendingSalary +
-    settlement.leaveEncashment +
-    settlement.bonus -
-    settlement.recoveries;
+    (Number(settlement.pendingSalary) || 0) +
+    (Number(settlement.leaveEncashment) || 0) +
+    (Number(settlement.bonus) || 0) -
+    (Number(settlement.recoveries) || 0);
 
   // Active employees list — includes currently edited employee even if exiting
   const activeEmployees = employees.filter(
@@ -199,28 +237,36 @@ export default function ExitPage() {
                     {/* Employee select */}
                     <div className="space-y-1">
                       <Label htmlFor="exit-employee" className="text-xs font-bold text-slate-600 dark:text-slate-300">Employee</Label>
-                      <Select
-                        disabled={!!editingExitId}
-                        value={exitForm.employeeId}
-                        onValueChange={(val) => updateExitField("employeeId", val)}
-                      >
-                        <SelectTrigger id="exit-employee" className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                          <SelectValue placeholder="Select employee..." />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                          {activeEmployees.length > 0 ? (
-                            activeEmployees.map((emp) => (
-                              <SelectItem key={emp.id} value={String(emp.id)}>
-                                {emp.firstName} {emp.lastName}
-                              </SelectItem>
-                            ))
-                          ) : (
-                            <div className="p-3 text-xs text-slate-400 italic text-center">
-                              No active employees found.
-                            </div>
-                          )}
-                        </SelectContent>
-                      </Select>
+                      {editingExitId ? (
+                        <div className="h-10 px-3 flex items-center rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200">
+                          {(() => {
+                            const emp = employees.find(e => String(e.id) === String(exitForm.employeeId)) || exits.find(ex => String(ex.id) === String(editingExitId))?.employee;
+                            return emp ? `${emp.firstName} ${emp.lastName} (${emp.employeeId || ''})` : `Employee ID: ${exitForm.employeeId}`;
+                          })()}
+                        </div>
+                      ) : (
+                        <Select
+                          value={exitForm.employeeId}
+                          onValueChange={(val) => updateExitField("employeeId", val)}
+                        >
+                          <SelectTrigger id="exit-employee" className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
+                            <SelectValue placeholder="Select employee..." />
+                          </SelectTrigger>
+                          <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                            {activeEmployees.length > 0 ? (
+                              activeEmployees.map((emp) => (
+                                <SelectItem key={emp.id} value={String(emp.id)}>
+                                  {emp.firstName} {emp.lastName} ({emp.employeeId || ''})
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <div className="p-3 text-xs text-slate-400 italic text-center">
+                                No active employees found.
+                              </div>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      )}
                       <FieldError message={exitFormErrors.employeeId} />
                     </div>
 
@@ -259,7 +305,7 @@ export default function ExitPage() {
                           type="number"
                           min={0}
                           value={exitForm.noticePeriodDays}
-                          onChange={(e) => updateExitField("noticePeriodDays", Number(e.target.value))}
+                          onChange={(e) => updateExitField("noticePeriodDays", e.target.value)}
                         />
                         <FieldError message={exitFormErrors.noticePeriodDays} />
                       </div>
@@ -375,7 +421,16 @@ export default function ExitPage() {
                                   Clear
                                 </button>
                               ) : (
-                                <span className="text-[9px] text-emerald-500 font-black">CLEARED</span>
+                                <button
+                                  onClick={() => handleUpdateClearance(task.id, "PENDING")}
+                                  className="cursor-pointer transition-colors"
+                                  title="Accidentally cleared? Click to revert back to PENDING"
+                                  aria-label={`Revert ${task.department} clearance to pending`}
+                                >
+                                  <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded text-emerald-700 dark:text-emerald-300 font-black hover:bg-rose-100 dark:hover:bg-rose-950 hover:text-rose-700 dark:hover:text-rose-300 hover:border-rose-200 dark:hover:border-rose-800 transition-all block">
+                                    CLEARED ↩ (Undo)
+                                  </span>
+                                </button>
                               )}
                             </div>
                           ))}
@@ -419,37 +474,52 @@ export default function ExitPage() {
           {activeTab === "settlement" && (
             <div id="panel-settlement" role="tabpanel" className="grid grid-cols-1 lg:grid-cols-3 gap-6 print:hidden">
               {/* Profile selector */}
-              <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
-                <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                  <ClipboardList className="w-5 h-5 text-sky-500" aria-hidden="true" />
-                  Select Profile
-                </h3>
-                {exits.length === 0 ? (
-                  <p className="text-slate-500 text-xs">No active exits logged.</p>
-                ) : (
-                  <div className="space-y-2" role="listbox" aria-label="Exit profiles">
-                    {exits.map((exit) => (
-                      <button
-                        key={exit.id}
-                        role="option"
-                        aria-selected={selectedExit?.id === exit.id}
-                        onClick={() => setSelectedExit(exit)}
-                        className={`w-full text-left p-3.5 rounded-2xl border transition-all cursor-pointer flex justify-between items-center ${
-                          selectedExit?.id === exit.id
-                            ? "border-sky-500 bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400"
-                            : "border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-850"
-                        }`}
-                      >
-                        <span className="text-xs font-extrabold text-slate-700 dark:text-slate-200">
-                          {exit.employee?.firstName} {exit.employee?.lastName}
-                        </span>
-                        <span className="text-[10px] font-extrabold text-slate-400">
-                          LWD: {exit.lastWorkingDay ? new Date(exit.lastWorkingDay).toLocaleDateString() : "—"}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+              <div className="lg:col-span-1">
+                <DataTable
+                  title="Select Profile"
+                  data={exits}
+                  emptyMessage="No active exits logged."
+                  pageSize={5}
+                  searchKeys={["employee.firstName", "employee.lastName"]}
+                  columns={[
+                    {
+                      key: "employee.firstName",
+                      label: "Employee",
+                      render: (row) => (
+                        <div className="space-y-0.5">
+                          <span className={`text-xs font-extrabold block ${
+                            selectedExit?.id === row.id ? "text-sky-600 dark:text-sky-400" : "text-slate-800 dark:text-slate-200"
+                          }`}>
+                            {row.employee?.firstName} {row.employee?.lastName}
+                          </span>
+                          <span className="text-[10px] text-slate-400 block">
+                            LWD: {row.lastWorkingDay ? new Date(row.lastWorkingDay).toLocaleDateString() : "—"}
+                          </span>
+                        </div>
+                      ),
+                    },
+                    {
+                      key: "actions",
+                      label: "Action",
+                      sortable: false,
+                      render: (row) => (
+                        <Button
+                          type="button"
+                          variant={selectedExit?.id === row.id ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setSelectedExit(row)}
+                          className={`text-[10px] font-bold rounded-xl h-7 px-2.5 transition-all ${
+                            selectedExit?.id === row.id
+                              ? "bg-sky-500 hover:bg-sky-600 text-white"
+                              : "text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700"
+                          }`}
+                        >
+                          {selectedExit?.id === row.id ? "Selected" : "Select"}
+                        </Button>
+                      ),
+                    },
+                  ]}
+                />
               </div>
 
               {/* Settlement form */}
@@ -499,7 +569,7 @@ export default function ExitPage() {
                             type="number"
                             min={0}
                             value={settlement[key]}
-                            onChange={(e) => updateSettlementField(key, Number(e.target.value))}
+                            onChange={(e) => updateSettlementField(key, e.target.value)}
                           />
                           <FieldError message={settlementFormErrors[key]} />
                         </div>

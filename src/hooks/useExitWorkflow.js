@@ -1,5 +1,6 @@
-import { useState, useRef } from "react";
-import { API_URL, apiFetch } from "@/lib/api";
+import { useState, useRef, useEffect } from "react";
+import { API_URL, apiFetch, getErrorMessage } from "@/lib/api";
+import { toast } from "sonner";
 
 // ---------------------------------------------------------------------------
 // Exit form default state helpers
@@ -19,22 +20,21 @@ export function calculateLwd(resignationDate, noticeDays) {
 }
 
 function buildDefaultExitForm() {
-  const resignationDate = new Date().toISOString().split("T")[0];
   return {
     employeeId: "",
-    type: "RESIGNATION",
-    resignationDate,
-    noticePeriodDays: DEFAULT_NOTICE_DAYS,
-    lastWorkingDay: calculateLwd(resignationDate, DEFAULT_NOTICE_DAYS),
+    type: "",
+    resignationDate: "",
+    noticePeriodDays: "",
+    lastWorkingDay: "",
     reason: "",
   };
 }
 
 const DEFAULT_SETTLEMENT = {
-  pendingSalary: 50000,
-  leaveEncashment: 15000,
-  bonus: 10000,
-  recoveries: 2000,
+  pendingSalary: "",
+  leaveEncashment: "",
+  bonus: "",
+  recoveries: "",
 };
 
 // ---------------------------------------------------------------------------
@@ -45,12 +45,13 @@ export function validateExitForm(form) {
   if (!form.employeeId) errs.employeeId = "Please select an employee.";
   if (!form.type) errs.type = "Please select exit type.";
   if (!form.resignationDate) errs.resignationDate = "Resignation/Termination date is required.";
-  if (form.noticePeriodDays == null || form.noticePeriodDays < 0) {
-    errs.noticePeriodDays = "Notice period days must be 0 or more.";
+  if (form.noticePeriodDays === "" || form.noticePeriodDays == null || Number(form.noticePeriodDays) < 0) {
+    errs.noticePeriodDays = "Notice period days is required (0 or more).";
   }
-  if (
+  if (!form.lastWorkingDay) {
+    errs.lastWorkingDay = "Last working day is required.";
+  } else if (
     form.resignationDate &&
-    form.lastWorkingDay &&
     new Date(form.lastWorkingDay) < new Date(form.resignationDate)
   ) {
     errs.lastWorkingDay = "Last working day cannot be before resignation/termination date.";
@@ -72,8 +73,8 @@ export function validateSettlementForm(settlement) {
     recoveries: "Recoveries",
   };
   for (const [key, label] of Object.entries(fields)) {
-    if (settlement[key] == null || settlement[key] < 0) {
-      errs[key] = `${label} must be 0 or more.`;
+    if (settlement[key] === "" || settlement[key] == null || Number(settlement[key]) < 0) {
+      errs[key] = `${label} is required (0 or more).`;
     }
   }
   return errs;
@@ -103,7 +104,10 @@ export function useExitWorkflow() {
 
   // Stable ref to track current selectedExit inside callbacks without stale closure
   const selectedExitRef = useRef(selectedExit);
-  selectedExitRef.current = selectedExit;
+  
+  useEffect(() => {
+    selectedExitRef.current = selectedExit;
+  }, [selectedExit]);
 
   // ---------------------------------------------------------------------------
   // Data fetching — plain async function; called by the page's useEffect on mount
@@ -210,6 +214,12 @@ export function useExitWorkflow() {
       exitForm.lastWorkingDay ||
       calculateLwd(exitForm.resignationDate, exitForm.noticePeriodDays);
 
+    const payload = {
+      ...exitForm,
+      noticePeriodDays: Number(exitForm.noticePeriodDays || 0),
+      lastWorkingDay: lwd,
+    };
+
     const url = editingExitId
       ? `${API_URL}/staff-hrms/exit/exits/${editingExitId}`
       : `${API_URL}/staff-hrms/exit/exits/initiate`;
@@ -219,16 +229,19 @@ export function useExitWorkflow() {
       const res = await apiFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...exitForm, lastWorkingDay: lwd }),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
+        toast.success(editingExitId ? "Exit process updated successfully" : "Exit process initiated successfully");
         resetExitForm();
         fetchData();
       } else {
-        console.error("Exit initiation failed:", await res.text());
+        const msg = await getErrorMessage(res, "Exit operation failed");
+        toast.error(msg);
       }
     } catch (err) {
       console.error("Exit initiation error:", err);
+      toast.error("An unexpected error occurred");
     }
   }
 
@@ -243,9 +256,14 @@ export function useExitWorkflow() {
         if (selectedExitRef.current?.id === deleteTarget.id) setSelectedExit(null);
         setDeleteTarget(null);
         fetchData();
+        toast.success("Exit process deleted successfully");
+      } else {
+        const msg = await getErrorMessage(res, "Delete failed");
+        toast.error(msg);
       }
     } catch (err) {
       console.error("Exit delete error:", err);
+      toast.error("An unexpected error occurred");
     } finally {
       setDeleting(false);
     }
@@ -260,9 +278,16 @@ export function useExitWorkflow() {
         // authenticated user's name retrieved from the session context.
         body: JSON.stringify({ status, clearedBy: "HR Manager" }),
       });
-      if (res.ok) fetchData();
+      if (res.ok) {
+        toast.success("Clearance status updated");
+        fetchData();
+      } else {
+        const msg = await getErrorMessage(res, "Clearance update failed");
+        toast.error(msg);
+      }
     } catch (err) {
       console.error("Clearance update error:", err);
+      toast.error("An unexpected error occurred");
     }
   }
 
@@ -280,9 +305,16 @@ export function useExitWorkflow() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ exitProcessId: selectedExit.id, ...settlement }),
       });
-      if (res.ok) fetchData();
+      if (res.ok) {
+        toast.success("Settlement processed successfully");
+        fetchData();
+      } else {
+        const msg = await getErrorMessage(res, "Settlement processing failed");
+        toast.error(msg);
+      }
     } catch (err) {
       console.error("Settlement processing error:", err);
+      toast.error("An unexpected error occurred");
     }
   }
 
@@ -291,9 +323,16 @@ export function useExitWorkflow() {
       const res = await apiFetch(`${API_URL}/staff-hrms/exit/exits/${id}/complete`, {
         method: "POST",
       });
-      if (res.ok) fetchData();
+      if (res.ok) {
+        toast.success("Exit process completed");
+        fetchData();
+      } else {
+        const msg = await getErrorMessage(res, "Complete exit failed");
+        toast.error(msg);
+      }
     } catch (err) {
       console.error("Complete exit error:", err);
+      toast.error("An unexpected error occurred");
     }
   }
 

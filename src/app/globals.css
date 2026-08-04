@@ -299,3 +299,53 @@
 .stat-card-red {
   border-left: 4px solid #EF4444;
 }
+
+/* Global Print Stylesheet for Letters & Reports */
+@media print {
+  @page {
+    size: A4 portrait !important;
+    margin: 1cm !important;
+  }
+
+  /* Hide ONLY sidebar elements and navigation headers, NOT the wrapper */
+  [data-slot="sidebar"],
+  [data-slot="sidebar-container"],
+  [data-slot="sidebar-gap"],
+  header,
+  nav,
+  aside,
+  footer,
+  button,
+  [role="tablist"],
+  [role="tab"],
+  .print\:hidden {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    visibility: hidden !important;
+  }
+
+  body,
+  html {
+    background: white !important;
+    color: black !important;
+    overflow: visible !important;
+    height: auto !important;
+    width: 100% !important;
+  }
+
+  main,
+  .flex-1,
+  .w-full,
+  .bg-muted\/20,
+  [data-slot="sidebar-wrapper"] {
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    display: block !important;
+  }
+}

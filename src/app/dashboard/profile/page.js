@@ -143,7 +143,7 @@ export default function ProfilePage() {
                 Update your password to keep your account secure.
               </CardDescription>
             </CardHeader>
-            <form onSubmit={handlePasswordChange}>
+            <form onSubmit={handlePasswordChange} noValidate>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="current">Current Password</Label>

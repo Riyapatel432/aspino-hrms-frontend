@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { useEffect, useState, useCallback } from "react";
+import { apiFetch, getErrorMessage } from "@/lib/api";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Input } from "@/components/ui/input";
@@ -50,6 +51,7 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     if (selectedEmp) {
+      /* eslint-disable-next-line react-hooks/set-state-in-effect */
       setSysAccess({
         erpLogin: selectedEmp.systemAccess?.erpLogin || false,
         email: selectedEmp.systemAccess?.email || false,
@@ -59,7 +61,7 @@ export default function OnboardingPage() {
     }
   }, [selectedEmp]);
 
-  const fetchEmployees = async (silent = false) => {
+  const fetchEmployees = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
       const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/employees?limit=1000`);
@@ -80,11 +82,12 @@ export default function OnboardingPage() {
     } finally {
       if (!silent) setLoading(false);
     }
-  };
+  }, [backendUrl]);
 
   useEffect(() => {
+    /* eslint-disable-next-line react-hooks/set-state-in-effect */
     fetchEmployees();
-  }, []);
+  }, [fetchEmployees]);
 
   const handleDeleteEmployee = async () => {
     if (!deleteTarget) return;
@@ -132,9 +135,14 @@ export default function OnboardingPage() {
       if (res.ok) {
         setInduc({ scheduledAt: "", trainer: "" });
         fetchEmployees(true);
+        toast.success("Induction scheduled successfully");
+      } else {
+        const msg = await getErrorMessage(res, "Failed to schedule induction");
+        toast.error(msg);
       }
     } catch (err) {
       console.error(err);
+      toast.error("An unexpected error occurred");
     }
   };
 
@@ -304,6 +312,7 @@ export default function OnboardingPage() {
             size="sm"
             onClick={() => {
               setSelectedEmp(row);
+              setActiveTab("documents");
               const detailElem = document.getElementById("onboarding-details-section");
               if (detailElem) detailElem.scrollIntoView({ behavior: "smooth" });
             }}
@@ -477,7 +486,7 @@ export default function OnboardingPage() {
                       <Laptop className="w-5 h-5 text-sky-500" />
                       System Access Creation
                     </h4>
-                    <form onSubmit={handleUpdateSystemAccess} className="space-y-4 max-w-md">
+                    <form onSubmit={handleUpdateSystemAccess} className="space-y-4 max-w-md" noValidate>
                       <div className="space-y-3 bg-slate-50 dark:bg-slate-800 p-4 border border-slate-100 dark:border-slate-800 rounded-2xl">
                         {[
                           { id: "erpLogin", label: "ERP Login Access" },
@@ -526,11 +535,12 @@ export default function OnboardingPage() {
                         )}
                       </div>
                     ) : (
-                      <form onSubmit={handleCreateInduction} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                      <form onSubmit={handleCreateInduction} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end" noValidate>
                         <div className="space-y-1">
                           <Label className="text-xs font-bold text-slate-650 dark:text-slate-300">Schedule Date</Label>
                           <DateTimePicker
                             date={induc.scheduledAt}
+                            disablePast={true}
                             setDate={(val) => setInduc({ ...induc, scheduledAt: val })}
                           />
                         </div>
@@ -540,7 +550,7 @@ export default function OnboardingPage() {
                             required
                             placeholder="Dr. Kumar"
                             value={induc.trainer}
-                            onChange={(e) => setInduc({ ...induc, trainer: e.target.value })}
+                            onChange={(e) => setInduc({ ...induc, trainer: e.target.value.replace(/\d/g, "") })}
                           />
                         </div>
                         <Button type="submit" className="bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl h-10">

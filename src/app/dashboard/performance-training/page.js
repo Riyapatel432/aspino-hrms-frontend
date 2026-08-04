@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getErrorMessage } from "@/lib/api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,10 +33,10 @@ export default function PerformanceTrainingPage() {
   const [loading, setLoading] = useState(true);
 
   // Forms state
-  const [newCycle, setNewCycle] = useState({ name: "Annual Appraisal Cycle FY26", startDate: "", endDate: "" });
-  const [newGoal, setNewGoal] = useState({ employeeId: "", cycleId: "", title: "", description: "", weightage: 50 });
-  const [newReview, setNewReview] = useState({ employeeId: "", cycleId: "", selfRating: 8, selfComments: "", managerRating: 8, managerComments: "", finalRating: 8, status: "COMPLETED" });
-  const [newTraining, setNewTraining] = useState({ id: null, employeeId: "", trainingName: "GMP Standard Operating Procedures", trainingType: "COMPLIANCE", completionDate: "", expiryDate: "" });
+  const [newCycle, setNewCycle] = useState({ name: "", startDate: "", endDate: "" });
+  const [newGoal, setNewGoal] = useState({ employeeId: "", cycleId: "", title: "", description: "", weightage: "" });
+  const [newReview, setNewReview] = useState({ employeeId: "", cycleId: "", selfRating: "", selfComments: "", managerRating: "", managerComments: "", finalRating: "", status: "" });
+  const [newTraining, setNewTraining] = useState({ id: null, employeeId: "", trainingName: "", trainingType: "", completionDate: "", expiryDate: "" });
   const [certificateData, setCertificateData] = useState(null);
 
   const [deleteTarget, setDeleteTarget] = useState(null); // { id, type, label }
@@ -110,15 +110,13 @@ export default function PerformanceTrainingPage() {
     const errs = {};
     if (!newReview.employeeId) errs.employeeId = "Please select an employee.";
     if (!newReview.cycleId) errs.cycleId = "Please select an appraisal cycle.";
-    if (newReview.selfRating !== undefined && newReview.selfRating !== null && (newReview.selfRating < 1 || newReview.selfRating > 10)) {
+    if (newReview.selfRating === "" || newReview.selfRating == null || Number(newReview.selfRating) < 1 || Number(newReview.selfRating) > 10) {
       errs.selfRating = "Self rating must be between 1 and 10.";
     }
-    if (newReview.managerRating !== undefined && newReview.managerRating !== null && (newReview.managerRating < 1 || newReview.managerRating > 10)) {
+    if (newReview.managerRating === "" || newReview.managerRating == null || Number(newReview.managerRating) < 1 || Number(newReview.managerRating) > 10) {
       errs.managerRating = "Manager rating must be between 1 and 10.";
     }
-    if (newReview.finalRating !== undefined && newReview.finalRating !== null && (newReview.finalRating < 1 || newReview.finalRating > 10)) {
-      errs.finalRating = "Final rating must be between 1 and 10.";
-    }
+    if (!newReview.status) errs.status = "Please select review status.";
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -147,12 +145,16 @@ export default function PerformanceTrainingPage() {
         body: JSON.stringify(newCycle),
       });
       if (res.ok) {
-        setNewCycle({ id: null, name: "Annual Appraisal Cycle FY26", startDate: "", endDate: "" });
+        setNewCycle({ id: null, name: "", startDate: "", endDate: "" });
         fetchData();
         toast.success(isUpdate ? "Cycle updated" : "Cycle created");
+      } else {
+        const msg = await getErrorMessage(res, isUpdate ? "Failed to update cycle" : "Failed to create cycle");
+        toast.error(msg);
       }
     } catch (err) {
       console.error(err);
+      toast.error("An unexpected error occurred");
     }
   };
 
@@ -182,12 +184,16 @@ export default function PerformanceTrainingPage() {
         body: JSON.stringify(newGoal),
       });
       if (res.ok) {
-        setNewGoal({ id: null, employeeId: "", cycleId: "", title: "", description: "", weightage: 50 });
+        setNewGoal({ id: null, employeeId: "", cycleId: "", title: "", description: "", weightage: "" });
         fetchData();
         toast.success(isUpdate ? "Goal updated" : "Goal created");
+      } else {
+        const msg = await getErrorMessage(res, isUpdate ? "Failed to update goal" : "Failed to create goal");
+        toast.error(msg);
       }
     } catch (err) {
       console.error(err);
+      toast.error("An unexpected error occurred");
     }
   };
 
@@ -217,12 +223,16 @@ export default function PerformanceTrainingPage() {
         body: JSON.stringify(newReview),
       });
       if (res.ok) {
-        setNewReview({ id: null, employeeId: "", cycleId: "", selfRating: 8, selfComments: "", managerRating: 8, managerComments: "", finalRating: 8, status: "COMPLETED" });
+        setNewReview({ id: null, employeeId: "", cycleId: "", selfRating: "", selfComments: "", managerRating: "", managerComments: "", finalRating: "", status: "" });
         fetchData();
         toast.success(isUpdate ? "Review updated" : "Review created");
+      } else {
+        const msg = await getErrorMessage(res, isUpdate ? "Failed to update review" : "Failed to create review");
+        toast.error(msg);
       }
     } catch (err) {
       console.error(err);
+      toast.error("An unexpected error occurred");
     }
   };
 
@@ -252,12 +262,16 @@ export default function PerformanceTrainingPage() {
         body: JSON.stringify(newTraining),
       });
       if (res.ok) {
-        setNewTraining({ id: null, employeeId: "", trainingName: "GMP Standard Operating Procedures", trainingType: "COMPLIANCE", completionDate: "", expiryDate: "" });
+        setNewTraining({ id: null, employeeId: "", trainingName: "", trainingType: "", completionDate: "", expiryDate: "" });
         fetchData();
         toast.success(isUpdate ? "Training updated" : "Training created");
+      } else {
+        const msg = await getErrorMessage(res, isUpdate ? "Failed to update training" : "Failed to create training");
+        toast.error(msg);
       }
     } catch (err) {
       console.error(err);
+      toast.error("An unexpected error occurred");
     }
   };
 
@@ -607,7 +621,7 @@ export default function PerformanceTrainingPage() {
                     <Plus className="w-5 h-5 text-sky-500" />
                     Create Appraisal Cycle
                   </h3>
-                  <form onSubmit={handleSubmitCycle} className="space-y-3">
+                  <form onSubmit={handleSubmitCycle} className="space-y-3" noValidate>
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Cycle Name</Label>
                       <Input
@@ -664,7 +678,7 @@ export default function PerformanceTrainingPage() {
                     <Plus className="w-5 h-5 text-sky-500" />
                     Set Employee Goal
                   </h3>
-                  <form onSubmit={handleSubmitGoal} className="space-y-3">
+                  <form onSubmit={handleSubmitGoal} className="space-y-3" noValidate>
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Employee</Label>
                       <Select value={newGoal.employeeId} onValueChange={(val) => {
@@ -730,7 +744,7 @@ export default function PerformanceTrainingPage() {
                         type="number"
                         value={newGoal.weightage}
                         onChange={(e) => {
-                          setNewGoal({ ...newGoal, weightage: Number(e.target.value) });
+                          setNewGoal({ ...newGoal, weightage: e.target.value });
                           if (formErrors.weightage) setFormErrors({ ...formErrors, weightage: null });
                         }}
                       />
@@ -763,7 +777,7 @@ export default function PerformanceTrainingPage() {
                     <Plus className="w-5 h-5 text-sky-500" />
                     Performance Review
                   </h3>
-                  <form onSubmit={handleSubmitReview} className="space-y-3">
+                  <form onSubmit={handleSubmitReview} className="space-y-3" noValidate>
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Employee</Label>
                       <Select value={newReview.employeeId} onValueChange={(val) => {
@@ -805,7 +819,7 @@ export default function PerformanceTrainingPage() {
                           type="number"
                           value={newReview.selfRating}
                           onChange={(e) => {
-                            setNewReview({ ...newReview, selfRating: Number(e.target.value) });
+                            setNewReview({ ...newReview, selfRating: e.target.value });
                             if (formErrors.selfRating) setFormErrors({ ...formErrors, selfRating: null });
                           }}
                         />
@@ -817,7 +831,7 @@ export default function PerformanceTrainingPage() {
                           type="number"
                           value={newReview.managerRating}
                           onChange={(e) => {
-                            setNewReview({ ...newReview, managerRating: Number(e.target.value) });
+                            setNewReview({ ...newReview, managerRating: e.target.value });
                             if (formErrors.managerRating) setFormErrors({ ...formErrors, managerRating: null });
                           }}
                         />
@@ -826,7 +840,10 @@ export default function PerformanceTrainingPage() {
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Status</Label>
-                      <Select value={newReview.status} onValueChange={(val) => setNewReview({ ...newReview, status: val })}>
+                      <Select value={newReview.status} onValueChange={(val) => {
+                        setNewReview({ ...newReview, status: val });
+                        if (formErrors.status) setFormErrors({ ...formErrors, status: null });
+                      }}>
                         <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
                           <SelectValue placeholder="Select..." />
                         </SelectTrigger>
@@ -835,6 +852,7 @@ export default function PerformanceTrainingPage() {
                           <SelectItem value="COMPLETED">COMPLETED</SelectItem>
                         </SelectContent>
                       </Select>
+                      {formErrors.status && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.status}</span>}
                     </div>
                     <div className="flex gap-2 mt-2">
                       <Button type="submit" className="flex-1 bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl">
@@ -894,7 +912,7 @@ export default function PerformanceTrainingPage() {
                   <Plus className="w-5 h-5 text-sky-500" />
                   Log Compliance Training
                 </h3>
-                <form onSubmit={handleSubmitTraining} className="space-y-3">
+                <form onSubmit={handleSubmitTraining} className="space-y-3" noValidate>
                   <div className="space-y-1">
                     <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Employee</Label>
                     <Select value={newTraining.employeeId} onValueChange={(val) => {

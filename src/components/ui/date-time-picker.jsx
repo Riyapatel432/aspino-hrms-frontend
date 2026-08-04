@@ -15,7 +15,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 
-export function DateTimePicker({ date, setDate, type = "datetime", placeholder = "Select date" }) {
+export function DateTimePicker({ date, setDate, type = "datetime", placeholder = "Select date", minDate, disablePast = false, disabled }) {
   const [open, setOpen] = React.useState(false)
 
   // parse existing ISO date string if provided
@@ -68,6 +68,14 @@ export function DateTimePicker({ date, setDate, type = "datetime", placeholder =
     }
   };
 
+  const calendarDisabled = disabled
+    ? disabled
+    : minDate
+    ? { before: new Date(minDate) }
+    : disablePast
+    ? { before: new Date(new Date().setHours(0, 0, 0, 0)) }
+    : undefined;
+
   return (
     <div className={cn("flex flex-row items-center gap-2", type === "datetime" ? "w-full" : "w-auto")}>
       {(type === "date" || type === "datetime") && (
@@ -90,7 +98,8 @@ export function DateTimePicker({ date, setDate, type = "datetime", placeholder =
                 mode="single"
                 selected={parsedDate}
                 captionLayout="dropdown"
-                defaultMonth={parsedDate}
+                defaultMonth={parsedDate || (disablePast ? new Date() : undefined)}
+                disabled={calendarDisabled}
                 onSelect={(d) => {
                   updateParent(d, timeStr);
                   setOpen(false);

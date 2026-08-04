@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getErrorMessage } from "@/lib/api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -88,28 +88,28 @@ export default function AttendanceLeavePage() {
   }, [dispatch]);
 
   // Forms states
-  const [newShift, setNewShift] = useState({ name: "General Shift", startTime: "09:00", endTime: "17:30" });
+  const [newShift, setNewShift] = useState({ name: "", startTime: "", endTime: "" });
   const [newRoster, setNewRoster] = useState({ employeeId: "", shiftId: "", date: "" });
   const [newAtt, setNewAtt] = useState({
     employeeId: "",
     shiftId: "",
-    date: new Date().toISOString().split('T')[0],
-    checkIn: "09:00",
-    checkOut: "17:30",
-    otHours: 0,
+    date: "",
+    checkIn: "",
+    checkOut: "",
+    otHours: "",
     isHalfDay: false,
-    lateHours: 0,
-    earlyGoingHours: 0,
-    presentDay: 1.0,
+    lateHours: "",
+    earlyGoingHours: "",
+    presentDay: "",
     isSundayPresent: false,
     isFullNightPresent: false,
     isHolidayPresent: false,
     captureMethod: "BIOMETRIC",
-    status: "PRESENT",
+    status: "",
   });
-  const [newLeave, setNewLeave] = useState({ employeeId: "", leaveType: "Casual", startDate: "", endDate: "", reason: "" });
+  const [newLeave, setNewLeave] = useState({ employeeId: "", leaveType: "", startDate: "", endDate: "", reason: "" });
   const [newHoliday, setNewHoliday] = useState({ name: "", date: "" });
-  const [newLeaveMaster, setNewLeaveMaster] = useState({ id: null, department: "", fiscalYear: "FY26", casualLeave: 12, sickLeave: 10, earnedLeave: 15, otherLeave: 0, effectiveFrom: new Date().toISOString().split('T')[0] });
+  const [newLeaveMaster, setNewLeaveMaster] = useState({ id: null, department: "", fiscalYear: "", casualLeave: "", sickLeave: "", earnedLeave: "", otherLeave: "", effectiveFrom: "" });
 
   const [deleteTarget, setDeleteTarget] = useState(null); // { id, type, label, name }
   const [deleting, setDeleting] = useState(false);
@@ -118,12 +118,7 @@ export default function AttendanceLeavePage() {
 
   const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
-  useEffect(() => {
-    if (employees.length > 0 && !newLeave.employeeId) {
-      setNewLeave(prev => ({ ...prev, employeeId: employees[0].id }));
-      if (balanceEmpId === "ALL") setBalanceEmpId(employees[0].id);
-    }
-  }, [employees]);
+
 
   // --- Validation Helpers ---
   const validateShift = () => {
@@ -151,6 +146,9 @@ export default function AttendanceLeavePage() {
     if (!newAtt.date) errs.date = "Attendance date is required.";
     if (!newAtt.checkIn) errs.checkIn = "In Time is required.";
     if (!newAtt.checkOut) errs.checkOut = "Out Time is required.";
+    if (newAtt.presentDay === "" || newAtt.presentDay == null || Number(newAtt.presentDay) < 0 || Number(newAtt.presentDay) > 1.0) {
+      errs.presentDay = "Present day must be 1.0 or 0.5.";
+    }
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -182,9 +180,9 @@ export default function AttendanceLeavePage() {
     const errs = {};
     if (!newLeaveMaster.department) errs.dept = "Department is required.";
     if (!newLeaveMaster.fiscalYear?.trim()) errs.fiscalYear = "Fiscal year is required (e.g. FY26).";
-    if (newLeaveMaster.casualLeave === undefined || newLeaveMaster.casualLeave === null || newLeaveMaster.casualLeave < 0 || newLeaveMaster.casualLeave > 365) errs.casualLeave = "Casual leave days must be between 0 and 365.";
-    if (newLeaveMaster.sickLeave === undefined || newLeaveMaster.sickLeave === null || newLeaveMaster.sickLeave < 0 || newLeaveMaster.sickLeave > 365) errs.sickLeave = "Sick leave days must be between 0 and 365.";
-    if (newLeaveMaster.earnedLeave === undefined || newLeaveMaster.earnedLeave === null || newLeaveMaster.earnedLeave < 0 || newLeaveMaster.earnedLeave > 365) errs.earnedLeave = "Earned leave days must be between 0 and 365.";
+    if (newLeaveMaster.casualLeave === "" || newLeaveMaster.casualLeave === undefined || newLeaveMaster.casualLeave === null || Number(newLeaveMaster.casualLeave) < 0 || Number(newLeaveMaster.casualLeave) > 365) errs.casualLeave = "Casual leave is required (0-365).";
+    if (newLeaveMaster.sickLeave === "" || newLeaveMaster.sickLeave === undefined || newLeaveMaster.sickLeave === null || Number(newLeaveMaster.sickLeave) < 0 || Number(newLeaveMaster.sickLeave) > 365) errs.sickLeave = "Sick leave is required (0-365).";
+    if (newLeaveMaster.earnedLeave === "" || newLeaveMaster.earnedLeave === undefined || newLeaveMaster.earnedLeave === null || Number(newLeaveMaster.earnedLeave) < 0 || Number(newLeaveMaster.earnedLeave) > 365) errs.earnedLeave = "Earned leave is required (0-365).";
     if (!newLeaveMaster.effectiveFrom) errs.effectiveFrom = "Effective from date is required.";
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
@@ -195,12 +193,12 @@ export default function AttendanceLeavePage() {
     if (!validateLeaveMaster()) return;
     try {
       await dispatch(createLeaveMaster(newLeaveMaster)).unwrap();
-      setNewLeaveMaster({ department: "", fiscalYear: "FY26", casualLeave: 12, sickLeave: 10, earnedLeave: 15, otherLeave: 0, effectiveFrom: new Date().toISOString().split('T')[0] });
+      setNewLeaveMaster({ department: "", fiscalYear: "", casualLeave: "", sickLeave: "", earnedLeave: "", otherLeave: "", effectiveFrom: "" });
       dispatch(fetchLeaveMasters());
       toast.success("Leave Master defined successfully");
     } catch (err) {
       console.error(err);
-      toast.error("Failed to create leave master");
+      toast.error(typeof err === "string" ? err : "Failed to create leave master");
     }
   };
 
@@ -226,19 +224,20 @@ export default function AttendanceLeavePage() {
         });
         if (res.ok) {
           dispatch(fetchShifts());
-          setNewShift({ name: "General Shift", startTime: "09:00", endTime: "17:30" });
+          setNewShift({ name: "", startTime: "", endTime: "" });
           toast.success("Shift updated successfully");
         } else {
-          toast.error("Failed to update shift");
+          const msg = await getErrorMessage(res, "Failed to update shift");
+          toast.error(msg);
         }
       } else {
         await dispatch(createShift(newShift)).unwrap();
-        setNewShift({ name: "General Shift", startTime: "09:00", endTime: "17:30" });
+        setNewShift({ name: "", startTime: "", endTime: "" });
         toast.success("Shift created successfully");
       }
     } catch (err) {
       console.error(err);
-      toast.error(newShift.id ? "Failed to update shift" : "Failed to create shift");
+      toast.error(typeof err === "string" ? err : (newShift.id ? "Failed to update shift" : "Failed to create shift"));
     }
   };
 
@@ -257,7 +256,8 @@ export default function AttendanceLeavePage() {
           setNewRoster({ employeeId: "", shiftId: "", date: "" });
           toast.success("Roster updated successfully");
         } else {
-          toast.error("Failed to update roster");
+          const msg = await getErrorMessage(res, "Failed to update roster");
+          toast.error(msg);
         }
       } else {
         await dispatch(createRoster(newRoster)).unwrap();
@@ -266,7 +266,7 @@ export default function AttendanceLeavePage() {
       }
     } catch (err) {
       console.error(err);
-      toast.error(newRoster.id ? "Failed to update roster" : "Failed to create roster");
+      toast.error(typeof err === "string" ? err : (newRoster.id ? "Failed to update roster" : "Failed to create roster"));
     }
   };
 
@@ -325,19 +325,19 @@ export default function AttendanceLeavePage() {
       setNewAtt({
         employeeId: "",
         shiftId: "",
-        date: new Date().toISOString().split('T')[0],
-        checkIn: "09:00",
-        checkOut: "17:30",
-        otHours: 0,
+        date: "",
+        checkIn: "",
+        checkOut: "",
+        otHours: "",
         isHalfDay: false,
-        lateHours: 0,
-        earlyGoingHours: 0,
-        presentDay: 1.0,
+        lateHours: "",
+        earlyGoingHours: "",
+        presentDay: "",
         isSundayPresent: false,
         isFullNightPresent: false,
         isHolidayPresent: false,
         captureMethod: "BIOMETRIC",
-        status: "PRESENT",
+        status: "",
       });
     } catch (err) {
       console.error(err);
@@ -363,19 +363,20 @@ export default function AttendanceLeavePage() {
         });
         if (res.ok) {
           dispatch(fetchLeaves());
-          setNewLeave({ employeeId: "", leaveType: "Casual", startDate: "", endDate: "", reason: "" });
+          setNewLeave({ employeeId: "", leaveType: "", startDate: "", endDate: "", reason: "" });
           toast.success("Leave updated successfully");
         } else {
-          toast.error("Failed to update leave");
+          const msg = await getErrorMessage(res, "Failed to update leave");
+          toast.error(msg);
         }
       } else {
         await dispatch(createLeave(newLeave)).unwrap();
-        setNewLeave({ employeeId: "", leaveType: "Casual", startDate: "", endDate: "", reason: "" });
+        setNewLeave({ employeeId: "", leaveType: "", startDate: "", endDate: "", reason: "" });
         toast.success("Leave applied successfully");
       }
     } catch (err) {
       console.error(err);
-      toast.error(newLeave.id ? "Failed to update leave" : "Failed to apply leave");
+      toast.error(typeof err === "string" ? err : (newLeave.id ? "Failed to update leave" : "Failed to apply leave"));
     }
   };
 
@@ -414,7 +415,8 @@ export default function AttendanceLeavePage() {
           setNewHoliday({ name: "", date: "" });
           toast.success("Holiday updated successfully");
         } else {
-          toast.error("Failed to update holiday");
+          const msg = await getErrorMessage(res, "Failed to update holiday");
+          toast.error(msg);
         }
       } else {
         await dispatch(createHoliday(newHoliday)).unwrap();
@@ -423,7 +425,7 @@ export default function AttendanceLeavePage() {
       }
     } catch (err) {
       console.error(err);
-      toast.error(newHoliday.id ? "Failed to update holiday" : "Failed to create holiday");
+      toast.error(typeof err === "string" ? err : (newHoliday.id ? "Failed to update holiday" : "Failed to create holiday"));
     }
   };
 
@@ -843,7 +845,7 @@ export default function AttendanceLeavePage() {
       key: "reason",
       label: "Reason",
       render: (row) => (
-        <span className="text-xs text-slate-500 italic max-w-[200px] block truncate">"{row.reason}"</span>
+        <span className="text-xs text-slate-500 italic max-w-[200px] block truncate">&quot;{row.reason}&quot;</span>
       ),
     },
     {
@@ -1052,7 +1054,7 @@ export default function AttendanceLeavePage() {
                   <Plus className="w-5 h-5 text-sky-500" />
                   Capture Attendance
                 </h3>
-                <form onSubmit={handleSubmitAttendance} className="space-y-3">
+                <form onSubmit={handleSubmitAttendance} className="space-y-3" noValidate>
                   <div className="space-y-1">
                     <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Employee *</Label>
                     <Select value={newAtt.employeeId} onValueChange={(val) => {
@@ -1135,8 +1137,12 @@ export default function AttendanceLeavePage() {
                         min="0"
                         className="h-8 text-xs rounded-lg"
                         value={newAtt.otHours}
-                        onChange={(e) => setNewAtt({ ...newAtt, otHours: Number(e.target.value) })}
+                        onChange={(e) => {
+                          setNewAtt({ ...newAtt, otHours: e.target.value });
+                          if (formErrors.otHours) setFormErrors({ ...formErrors, otHours: null });
+                        }}
                       />
+                      {formErrors.otHours && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.otHours}</span>}
                     </div>
                   </div>
 
@@ -1150,8 +1156,12 @@ export default function AttendanceLeavePage() {
                         min="0"
                         className="h-9 text-xs rounded-xl"
                         value={newAtt.lateHours}
-                        onChange={(e) => setNewAtt({ ...newAtt, lateHours: Number(e.target.value) })}
+                        onChange={(e) => {
+                          setNewAtt({ ...newAtt, lateHours: e.target.value });
+                          if (formErrors.lateHours) setFormErrors({ ...formErrors, lateHours: null });
+                        }}
                       />
+                      {formErrors.lateHours && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.lateHours}</span>}
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Early Going</Label>
@@ -1161,8 +1171,12 @@ export default function AttendanceLeavePage() {
                         min="0"
                         className="h-9 text-xs rounded-xl"
                         value={newAtt.earlyGoingHours}
-                        onChange={(e) => setNewAtt({ ...newAtt, earlyGoingHours: Number(e.target.value) })}
+                        onChange={(e) => {
+                          setNewAtt({ ...newAtt, earlyGoingHours: e.target.value });
+                          if (formErrors.earlyGoingHours) setFormErrors({ ...formErrors, earlyGoingHours: null });
+                        }}
                       />
+                      {formErrors.earlyGoingHours && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.earlyGoingHours}</span>}
                     </div>
                   </div>
 
@@ -1176,8 +1190,12 @@ export default function AttendanceLeavePage() {
                         max="1"
                         className="h-9 text-xs rounded-xl"
                         value={newAtt.presentDay}
-                        onChange={(e) => setNewAtt({ ...newAtt, presentDay: Number(e.target.value) })}
+                        onChange={(e) => {
+                          setNewAtt({ ...newAtt, presentDay: e.target.value });
+                          if (formErrors.presentDay) setFormErrors({ ...formErrors, presentDay: null });
+                        }}
                       />
+                      {formErrors.presentDay && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.presentDay}</span>}
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Capture Method</Label>
@@ -1264,7 +1282,7 @@ export default function AttendanceLeavePage() {
                     <Plus className="w-5 h-5 text-sky-500" />
                     Define Shift Master
                   </h3>
-                  <form onSubmit={handleSubmitShift} className="space-y-3">
+                  <form onSubmit={handleSubmitShift} className="space-y-3" noValidate>
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Shift Name</Label>
                       <Input
@@ -1306,7 +1324,7 @@ export default function AttendanceLeavePage() {
                     <Plus className="w-5 h-5 text-sky-500" />
                     Assign Shift Roster
                   </h3>
-                  <form onSubmit={handleSubmitRoster} className="space-y-3">
+                  <form onSubmit={handleSubmitRoster} className="space-y-3" noValidate>
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Employee</Label>
                       <Select value={newRoster.employeeId} onValueChange={(val) => {
@@ -1464,7 +1482,7 @@ export default function AttendanceLeavePage() {
                   <Plus className="w-5 h-5 text-sky-500" />
                   Apply Leave (Employee behalf)
                 </h3>
-                <form onSubmit={handleSubmitLeave} className="space-y-3">
+                <form onSubmit={handleSubmitLeave} className="space-y-3" noValidate>
                   <div className="space-y-1">
                     <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Employee</Label>
                     <Select value={newLeave.employeeId} onValueChange={(val) => {
@@ -1571,7 +1589,7 @@ export default function AttendanceLeavePage() {
                       <Plus className="w-5 h-5 text-sky-500" />
                       Define Leave Master
                     </h3>
-                    <form onSubmit={handleSubmitLeaveMaster} className="space-y-3">
+                    <form onSubmit={handleSubmitLeaveMaster} className="space-y-3" noValidate>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
                           <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Department</Label>
@@ -1677,7 +1695,7 @@ export default function AttendanceLeavePage() {
                   <Plus className="w-5 h-5 text-sky-500" />
                   Configure Holiday
                 </h3>
-                <form onSubmit={handleSubmitHoliday} className="space-y-3">
+                <form onSubmit={handleSubmitHoliday} className="space-y-3" noValidate>
                   <div className="space-y-1">
                     <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Holiday Name</Label>
                     <Input

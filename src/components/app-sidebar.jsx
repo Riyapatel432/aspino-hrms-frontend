@@ -97,6 +97,11 @@ const menuItems = [
         href: "/dashboard/performance-training",
         icon: Activity,
       },
+      {
+        title: "Activity Logs",
+        href: "/dashboard/activity-logs",
+        icon: FileText,
+      },
     ],
   },
 
@@ -106,7 +111,7 @@ export function AppSidebar() {
   const pathname = usePathname();
 
   return (
-    <Sidebar collapsible="icon" className="border-r">
+    <Sidebar collapsible="icon" className="border-r print:hidden">
      <SidebarHeader className="border-b px-3 py-3 group-data-[collapsible=icon]:px-1 group-data-[collapsible=icon]:py-3">
   <Link
     href={`/dashboard`}

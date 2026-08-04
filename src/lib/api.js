@@ -21,8 +21,35 @@ export async function apiFetch(url, options = {}) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  return fetch(normalizedUrl, {
-    ...options,
-    headers,
-  });
+  try {
+    return await fetch(normalizedUrl, {
+      ...options,
+      headers,
+    });
+  } catch (error) {
+    if (error.name === "TypeError" && (error.message === "Failed to fetch" || error.message.includes("fetch"))) {
+      throw new Error(`Unable to connect to backend server (${API_URL}). Please ensure the NestJS backend is running.`);
+    }
+    throw error;
+  }
+}
+
+export async function getErrorMessage(res, defaultMsg = "An error occurred") {
+  try {
+    const clone = res.clone();
+    const data = await clone.json();
+    if (data && data.message) {
+      if (Array.isArray(data.message)) {
+        return data.message.join(", ");
+      }
+      return data.message;
+    }
+  } catch (e) {
+    try {
+      const clone = res.clone();
+      const text = await clone.text();
+      if (text) return text;
+    } catch (e2) {}
+  }
+  return defaultMsg;
 }

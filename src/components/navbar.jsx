@@ -57,7 +57,7 @@ export function Navbar({ user: initialUser = {} }) {
     .slice(0, 2);
 
   return (
-    <header className="sticky top-0 z-40 glass border-b">
+    <header className="sticky top-0 z-40 glass border-b print:hidden">
       <div className="flex h-14 items-center gap-3 px-4">
         {/* Sidebar Trigger */}
         <SidebarTrigger className="-ml-1" />

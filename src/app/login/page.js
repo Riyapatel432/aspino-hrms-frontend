@@ -26,8 +26,8 @@ import {
 
 export default function HRLoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("hr@aspino.com");
-  const [password, setPassword] = useState("hr1234");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [selectedRole, setSelectedRole] = useState("hr");
@@ -35,7 +35,7 @@ export default function HRLoginPage() {
 
   // Forgot Password Modal State
   const [showForgotModal, setShowForgotModal] = useState(false);
-  const [forgotEmail, setForgotEmail] = useState("hr@aspino.com");
+  const [forgotEmail, setForgotEmail] = useState("");
   const [forgotNewPassword, setForgotNewPassword] = useState("");
   const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
   const [forgotLoading, setForgotLoading] = useState(false);
@@ -54,7 +54,7 @@ export default function HRLoginPage() {
       label: "HR Manager",
       icon: ShieldCheck,
       demoEmail: "hr@aspino.com",
-      demoPass: "hr1234",
+      demoPass: "Hr@123",
     },
     {
       id: "employee",
@@ -67,8 +67,6 @@ export default function HRLoginPage() {
 
   const handleRoleSelect = (role) => {
     setSelectedRole(role.id);
-    setEmail(role.demoEmail);
-    setPassword(role.demoPass);
     setEmailError("");
     setPasswordError("");
     setApiError("");
@@ -162,7 +160,11 @@ export default function HRLoginPage() {
         router.push("/dashboard");
       }, 800);
     } catch (err) {
-      setApiError(err.message || "Unable to connect to the backend server.");
+      if (err.name === "TypeError" && (err.message === "Failed to fetch" || err.message.includes("fetch"))) {
+        setApiError("Unable to connect to backend server at http://localhost:5000. Please ensure the backend server is running.");
+      } else {
+        setApiError(err.message || "Unable to connect to the backend server.");
+      }
     } finally {
       setLoading(false);
     }
@@ -221,7 +223,11 @@ export default function HRLoginPage() {
         setForgotConfirmPassword("");
       }, 1500);
     } catch (err) {
-      setForgotError(err.message || "An error occurred during password reset.");
+      if (err.name === "TypeError" && (err.message === "Failed to fetch" || err.message.includes("fetch"))) {
+        setForgotError("Unable to connect to backend server at http://localhost:5000.");
+      } else {
+        setForgotError(err.message || "An error occurred during password reset.");
+      }
     } finally {
       setForgotLoading(false);
     }
@@ -350,7 +356,7 @@ export default function HRLoginPage() {
             )}
 
             {/* Form */}
-            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+            <form onSubmit={handleSubmit} className="space-y-4" noValidate autoComplete="off">
               {/* Email Address */}
               <div className="space-y-1.5">
                 <Label htmlFor="email" className="text-xs sm:text-sm font-bold text-slate-700">
@@ -360,13 +366,15 @@ export default function HRLoginPage() {
                   <Mail className="absolute left-3.5 h-4 w-4 text-slate-400 pointer-events-none" />
                   <Input
                     id="email"
+                    name="email"
                     type="email"
+                    autoComplete="off"
                     value={email}
                     onChange={(e) => {
                       setEmail(e.target.value);
                       if (emailError) setEmailError("");
                     }}
-                    placeholder="hr@aspino.com"
+                    placeholder="Enter email address"
                     className={`pl-10 h-11 rounded-xl bg-slate-50/70 border-slate-200 text-slate-800 placeholder:text-slate-400 text-sm focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 transition-all font-medium ${
                       emailError ? "border-red-400 focus:border-red-500 focus:ring-red-500/20" : ""
                     }`}
@@ -386,13 +394,15 @@ export default function HRLoginPage() {
                   <Lock className="absolute left-3.5 h-4 w-4 text-slate-400 pointer-events-none" />
                   <Input
                     id="password"
+                    name="password"
                     type={showPassword ? "text" : "password"}
+                    autoComplete="new-password"
                     value={password}
                     onChange={(e) => {
                       setPassword(e.target.value);
                       if (passwordError) setPasswordError("");
                     }}
-                    placeholder="••••••••"
+                    placeholder="Enter password"
                     className={`pl-10 pr-10 h-11 rounded-xl bg-slate-50/70 border-slate-200 text-slate-800 placeholder:text-slate-400 text-sm focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 transition-all font-medium ${
                       passwordError ? "border-red-400 focus:border-red-500 focus:ring-red-500/20" : ""
                     }`}
@@ -417,7 +427,7 @@ export default function HRLoginPage() {
               </div>
 
               {/* Remember Me & Forgot Password */}
-              <div className="flex items-center justify-between pt-1">
+              {/* <div className="flex items-center justify-between pt-1">
                 <div className="flex items-center gap-2">
                   <Checkbox
                     id="rememberMe"
@@ -440,7 +450,7 @@ export default function HRLoginPage() {
                 >
                   Forgot Password?
                 </button>
-              </div>
+              </div> */}
 
               {/* Submit Button */}
               <Button
@@ -531,16 +541,18 @@ export default function HRLoginPage() {
               </div>
             )}
 
-            <form onSubmit={handleForgotSubmit} className="space-y-3.5">
+            <form onSubmit={handleForgotSubmit} className="space-y-3.5" noValidate autoComplete="off">
               <div className="space-y-1">
                 <Label htmlFor="forgotEmail" className="text-xs font-bold text-slate-700">Email Address</Label>
                 <Input
                   id="forgotEmail"
+                  name="forgotEmail"
                   type="email"
+                  autoComplete="off"
                   value={forgotEmail}
                   onChange={(e) => setForgotEmail(e.target.value)}
-                  placeholder="hr@aspino.com"
-                  className="h-10 text-sm"
+                  placeholder="Enter email address"
+                  className="h-10 text-sm" 
                   required
                 />
               </div>
