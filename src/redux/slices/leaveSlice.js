@@ -17,9 +17,18 @@ async function getErrorMsg(res, defaultMsg) {
 }
 
 // Leaves
-export const fetchLeaves = createAsyncThunk("leave/fetchLeaves", async (_, { rejectWithValue }) => {
+export const fetchLeaves = createAsyncThunk("leave/fetchLeaves", async (params = {}, { rejectWithValue }) => {
   try {
-    const res = await apiFetch(`${backendUrl}/staff-hrms/leave/leaves`);
+    const query = new URLSearchParams();
+    if (params.page) query.append("page", params.page);
+    if (params.limit) query.append("limit", params.limit);
+    if (params.search) query.append("search", params.search);
+    if (params.sortBy) query.append("sortBy", params.sortBy);
+    if (params.sortOrder) query.append("sortOrder", params.sortOrder);
+    if (params.status) query.append("status", params.status);
+    if (params.leaveType) query.append("leaveType", params.leaveType);
+
+    const res = await apiFetch(`${backendUrl}/staff-hrms/leave/leaves?${query.toString()}`);
     if (!res.ok) throw new Error("Failed to fetch leaves");
     return await res.json();
   } catch (err) {
@@ -66,12 +75,21 @@ export const deleteLeave = createAsyncThunk("leave/deleteLeave", async (id, { re
 });
 
 // Leave Master
-export const fetchLeaveMasters = createAsyncThunk("leave/fetchLeaveMasters", async (_, { rejectWithValue }) => {
+export const fetchLeaveMasters = createAsyncThunk("leave/fetchLeaveMasters", async (params = {}, { rejectWithValue }) => {
   try {
-    const res = await apiFetch(`${backendUrl}/staff-hrms/leave/leave-master`);
+    const query = new URLSearchParams();
+    if (params.page) query.append("page", params.page);
+    if (params.limit) query.append("limit", params.limit);
+    if (params.search) query.append("search", params.search);
+    if (params.sortBy) query.append("sortBy", params.sortBy);
+    if (params.sortOrder) query.append("sortOrder", params.sortOrder);
+    if (params.department) query.append("department", params.department);
+    if (params.fiscalYear) query.append("fiscalYear", params.fiscalYear);
+
+    const res = await apiFetch(`${backendUrl}/staff-hrms/leave/leave-master?${query.toString()}`);
     if (!res.ok) throw new Error("Failed to fetch leave masters");
     const data = await res.json();
-    return Array.isArray(data) ? data : (data?.data || []);
+    return data;
   } catch (err) {
     return rejectWithValue(err.message);
   }
@@ -102,9 +120,16 @@ export const deleteLeaveMaster = createAsyncThunk("leave/deleteLeaveMaster", asy
 });
 
 // Holidays
-export const fetchHolidays = createAsyncThunk("leave/fetchHolidays", async (_, { rejectWithValue }) => {
+export const fetchHolidays = createAsyncThunk("leave/fetchHolidays", async (params = {}, { rejectWithValue }) => {
   try {
-    const res = await apiFetch(`${backendUrl}/staff-hrms/leave/holidays`);
+    const query = new URLSearchParams();
+    if (params.page) query.append("page", params.page);
+    if (params.limit) query.append("limit", params.limit);
+    if (params.search) query.append("search", params.search);
+    if (params.sortBy) query.append("sortBy", params.sortBy);
+    if (params.sortOrder) query.append("sortOrder", params.sortOrder);
+
+    const res = await apiFetch(`${backendUrl}/staff-hrms/leave/holidays?${query.toString()}`);
     if (!res.ok) throw new Error("Failed to fetch holidays");
     return await res.json();
   } catch (err) {
@@ -140,8 +165,11 @@ const leaveSlice = createSlice({
   name: "leave",
   initialState: {
     leaves: [],
+    totalLeaves: 0,
     leaveMasters: [],
+    totalLeaveMasters: 0,
     holidays: [],
+    totalHolidays: 0,
     loading: false,
     error: null,
   },
@@ -150,26 +178,45 @@ const leaveSlice = createSlice({
     builder
       // Leaves
       .addCase(fetchLeaves.pending, (state) => { state.loading = true; state.error = null; })
-      .addCase(fetchLeaves.fulfilled, (state, action) => { state.loading = false; state.leaves = action.payload; })
+      .addCase(fetchLeaves.fulfilled, (state, action) => {
+        state.loading = false;
+        state.leaves = action.payload?.data || (Array.isArray(action.payload) ? action.payload : []);
+        state.totalLeaves = action.payload?.pagination?.total || state.leaves.length;
+      })
       .addCase(fetchLeaves.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
-      .addCase(createLeave.fulfilled, (state, action) => { state.leaves.push(action.payload); })
+      .addCase(createLeave.fulfilled, (state, action) => {
+        // Re-fetch is dispatched after this action in the page component;
+        // still push here so new leave appears immediately if re-fetch is slow
+        const exists = state.leaves.some(l => l.id === action.payload?.id);
+        if (!exists && action.payload?.id) state.leaves.unshift(action.payload);
+      })
       .addCase(updateLeaveStatus.fulfilled, (state, action) => {
         const index = state.leaves.findIndex(l => l.id === action.payload.id);
-        if (index !== -1) state.leaves[index].status = action.payload.status;
+        if (index !== -1) {
+          state.leaves[index] = { ...state.leaves[index], status: action.payload.status };
+        }
       })
 
       .addCase(deleteLeave.fulfilled, (state, action) => { state.leaves = state.leaves.filter(l => l.id !== action.payload); })
 
       // Leave Masters
       .addCase(fetchLeaveMasters.pending, (state) => { state.loading = true; state.error = null; })
-      .addCase(fetchLeaveMasters.fulfilled, (state, action) => { state.loading = false; state.leaveMasters = action.payload; })
+      .addCase(fetchLeaveMasters.fulfilled, (state, action) => {
+        state.loading = false;
+        state.leaveMasters = action.payload?.data || (Array.isArray(action.payload) ? action.payload : []);
+        state.totalLeaveMasters = action.payload?.pagination?.total || state.leaveMasters.length;
+      })
       .addCase(fetchLeaveMasters.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
       .addCase(createLeaveMaster.fulfilled, (state, action) => { state.leaveMasters.push(action.payload); })
       .addCase(deleteLeaveMaster.fulfilled, (state, action) => { state.leaveMasters = state.leaveMasters.filter(lm => lm.id !== action.payload); })
 
       // Holidays
       .addCase(fetchHolidays.pending, (state) => { state.loading = true; state.error = null; })
-      .addCase(fetchHolidays.fulfilled, (state, action) => { state.loading = false; state.holidays = action.payload; })
+      .addCase(fetchHolidays.fulfilled, (state, action) => {
+        state.loading = false;
+        state.holidays = action.payload?.data || (Array.isArray(action.payload) ? action.payload : []);
+        state.totalHolidays = action.payload?.pagination?.total || state.holidays.length;
+      })
       .addCase(fetchHolidays.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
       .addCase(createHoliday.fulfilled, (state, action) => { state.holidays.push(action.payload); })
       .addCase(deleteHoliday.fulfilled, (state, action) => { state.holidays = state.holidays.filter(h => h.id !== action.payload); });

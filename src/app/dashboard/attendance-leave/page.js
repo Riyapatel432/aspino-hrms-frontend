@@ -57,15 +57,21 @@ export default function AttendanceLeavePage() {
   const {
     employees,
     shifts,
+    totalShifts = 0,
     rosters,
+    totalRosters = 0,
     attendance,
+    totalAttendance = 0,
     loading: attLoading
   } = useSelector((state) => state.attendance);
 
   const {
     leaves,
+    totalLeaves = 0,
     leaveMasters,
+    totalLeaveMasters = 0,
     holidays,
+    totalHolidays = 0,
     loading: leaveLoading
   } = useSelector((state) => state.leave);
 
@@ -74,17 +80,74 @@ export default function AttendanceLeavePage() {
     loading: deptLoading
   } = useSelector((state) => state.recruitment);
 
+  // Per-table loading — prevents cross-table loading interference
+  const attTableLoading = attLoading;
+  const leaveTableLoading = leaveLoading;
   const loading = attLoading || leaveLoading || deptLoading;
+
+  // Pagination states
+  const [attPage, setAttPage] = useState(1);
+  const [attRows, setAttRows] = useState(10);
+  const [attSearch, setAttSearch] = useState("");
+  const [attSortBy, setAttSortBy] = useState("date");
+  const [attSortOrder, setAttSortOrder] = useState("desc");
+
+  const [shiftPage, setShiftPage] = useState(1);
+  const [shiftRows, setShiftRows] = useState(10);
+  const [shiftSearch, setShiftSearch] = useState("");
+  const [shiftSortBy, setShiftSortBy] = useState("name");
+  const [shiftSortOrder, setShiftSortOrder] = useState("asc");
+
+  const [rosterPage, setRosterPage] = useState(1);
+  const [rosterRows, setRosterRows] = useState(10);
+  const [rosterSearch, setRosterSearch] = useState("");
+  const [rosterSortBy, setRosterSortBy] = useState("date");
+  const [rosterSortOrder, setRosterSortOrder] = useState("desc");
+
+  const [leavePage, setLeavePage] = useState(1);
+  const [leaveRows, setLeaveRows] = useState(10);
+  const [leaveSearch, setLeaveSearch] = useState("");
+  const [leaveSortBy, setLeaveSortBy] = useState("startDate");
+  const [leaveSortOrder, setLeaveSortOrder] = useState("desc");
+
+  const [holidayPage, setHolidayPage] = useState(1);
+  const [holidayRows, setHolidayRows] = useState(10);
+  const [holidaySearch, setHolidaySearch] = useState("");
+  const [holidaySortBy, setHolidaySortBy] = useState("date");
+  const [holidaySortOrder, setHolidaySortOrder] = useState("asc");
+
+  const [dropdownShifts, setDropdownShifts] = useState([]);
+
+  useEffect(() => {
+    dispatch(fetchAttendance({ page: attPage, limit: attRows, search: attSearch, sortBy: attSortBy, sortOrder: attSortOrder }));
+  }, [dispatch, attPage, attRows, attSearch, attSortBy, attSortOrder]);
+
+  useEffect(() => {
+    dispatch(fetchShifts({ page: shiftPage, limit: shiftRows, search: shiftSearch, sortBy: shiftSortBy, sortOrder: shiftSortOrder }));
+  }, [dispatch, shiftPage, shiftRows, shiftSearch, shiftSortBy, shiftSortOrder]);
+
+  useEffect(() => {
+    dispatch(fetchRosters({ page: rosterPage, limit: rosterRows, search: rosterSearch, sortBy: rosterSortBy, sortOrder: rosterSortOrder }));
+  }, [dispatch, rosterPage, rosterRows, rosterSearch, rosterSortBy, rosterSortOrder]);
+
+  useEffect(() => {
+    dispatch(fetchLeaves({ page: leavePage, limit: leaveRows, search: leaveSearch, sortBy: leaveSortBy, sortOrder: leaveSortOrder }));
+  }, [dispatch, leavePage, leaveRows, leaveSearch, leaveSortBy, leaveSortOrder]);
+
+  useEffect(() => {
+    dispatch(fetchHolidays({ page: holidayPage, limit: holidayRows, search: holidaySearch, sortBy: holidaySortBy, sortOrder: holidaySortOrder }));
+  }, [dispatch, holidayPage, holidayRows, holidaySearch, holidaySortBy, holidaySortOrder]);
 
   useEffect(() => {
     dispatch(fetchEmployees());
-    dispatch(fetchShifts());
-    dispatch(fetchRosters());
-    dispatch(fetchAttendance());
-    dispatch(fetchLeaves());
     dispatch(fetchLeaveMasters());
-    dispatch(fetchHolidays());
     dispatch(fetchDepartments());
+
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    apiFetch(`${backendUrl}/staff-hrms/attendance/shifts`)
+      .then(res => res.json())
+      .then(data => setDropdownShifts(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
+      .catch(err => console.error("Failed to fetch dropdown shifts:", err));
   }, [dispatch]);
 
   // Forms states
@@ -252,7 +315,7 @@ export default function AttendanceLeavePage() {
           body: JSON.stringify({ employeeId: newRoster.employeeId, shiftId: newRoster.shiftId, date: newRoster.date })
         });
         if (res.ok) {
-          dispatch(fetchRosters());
+          dispatch(fetchRosters({ page: rosterPage, limit: rosterRows, search: rosterSearch, sortBy: rosterSortBy, sortOrder: rosterSortOrder }));
           setNewRoster({ employeeId: "", shiftId: "", date: "" });
           toast.success("Roster updated successfully");
         } else {
@@ -261,6 +324,7 @@ export default function AttendanceLeavePage() {
         }
       } else {
         await dispatch(createRoster(newRoster)).unwrap();
+        dispatch(fetchRosters({ page: rosterPage, limit: rosterRows, search: rosterSearch, sortBy: rosterSortBy, sortOrder: rosterSortOrder }));
         setNewRoster({ employeeId: "", shiftId: "", date: "" });
         toast.success("Roster created successfully");
       }
@@ -362,7 +426,7 @@ export default function AttendanceLeavePage() {
           })
         });
         if (res.ok) {
-          dispatch(fetchLeaves());
+          dispatch(fetchLeaves({ page: leavePage, limit: leaveRows, search: leaveSearch, sortBy: leaveSortBy, sortOrder: leaveSortOrder }));
           setNewLeave({ employeeId: "", leaveType: "", startDate: "", endDate: "", reason: "" });
           toast.success("Leave updated successfully");
         } else {
@@ -371,6 +435,7 @@ export default function AttendanceLeavePage() {
         }
       } else {
         await dispatch(createLeave(newLeave)).unwrap();
+        dispatch(fetchLeaves({ page: leavePage, limit: leaveRows, search: leaveSearch, sortBy: leaveSortBy, sortOrder: leaveSortOrder }));
         setNewLeave({ employeeId: "", leaveType: "", startDate: "", endDate: "", reason: "" });
         toast.success("Leave applied successfully");
       }
@@ -720,21 +785,29 @@ export default function AttendanceLeavePage() {
     {
       key: "employee.firstName",
       label: "Employee",
-      render: (row) => (
-        <span className="font-extrabold text-slate-700 dark:text-slate-200 text-xs">
-          {row.employee?.firstName} {row.employee?.lastName}
-        </span>
-      ),
+      render: (row) => {
+        const emp = row.employee || employees.find(e => String(e.id) === String(row.employeeId));
+        return (
+          <span className="font-extrabold text-slate-700 dark:text-slate-200 text-xs">
+            {emp ? `${emp.firstName} ${emp.lastName}` : (row.employeeId || "-")}
+          </span>
+        );
+      },
     },
     {
       key: "shift.name",
       label: "Shift",
-      render: (row) => (
-        <div>
-          <span className="font-bold text-slate-700 dark:text-slate-200 text-xs block">{row.shift?.name}</span>
-          <span className="text-[10px] text-slate-400">{row.shift?.startTime} - {row.shift?.endTime}</span>
-        </div>
-      ),
+      render: (row) => {
+        const shiftObj = row.shift || (dropdownShifts.length > 0 ? dropdownShifts : shifts).find(s => String(s.id) === String(row.shiftId));
+        return (
+          <div>
+            <span className="font-bold text-slate-700 dark:text-slate-200 text-xs block">{shiftObj?.name || (row.shiftId || "-")}</span>
+            {shiftObj?.startTime && shiftObj?.endTime && (
+              <span className="text-[10px] text-slate-400">{shiftObj.startTime} - {shiftObj.endTime}</span>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: "date",
@@ -819,11 +892,14 @@ export default function AttendanceLeavePage() {
     {
       key: "employee.firstName",
       label: "Employee",
-      render: (row) => (
-        <span className="text-xs font-extrabold text-slate-800 dark:text-white">
-          {row.employee?.firstName} {row.employee?.lastName}
-        </span>
-      ),
+      render: (row) => {
+        const emp = row.employee || employees.find(e => String(e.id) === String(row.employeeId));
+        return (
+          <span className="text-xs font-extrabold text-slate-800 dark:text-white">
+            {emp ? `${emp.firstName} ${emp.lastName}` : row.employeeId || "-"}
+          </span>
+        );
+      },
     },
     {
       key: "leaveType",
@@ -877,7 +953,7 @@ export default function AttendanceLeavePage() {
               </button>
               <button
                 onClick={() => handleUpdateLeaveStatus(row.id, "REJECTED")}
-                className="bg-red-50 dark:bg-red-500/100 hover:bg-red-600 text-white font-bold rounded-lg text-[9px] px-2 py-1 cursor-pointer transition-all"
+        className="bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg text-[9px] px-2 py-1 transition-all"
               >
                 Reject
               </button>
@@ -1262,9 +1338,20 @@ export default function AttendanceLeavePage() {
               <div className="lg:col-span-2">
                 <DataTable
                   title="Daily Attendance Logs"
-                  data={attendance}
+                  lazy
+                  value={attendance}
+                  totalRecords={totalAttendance}
+                  page={attPage}
+                  rows={attRows}
+                  loading={attTableLoading}
+                  search={attSearch}
+                  sortBy={attSortBy}
+                  sortOrder={attSortOrder}
+                  onPageChange={(p) => setAttPage(p)}
+                  onRowsChange={(r) => { setAttRows(r); setAttPage(1); }}
+                  onSortChange={(k, dir) => { setAttSortBy(k); setAttSortOrder(dir); setAttPage(1); }}
+                  onSearchChange={(s) => { setAttSearch(s); setAttPage(1); }}
                   columns={attendanceColumns}
-                  searchKeys={["employee.firstName", "employee.lastName", "status", "date"]}
                   emptyMessage="No attendance records logged."
                 />
               </div>
@@ -1280,7 +1367,7 @@ export default function AttendanceLeavePage() {
                 <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4">
                   <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
                     <Plus className="w-5 h-5 text-sky-500" />
-                    Define Shift Master
+                    {newShift.id ? "Edit Shift Master" : "Define Shift Master"}
                   </h3>
                   <form onSubmit={handleSubmitShift} className="space-y-3" noValidate>
                     <div className="space-y-1">
@@ -1312,17 +1399,29 @@ export default function AttendanceLeavePage() {
                           {formErrors.endTime && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.endTime}</span>}
                       </div>
                     </div>
-                    <Button type="submit" className="w-full bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl mt-2">
-                      Create Shift
-                    </Button>
+                    <div className="flex gap-2 mt-2">
+                      <Button type="submit" className="flex-1 bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl h-10">
+                        {newShift.id ? "Update Shift" : "Create Shift"}
+                      </Button>
+                      {newShift.id && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setNewShift({ name: "", startTime: "", endTime: "" })}
+                          className="rounded-xl border-slate-200 dark:border-slate-700 h-10"
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                    </div>
                   </form>
                 </div>
 
-                {/* Create Shift Roster */}
+                {/* Create/Edit Shift Roster */}
                 <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4">
                   <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
                     <Plus className="w-5 h-5 text-sky-500" />
-                    Assign Shift Roster
+                    {newRoster.id ? "Edit Shift Roster" : "Assign Shift Roster"}
                   </h3>
                   <form onSubmit={handleSubmitRoster} className="space-y-3" noValidate>
                     <div className="space-y-1">
@@ -1352,7 +1451,7 @@ export default function AttendanceLeavePage() {
                           <SelectValue placeholder="Select..." />
                         </SelectTrigger>
                         <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                          {shifts.map((s) => (
+                          {(dropdownShifts.length > 0 ? dropdownShifts : shifts).map((s) => (
                             <SelectItem key={s.id} value={String(s.id)}>{s.name} ({s.startTime} - {s.endTime})</SelectItem>
                           ))}
                         </SelectContent>
@@ -1367,9 +1466,21 @@ export default function AttendanceLeavePage() {
                       }} />
                       {formErrors.date && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.date}</span>}
                     </div>
-                    <Button type="submit" className="w-full bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl mt-2">
-                      Assign Roster
-                    </Button>
+                    <div className="flex gap-2 mt-2">
+                      <Button type="submit" className="flex-1 bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl h-10">
+                        {newRoster.id ? "Update Roster" : "Assign Roster"}
+                      </Button>
+                      {newRoster.id && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setNewRoster({ employeeId: "", shiftId: "", date: "" })}
+                          className="rounded-xl border-slate-200 dark:border-slate-700 h-10"
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                    </div>
                   </form>
                 </div>
               </div>
@@ -1378,15 +1489,38 @@ export default function AttendanceLeavePage() {
               <div className="lg:col-span-2 space-y-6">
                  <DataTable
                   title="Shift Master List"
-                  data={shifts}
+                  lazy
+                  value={shifts}
+                  totalRecords={totalShifts}
+                  page={shiftPage}
+                  rows={shiftRows}
+                  loading={attTableLoading}
+                  search={shiftSearch}
+                  sortBy={shiftSortBy}
+                  sortOrder={shiftSortOrder}
+                  onPageChange={(p) => setShiftPage(p)}
+                  onRowsChange={(r) => { setShiftRows(r); setShiftPage(1); }}
+                  onSortChange={(k, dir) => { setShiftSortBy(k); setShiftSortOrder(dir); setShiftPage(1); }}
+                  onSearchChange={(s) => { setShiftSearch(s); setShiftPage(1); }}
                   columns={shiftColumns}
                   emptyMessage="No shifts defined yet."
                 />
                 <DataTable
                   title="Roster Assignments"
-                  data={rosters}
+                  lazy
+                  value={rosters}
+                  totalRecords={totalRosters}
+                  page={rosterPage}
+                  rows={rosterRows}
+                  loading={attTableLoading}
+                  search={rosterSearch}
+                  sortBy={rosterSortBy}
+                  sortOrder={rosterSortOrder}
+                  onPageChange={(p) => setRosterPage(p)}
+                  onRowsChange={(r) => { setRosterRows(r); setRosterPage(1); }}
+                  onSortChange={(k, dir) => { setRosterSortBy(k); setRosterSortOrder(dir); setRosterPage(1); }}
+                  onSearchChange={(s) => { setRosterSearch(s); setRosterPage(1); }}
                   columns={rosterColumns}
-                  searchKeys={["employee.firstName", "employee.lastName", "shift.name"]}
                   emptyMessage="No active rosters assigned."
                 />
                
@@ -1573,9 +1707,20 @@ export default function AttendanceLeavePage() {
               <div className="lg:col-span-2">
                 <DataTable
                   title="Leave Requests"
-                  data={leaves}
+                  lazy
+                  value={leaves}
+                  totalRecords={totalLeaves}
+                  page={leavePage}
+                  rows={leaveRows}
+                  loading={leaveTableLoading}
+                  search={leaveSearch}
+                  sortBy={leaveSortBy}
+                  sortOrder={leaveSortOrder}
+                  onPageChange={(p) => setLeavePage(p)}
+                  onRowsChange={(r) => { setLeaveRows(r); setLeavePage(1); }}
+                  onSortChange={(k, dir) => { setLeaveSortBy(k); setLeaveSortOrder(dir); setLeavePage(1); }}
+                  onSearchChange={(s) => { setLeaveSearch(s); setLeavePage(1); }}
                   columns={leaveColumns}
-                  searchKeys={["employee.firstName", "employee.lastName", "leaveType", "status", "reason"]}
                   emptyMessage="No leave applications registered."
                 />
               </div>
@@ -1726,9 +1871,20 @@ export default function AttendanceLeavePage() {
               <div className="lg:col-span-2">
                 <DataTable
                   title="Corporate Holiday Calendar"
-                  data={holidays}
+                  lazy
+                  value={holidays}
+                  totalRecords={totalHolidays}
+                  page={holidayPage}
+                  rows={holidayRows}
+                  loading={leaveTableLoading}
+                  search={holidaySearch}
+                  sortBy={holidaySortBy}
+                  sortOrder={holidaySortOrder}
+                  onPageChange={(p) => setHolidayPage(p)}
+                  onRowsChange={(r) => { setHolidayRows(r); setHolidayPage(1); }}
+                  onSortChange={(k, dir) => { setHolidaySortBy(k); setHolidaySortOrder(dir); setHolidayPage(1); }}
+                  onSearchChange={(s) => { setHolidaySearch(s); setHolidayPage(1); }}
                   columns={holidayColumns}
-                  searchKeys={["name"]}
                   emptyMessage="No holidays configured."
                 />
               </div>

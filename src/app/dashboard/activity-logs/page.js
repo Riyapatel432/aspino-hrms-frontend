@@ -41,8 +41,11 @@ export default function ActivityLogsPage() {
   const [entityType, setEntityType] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortOrder, setSortOrder] = useState("desc");
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(50);
+  const [limit, setLimit] = useState(10);
   const [meta, setMeta] = useState({ total: 0, totalPages: 1 });
 
   // Load logs
@@ -54,6 +57,9 @@ export default function ActivityLogsPage() {
         limit: String(limit),
       });
 
+      if (search) queryParams.append("search", search);
+      if (sortBy) queryParams.append("sortBy", sortBy);
+      if (sortOrder) queryParams.append("sortOrder", sortOrder);
       if (userEmail.trim()) queryParams.append("userEmail", userEmail.trim());
       if (action.trim()) queryParams.append("action", action.trim());
       if (entityType.trim()) queryParams.append("entityType", entityType.trim());
@@ -64,7 +70,10 @@ export default function ActivityLogsPage() {
       if (res.ok) {
         const body = await res.json();
         setLogs(body.data || []);
-        setMeta(body.meta || { total: 0, totalPages: 1 });
+        setMeta({
+          total: body.pagination?.total ?? body.meta?.total ?? 0,
+          totalPages: body.pagination?.totalPages ?? body.meta?.totalPages ?? 1,
+        });
       } else {
         const msg = await getErrorMessage(res, "Failed to load activity logs");
         toast.error(msg);
@@ -79,7 +88,7 @@ export default function ActivityLogsPage() {
 
   useEffect(() => {
     fetchLogs();
-  }, [page, limit]);
+  }, [page, limit, search, sortBy, sortOrder, userEmail, action, entityType, startDate, endDate]);
 
   // Reset filters
   const handleReset = () => {
@@ -362,9 +371,20 @@ export default function ActivityLogsPage() {
         <div className="space-y-4">
           <DataTable
             title="Activity History (Audit Log)"
-            data={logs}
+            lazy
+            value={logs}
+            totalRecords={meta.total}
+            page={page}
+            rows={limit}
+            loading={loading}
+            search={search}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            onPageChange={(p) => setPage(p)}
+            onRowsChange={(r) => { setLimit(r); setPage(1); }}
+            onSortChange={(k, dir) => { setSortBy(k); setSortOrder(dir); setPage(1); }}
+            onSearchChange={(s) => { setSearch(s); setPage(1); }}
             columns={columns}
-            pageSize={limit}
             emptyMessage="No activity logs found for the selected filters."
           />
           

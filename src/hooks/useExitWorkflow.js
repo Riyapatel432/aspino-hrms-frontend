@@ -89,6 +89,14 @@ export function useExitWorkflow() {
   const [loading, setLoading] = useState(true);
   const [selectedExit, setSelectedExit] = useState(null);
 
+  // Server-side Data Handling state
+  const [page, setPage] = useState(1);
+  const [rows, setRows] = useState(10);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortOrder, setSortOrder] = useState("desc");
+  const [totalRecords, setTotalRecords] = useState(0);
+
   const [exitForm, setExitForm] = useState(buildDefaultExitForm);
   const [editingExitId, setEditingExitId] = useState(null);
   const [exitFormErrors, setExitFormErrors] = useState({});
@@ -110,29 +118,33 @@ export function useExitWorkflow() {
   }, [selectedExit]);
 
   // ---------------------------------------------------------------------------
-  // Data fetching — plain async function; called by the page's useEffect on mount
-  // and re-called after any mutation to keep the list fresh.
+  // Data fetching
   // ---------------------------------------------------------------------------
   async function fetchData() {
     setLoading(true);
     try {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(rows),
+      });
+      if (search) params.append("search", search);
+      if (sortBy) params.append("sortBy", sortBy);
+      if (sortOrder) params.append("sortOrder", sortOrder);
+
       const [empRes, exitRes] = await Promise.all([
-        apiFetch(`${API_URL}/staff-hrms/onboarding/employees?limit=1000`),
-        apiFetch(`${API_URL}/staff-hrms/exit/exits`),
+        apiFetch(`${API_URL}/staff-hrms/onboarding/employees`),
+        apiFetch(`${API_URL}/staff-hrms/exit/exits?${params.toString()}`),
       ]);
 
       const empData = await empRes.json();
       const exitList = await exitRes.json();
 
-      const validEmployees = Array.isArray(empData.data) ? empData.data : [];
-      const validExits = Array.isArray(exitList)
-        ? exitList
-        : Array.isArray(exitList?.data)
-        ? exitList.data
-        : [];
+      const validEmployees = Array.isArray(empData?.data) ? empData.data : Array.isArray(empData) ? empData : [];
+      const validExits = Array.isArray(exitList?.data) ? exitList.data : Array.isArray(exitList) ? exitList : [];
 
       setEmployees(validEmployees);
       setExits(validExits);
+      setTotalRecords(exitList?.pagination?.total || validExits.length);
 
       // Re-sync selectedExit after refresh
       if (validExits.length > 0) {
@@ -148,6 +160,10 @@ export function useExitWorkflow() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    fetchData();
+  }, [page, rows, search, sortBy, sortOrder]);
 
   // ---------------------------------------------------------------------------
   // Exit form helpers
@@ -343,6 +359,18 @@ export function useExitWorkflow() {
     loading,
     selectedExit,
     setSelectedExit,
+    // Pagination state
+    page,
+    setPage,
+    rows,
+    setRows,
+    search,
+    setSearch,
+    sortBy,
+    setSortBy,
+    sortOrder,
+    setSortOrder,
+    totalRecords,
     // Exit form
     exitForm,
     editingExitId,

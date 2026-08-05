@@ -22,19 +22,36 @@ import { fetchDepartments } from "@/redux/slices/recruitmentSlice";
 import { toast } from "sonner";
 import { useDispatch, useSelector } from "react-redux";
 import { useEffect } from "react";
+import { apiFetch } from "@/lib/api";
 
 export default function LeaveMasterPage() {
   const dispatch = useDispatch();
   
-  const { leaveMasters = [], loading: isLoadingLM } = useSelector((state) => state.leave);
+  const { leaveMasters = [], totalLeaveMasters = 0, loading: isLoadingLM } = useSelector((state) => state.leave);
   const { departments = [], loading: isLoadingDept } = useSelector((state) => state.recruitment);
 
-  useEffect(() => {
-    dispatch(fetchLeaveMasters());
-    dispatch(fetchDepartments());
-  }, [dispatch]);
+  // Server-side Data Handling state
+  const [page, setPage] = useState(1);
+  const [rows, setRows] = useState(10);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("department");
+  const [sortOrder, setSortOrder] = useState("asc");
 
-  const loading = isLoadingLM || isLoadingDept;
+  const [localDepts, setLocalDepts] = useState([]);
+
+  useEffect(() => {
+    dispatch(fetchLeaveMasters({ page, limit: rows, search, sortBy, sortOrder }));
+    dispatch(fetchDepartments());
+
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    apiFetch(`${backendUrl}/staff-hrms/recruitment/departments`)
+      .then(res => res.json())
+      .then(data => setLocalDepts(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
+      .catch(err => console.error(err));
+  }, [dispatch, page, rows, search, sortBy, sortOrder]);
+
+  const deptOptions = departments.length > 0 ? departments : localDepts;
+  const loading = isLoadingLM;
 
   const [newLeaveMaster, setNewLeaveMaster] = useState({ 
     department: "", 
@@ -184,7 +201,7 @@ export default function LeaveMasterPage() {
                     <SelectValue placeholder="Select..." />
                   </SelectTrigger>
                   <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                    {departments.map(d => (
+                    {deptOptions.map(d => (
                       <SelectItem key={d.id} value={String(d.name)}>{d.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -262,9 +279,20 @@ export default function LeaveMasterPage() {
         <div className="lg:col-span-2">
           <DataTable
             title="Active Leave Master Quotas"
-            data={leaveMasters}
+            lazy
+            value={leaveMasters}
+            totalRecords={totalLeaveMasters}
+            page={page}
+            rows={rows}
+            loading={loading}
+            search={search}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            onPageChange={(p) => setPage(p)}
+            onRowsChange={(r) => { setRows(r); setPage(1); }}
+            onSortChange={(k, dir) => { setSortBy(k); setSortOrder(dir); setPage(1); }}
+            onSearchChange={(s) => { setSearch(s); setPage(1); }}
             columns={leaveMasterColumns}
-            searchKeys={["department", "fiscalYear"]}
             emptyMessage="No leave master entries configured."
           />
         </div>

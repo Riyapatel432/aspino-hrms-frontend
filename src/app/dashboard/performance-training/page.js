@@ -46,26 +46,89 @@ export default function PerformanceTrainingPage() {
 
   const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
+  // Pagination states
+  const [cyclePage, setCyclePage] = useState(1);
+  const [cycleRows, setCycleRows] = useState(10);
+  const [cycleSearch, setCycleSearch] = useState("");
+  const [cycleSortBy, setCycleSortBy] = useState("startDate");
+  const [cycleSortOrder, setCycleSortOrder] = useState("desc");
+  const [totalCycles, setTotalCycles] = useState(0);
+
+  const [goalPage, setGoalPage] = useState(1);
+  const [goalRows, setGoalRows] = useState(10);
+  const [goalSearch, setGoalSearch] = useState("");
+  const [goalSortBy, setGoalSortBy] = useState("title");
+  const [goalSortOrder, setGoalSortOrder] = useState("asc");
+  const [totalGoals, setTotalGoals] = useState(0);
+
+  const [reviewPage, setReviewPage] = useState(1);
+  const [reviewRows, setReviewRows] = useState(10);
+  const [reviewSearch, setReviewSearch] = useState("");
+  const [reviewSortBy, setReviewSortBy] = useState("status");
+  const [reviewSortOrder, setReviewSortOrder] = useState("asc");
+  const [totalReviews, setTotalReviews] = useState(0);
+
+  const [trainPage, setTrainPage] = useState(1);
+  const [trainRows, setTrainRows] = useState(10);
+  const [trainSearch, setTrainSearch] = useState("");
+  const [trainSortBy, setTrainSortBy] = useState("completionDate");
+  const [trainSortOrder, setTrainSortOrder] = useState("desc");
+  const [totalTrainings, setTotalTrainings] = useState(0);
+
+  const [dropdownCycles, setDropdownCycles] = useState([]);
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [empRes, cycleRes, goalRes, reviewRes, trainRes, typeRes] = await Promise.all([
-        apiFetch(`${backendUrl}/staff-hrms/onboarding/employees?limit=1000`),
-        apiFetch(`${backendUrl}/staff-hrms/performance/appraisal-cycles`),
-        apiFetch(`${backendUrl}/staff-hrms/performance/goals`),
-        apiFetch(`${backendUrl}/staff-hrms/performance/reviews`),
-        apiFetch(`${backendUrl}/staff-hrms/training/trainings`),
+      const cycleParams = new URLSearchParams({ page: String(cyclePage), limit: String(cycleRows) });
+      if (cycleSearch) cycleParams.append("search", cycleSearch);
+      if (cycleSortBy) cycleParams.append("sortBy", cycleSortBy);
+      if (cycleSortOrder) cycleParams.append("sortOrder", cycleSortOrder);
+
+      const goalParams = new URLSearchParams({ page: String(goalPage), limit: String(goalRows) });
+      if (goalSearch) goalParams.append("search", goalSearch);
+      if (goalSortBy) goalParams.append("sortBy", goalSortBy);
+      if (goalSortOrder) goalParams.append("sortOrder", goalSortOrder);
+
+      const reviewParams = new URLSearchParams({ page: String(reviewPage), limit: String(reviewRows) });
+      if (reviewSearch) reviewParams.append("search", reviewSearch);
+      if (reviewSortBy) reviewParams.append("sortBy", reviewSortBy);
+      if (reviewSortOrder) reviewParams.append("sortOrder", reviewSortOrder);
+
+      const trainParams = new URLSearchParams({ page: String(trainPage), limit: String(trainRows) });
+      if (trainSearch) trainParams.append("search", trainSearch);
+      if (trainSortBy) trainParams.append("sortBy", trainSortBy);
+      if (trainSortOrder) trainParams.append("sortOrder", trainSortOrder);
+
+      const safeJson = async (res) => { try { return await res.json(); } catch { return null; } };
+
+      const results = await Promise.allSettled([
+        apiFetch(`${backendUrl}/staff-hrms/onboarding/employees`),
+        apiFetch(`${backendUrl}/staff-hrms/performance/appraisal-cycles?${cycleParams.toString()}`),
+        apiFetch(`${backendUrl}/staff-hrms/performance/goals?${goalParams.toString()}`),
+        apiFetch(`${backendUrl}/staff-hrms/performance/reviews?${reviewParams.toString()}`),
+        apiFetch(`${backendUrl}/staff-hrms/training/trainings?${trainParams.toString()}`),
         apiFetch(`${backendUrl}/staff-hrms/recruitment/trainingTypes`),
+        apiFetch(`${backendUrl}/staff-hrms/performance/appraisal-cycles`),
       ]);
 
-      const empData = await empRes.json();
-      setEmployees(empData.data || []);
-      setCycles(await cycleRes.json());
-      setGoals(await goalRes.json());
-      setReviews(await reviewRes.json());
-      setTrainings(await trainRes.json());
-      const typeData = await typeRes.json();
-      setTrainingTypes(Array.isArray(typeData) ? typeData : []);
+      const [empRes, cycleRes, goalRes, reviewRes, trainRes, typeRes, allCycleRes] = results;
+
+      const empData   = empRes.status === "fulfilled"      ? await safeJson(empRes.value)      : null;
+      const cycleData = cycleRes.status === "fulfilled"    ? await safeJson(cycleRes.value)    : null;
+      const goalData  = goalRes.status === "fulfilled"     ? await safeJson(goalRes.value)     : null;
+      const reviewData= reviewRes.status === "fulfilled"   ? await safeJson(reviewRes.value)   : null;
+      const trainData = trainRes.status === "fulfilled"    ? await safeJson(trainRes.value)    : null;
+      const typeData  = typeRes.status === "fulfilled"     ? await safeJson(typeRes.value)     : null;
+      const allCycleData = allCycleRes.status === "fulfilled" ? await safeJson(allCycleRes.value) : null;
+
+      if (empData)      setEmployees(Array.isArray(empData?.data) ? empData.data : Array.isArray(empData) ? empData : []);
+      if (cycleData)  { setCycles(Array.isArray(cycleData?.data) ? cycleData.data : Array.isArray(cycleData) ? cycleData : []); setTotalCycles(cycleData?.pagination?.total || 0); }
+      if (goalData)   { setGoals(Array.isArray(goalData?.data) ? goalData.data : Array.isArray(goalData) ? goalData : []);   setTotalGoals(goalData?.pagination?.total || 0); }
+      if (reviewData) { setReviews(Array.isArray(reviewData?.data) ? reviewData.data : Array.isArray(reviewData) ? reviewData : []); setTotalReviews(reviewData?.pagination?.total || 0); }
+      if (trainData)  { setTrainings(Array.isArray(trainData?.data) ? trainData.data : Array.isArray(trainData) ? trainData : []); setTotalTrainings(trainData?.pagination?.total || 0); }
+      if (typeData)     setTrainingTypes(Array.isArray(typeData?.data) ? typeData.data : Array.isArray(typeData) ? typeData : []);
+      if (allCycleData) setDropdownCycles(Array.isArray(allCycleData?.data) ? allCycleData.data : Array.isArray(allCycleData) ? allCycleData : []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -75,7 +138,12 @@ export default function PerformanceTrainingPage() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [
+    cyclePage, cycleRows, cycleSearch, cycleSortBy, cycleSortOrder,
+    goalPage, goalRows, goalSearch, goalSortBy, goalSortOrder,
+    reviewPage, reviewRows, reviewSearch, reviewSortBy, reviewSortOrder,
+    trainPage, trainRows, trainSearch, trainSortBy, trainSortOrder,
+  ]);
 
   // --- Validation Helpers ---
   const validateCycle = () => {
@@ -217,10 +285,23 @@ export default function PerformanceTrainingPage() {
       const url = isUpdate 
         ? `${backendUrl}/staff-hrms/performance/reviews/${newReview.id}`
         : `${backendUrl}/staff-hrms/performance/reviews`;
+
+      // Convert rating fields to numbers; omit finalRating if empty
+      const payload = {
+        employeeId: newReview.employeeId,
+        cycleId: newReview.cycleId,
+        selfRating: newReview.selfRating !== "" ? Number(newReview.selfRating) : undefined,
+        selfComments: newReview.selfComments || undefined,
+        managerRating: newReview.managerRating !== "" ? Number(newReview.managerRating) : undefined,
+        managerComments: newReview.managerComments || undefined,
+        finalRating: newReview.finalRating !== "" && newReview.finalRating != null ? Number(newReview.finalRating) : undefined,
+        status: newReview.status,
+      };
+
       const res = await apiFetch(url, {
         method: isUpdate ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newReview),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         setNewReview({ id: null, employeeId: "", cycleId: "", selfRating: "", selfComments: "", managerRating: "", managerComments: "", finalRating: "", status: "" });
@@ -435,7 +516,7 @@ export default function PerformanceTrainingPage() {
     },
     { key: "selfRating", label: "Self Rating" },
     { key: "managerRating", label: "Manager Rating" },
-    { key: "finalRating", label: "Final Rating" },
+    // { key: "finalRating", label: "Final Rating" },
     {
       key: "status",
       label: "Status",
@@ -706,7 +787,7 @@ export default function PerformanceTrainingPage() {
                           <SelectValue placeholder="Select..." />
                         </SelectTrigger>
                         <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                          {cycles.map((c) => (
+                          {(dropdownCycles.length > 0 ? dropdownCycles : cycles).map((c) => (
                             <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                           ))}
                         </SelectContent>
@@ -805,7 +886,7 @@ export default function PerformanceTrainingPage() {
                           <SelectValue placeholder="Select..." />
                         </SelectTrigger>
                         <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                          {cycles.map((c) => (
+                          {(dropdownCycles.length > 0 ? dropdownCycles : cycles).map((c) => (
                             <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                           ))}
                         </SelectContent>
@@ -880,23 +961,56 @@ export default function PerformanceTrainingPage() {
               <div className="lg:col-span-2 space-y-6">
                 <DataTable
                   title="Appraisal Cycles"
-                  data={cycles}
+                  lazy
+                  value={cycles}
+                  totalRecords={totalCycles}
+                  page={cyclePage}
+                  rows={cycleRows}
+                  loading={loading}
+                  search={cycleSearch}
+                  sortBy={cycleSortBy}
+                  sortOrder={cycleSortOrder}
+                  onPageChange={(p) => setCyclePage(p)}
+                  onRowsChange={(r) => { setCycleRows(r); setCyclePage(1); }}
+                  onSortChange={(k, dir) => { setCycleSortBy(k); setCycleSortOrder(dir); setCyclePage(1); }}
+                  onSearchChange={(s) => { setCycleSearch(s); setCyclePage(1); }}
                   columns={cycleColumns}
-                  searchKeys={["name"]}
                   emptyMessage="No appraisal cycles created."
                 />
                 <DataTable
                   title="Assigned Goals"
-                  data={goals}
+                  lazy
+                  value={goals}
+                  totalRecords={totalGoals}
+                  page={goalPage}
+                  rows={goalRows}
+                  loading={loading}
+                  search={goalSearch}
+                  sortBy={goalSortBy}
+                  sortOrder={goalSortOrder}
+                  onPageChange={(p) => setGoalPage(p)}
+                  onRowsChange={(r) => { setGoalRows(r); setGoalPage(1); }}
+                  onSortChange={(k, dir) => { setGoalSortBy(k); setGoalSortOrder(dir); setGoalPage(1); }}
+                  onSearchChange={(s) => { setGoalSearch(s); setGoalPage(1); }}
                   columns={goalColumns}
-                  searchKeys={["title", "description", "employee.firstName", "employee.lastName"]}
                   emptyMessage="No goals assigned for this cycle."
                 />
                 <DataTable
                   title="Performance Reviews"
-                  data={reviews}
+                  lazy
+                  value={reviews}
+                  totalRecords={totalReviews}
+                  page={reviewPage}
+                  rows={reviewRows}
+                  loading={loading}
+                  search={reviewSearch}
+                  sortBy={reviewSortBy}
+                  sortOrder={reviewSortOrder}
+                  onPageChange={(p) => setReviewPage(p)}
+                  onRowsChange={(r) => { setReviewRows(r); setReviewPage(1); }}
+                  onSortChange={(k, dir) => { setReviewSortBy(k); setReviewSortOrder(dir); setReviewPage(1); }}
+                  onSearchChange={(s) => { setReviewSearch(s); setReviewPage(1); }}
                   columns={reviewColumns}
-                  searchKeys={["employee.firstName", "employee.lastName", "status"]}
                   emptyMessage="No performance reviews recorded."
                 />
               </div>
@@ -1006,9 +1120,20 @@ export default function PerformanceTrainingPage() {
               <div className="lg:col-span-2">
                 <DataTable
                   title="FDA & GMP Training Records"
-                  data={trainings}
+                  lazy
+                  value={trainings}
+                  totalRecords={totalTrainings}
+                  page={trainPage}
+                  rows={trainRows}
+                  loading={loading}
+                  search={trainSearch}
+                  sortBy={trainSortBy}
+                  sortOrder={trainSortOrder}
+                  onPageChange={(p) => setTrainPage(p)}
+                  onRowsChange={(r) => { setTrainRows(r); setTrainPage(1); }}
+                  onSortChange={(k, dir) => { setTrainSortBy(k); setTrainSortOrder(dir); setTrainPage(1); }}
+                  onSearchChange={(s) => { setTrainSearch(s); setTrainPage(1); }}
                   columns={trainingColumns}
-                  searchKeys={["trainingName", "trainingType", "employee.firstName", "employee.lastName"]}
                   emptyMessage="No training records logged yet."
                 />
               </div>

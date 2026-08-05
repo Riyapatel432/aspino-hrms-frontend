@@ -54,29 +54,82 @@ export default function RecruitmentPage() {
 
   const {
     requisitions,
+    totalRequisitions = 0,
     candidates,
+    totalCandidates = 0,
     schedules,
+    totalSchedules = 0,
     offers,
+    totalOffers = 0,
     departments,
     loading
   } = useSelector((state) => state.recruitment);
 
+  // Pagination & Server Query State for each tab
+  const [reqPage, setReqPage] = useState(1);
+  const [reqRows, setReqRows] = useState(10);
+  const [reqSearch, setReqSearch] = useState("");
+  const [reqSortBy, setReqSortBy] = useState("createdAt");
+  const [reqSortOrder, setReqSortOrder] = useState("desc");
+
+  const [candPage, setCandPage] = useState(1);
+  const [candRows, setCandRows] = useState(10);
+  const [candSearch, setCandSearch] = useState("");
+  const [candSortBy, setCandSortBy] = useState("createdAt");
+  const [candSortOrder, setCandSortOrder] = useState("desc");
+
+  const [schedPage, setSchedPage] = useState(1);
+  const [schedRows, setSchedRows] = useState(10);
+  const [schedSearch, setSchedSearch] = useState("");
+  const [schedSortBy, setSchedSortBy] = useState("scheduledAt");
+  const [schedSortOrder, setSchedSortOrder] = useState("desc");
+
+  const [offerPage, setOfferPage] = useState(1);
+  const [offerRows, setOfferRows] = useState(10);
+  const [offerSearch, setOfferSearch] = useState("");
+  const [offerSortBy, setOfferSortBy] = useState("createdAt");
+  const [offerSortOrder, setOfferSortOrder] = useState("desc");
+
   useEffect(() => {
-    dispatch(fetchRequisitions());
-    dispatch(fetchCandidates());
-    dispatch(fetchSchedules());
-    dispatch(fetchOffers());
+    dispatch(fetchRequisitions({ page: reqPage, limit: reqRows, search: reqSearch, sortBy: reqSortBy, sortOrder: reqSortOrder }));
+  }, [dispatch, reqPage, reqRows, reqSearch, reqSortBy, reqSortOrder]);
+
+  useEffect(() => {
+    dispatch(fetchCandidates({ page: candPage, limit: candRows, search: candSearch, sortBy: candSortBy, sortOrder: candSortOrder }));
+  }, [dispatch, candPage, candRows, candSearch, candSortBy, candSortOrder]);
+
+  useEffect(() => {
+    dispatch(fetchSchedules({ page: schedPage, limit: schedRows, search: schedSearch, sortBy: schedSortBy, sortOrder: schedSortOrder }));
+  }, [dispatch, schedPage, schedRows, schedSearch, schedSortBy, schedSortOrder]);
+
+  useEffect(() => {
+    dispatch(fetchOffers({ page: offerPage, limit: offerRows, search: offerSearch, sortBy: offerSortBy, sortOrder: offerSortOrder }));
+  }, [dispatch, offerPage, offerRows, offerSearch, offerSortBy, offerSortOrder]);
+
+  const [dropdownRequisitions, setDropdownRequisitions] = useState([]);
+  const [dropdownCandidates, setDropdownCandidates] = useState([]);
+
+  useEffect(() => {
     dispatch(fetchDepartments());
     
-    // Fetch users for panel members dropdown
     const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    // Fetch users for panel members dropdown
     apiFetch(`${backendUrl}/users`)
       .then(res => res.json())
-      .then(data => setUsers(data))
+      .then(data => setUsers(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
       .catch(err => console.error("Failed to fetch users:", err));
-  }, [dispatch]);
 
-  const dropdownRequisitions = requisitions;
+    // Fetch full list for form dropdowns
+    apiFetch(`${backendUrl}/staff-hrms/recruitment/requisitions`)
+      .then(res => res.json())
+      .then(data => setDropdownRequisitions(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
+      .catch(err => console.error("Failed to fetch dropdown requisitions:", err));
+
+    apiFetch(`${backendUrl}/staff-hrms/recruitment/candidates`)
+      .then(res => res.json())
+      .then(data => setDropdownCandidates(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
+      .catch(err => console.error("Failed to fetch dropdown candidates:", err));
+  }, [dispatch]);
 
   // Requisition Form State
   const [newReq, setNewReq] = useState({ title: "", departmentId: "", headcount: "", justification: "", raisedBy: "" });
@@ -962,9 +1015,20 @@ export default function RecruitmentPage() {
               <div className="lg:col-span-2">
                 <DataTable
                   title="Active Requisitions"
-                  data={requisitions}
+                  lazy
+                  value={requisitions}
+                  totalRecords={totalRequisitions}
+                  page={reqPage}
+                  rows={reqRows}
+                  loading={loading}
+                  search={reqSearch}
+                  sortBy={reqSortBy}
+                  sortOrder={reqSortOrder}
+                  onPageChange={(p) => setReqPage(p)}
+                  onRowsChange={(r) => { setReqRows(r); setReqPage(1); }}
+                  onSortChange={(k, dir) => { setReqSortBy(k); setReqSortOrder(dir); setReqPage(1); }}
+                  onSearchChange={(s) => { setReqSearch(s); setReqPage(1); }}
                   emptyMessage="No job requisitions found."
-                  searchKeys={["title", "justification", "raisedBy", "department.name", "status"]}
                   columns={[
                     {
                       key: "title",
@@ -1171,9 +1235,20 @@ export default function RecruitmentPage() {
               <div className="lg:col-span-2">
                 <DataTable
                   title="Active Candidates"
-                  data={candidates}
+                  lazy
+                  value={candidates}
+                  totalRecords={totalCandidates}
+                  page={candPage}
+                  rows={candRows}
+                  loading={loading}
+                  search={candSearch}
+                  sortBy={candSortBy}
+                  sortOrder={candSortOrder}
+                  onPageChange={(p) => setCandPage(p)}
+                  onRowsChange={(r) => { setCandRows(r); setCandPage(1); }}
+                  onSortChange={(k, dir) => { setCandSortBy(k); setCandSortOrder(dir); setCandPage(1); }}
+                  onSearchChange={(s) => { setCandSearch(s); setCandPage(1); }}
                   emptyMessage="No candidates found."
-                  searchKeys={["name", "email", "phone", "source", "status", "requisition.title"]}
                   columns={[
                     {
                       key: "name",
@@ -1699,9 +1774,19 @@ export default function RecruitmentPage() {
               <div className="lg:col-span-2 space-y-4">
                 <DataTable
                   title="Scheduled Interviews"
-                  data={schedules}
-                  searchable={true}
-                  searchKeys={["candidate.name", "roundName", "panelists", "status"]}
+                  lazy
+                  value={schedules}
+                  totalRecords={totalSchedules}
+                  page={schedPage}
+                  rows={schedRows}
+                  loading={loading}
+                  search={schedSearch}
+                  sortBy={schedSortBy}
+                  sortOrder={schedSortOrder}
+                  onPageChange={(p) => setSchedPage(p)}
+                  onRowsChange={(r) => { setSchedRows(r); setSchedPage(1); }}
+                  onSortChange={(k, dir) => { setSchedSortBy(k); setSchedSortOrder(dir); setSchedPage(1); }}
+                  onSearchChange={(s) => { setSchedSearch(s); setSchedPage(1); }}
                   columns={[
                     {
                       key: "candidate",
@@ -1923,9 +2008,20 @@ export default function RecruitmentPage() {
               <div className="lg:col-span-2">
                 <DataTable
                   title="Generated Offer Letters"
-                  data={offers}
+                  lazy
+                  value={offers}
+                  totalRecords={totalOffers}
+                  page={offerPage}
+                  rows={offerRows}
+                  loading={loading}
+                  search={offerSearch}
+                  sortBy={offerSortBy}
+                  sortOrder={offerSortOrder}
+                  onPageChange={(p) => setOfferPage(p)}
+                  onRowsChange={(r) => { setOfferRows(r); setOfferPage(1); }}
+                  onSortChange={(k, dir) => { setOfferSortBy(k); setOfferSortOrder(dir); setOfferPage(1); }}
+                  onSearchChange={(s) => { setOfferSearch(s); setOfferPage(1); }}
                   emptyMessage="No offer letters generated yet."
-                  searchKeys={["candidate.name", "role", "status"]}
                   columns={[
                     {
                       key: "candidate.name",

@@ -16,9 +16,16 @@ async function getErrorMsg(res, defaultMsg) {
   return defaultMsg;
 }
 
-export const fetchShifts = createAsyncThunk("attendance/fetchShifts", async (_, { rejectWithValue }) => {
+export const fetchShifts = createAsyncThunk("attendance/fetchShifts", async (params = {}, { rejectWithValue }) => {
   try {
-    const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/shifts`);
+    const query = new URLSearchParams();
+    if (params.page) query.append("page", params.page);
+    if (params.limit) query.append("limit", params.limit);
+    if (params.search) query.append("search", params.search);
+    if (params.sortBy) query.append("sortBy", params.sortBy);
+    if (params.sortOrder) query.append("sortOrder", params.sortOrder);
+
+    const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/shifts?${query.toString()}`);
     if (!res.ok) throw new Error("Failed to fetch shifts");
     return await res.json();
   } catch (err) {
@@ -28,7 +35,7 @@ export const fetchShifts = createAsyncThunk("attendance/fetchShifts", async (_, 
 
 export const fetchEmployees = createAsyncThunk("attendance/fetchEmployees", async (_, { rejectWithValue }) => {
   try {
-    const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/employees?limit=1000`);
+    const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/employees`);
     if (!res.ok) throw new Error("Failed to fetch employees");
     const data = await res.json();
     return Array.isArray(data) ? data : (data?.data || []);
@@ -61,9 +68,16 @@ export const deleteShift = createAsyncThunk("attendance/deleteShift", async (id,
   }
 });
 
-export const fetchRosters = createAsyncThunk("attendance/fetchRosters", async (_, { rejectWithValue }) => {
+export const fetchRosters = createAsyncThunk("attendance/fetchRosters", async (params = {}, { rejectWithValue }) => {
   try {
-    const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/rosters`);
+    const query = new URLSearchParams();
+    if (params.page) query.append("page", params.page);
+    if (params.limit) query.append("limit", params.limit);
+    if (params.search) query.append("search", params.search);
+    if (params.sortBy) query.append("sortBy", params.sortBy);
+    if (params.sortOrder) query.append("sortOrder", params.sortOrder);
+
+    const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/rosters?${query.toString()}`);
     if (!res.ok) throw new Error("Failed to fetch rosters");
     return await res.json();
   } catch (err) {
@@ -95,9 +109,18 @@ export const deleteRoster = createAsyncThunk("attendance/deleteRoster", async (i
   }
 });
 
-export const fetchAttendance = createAsyncThunk("attendance/fetchAttendance", async (_, { rejectWithValue }) => {
+export const fetchAttendance = createAsyncThunk("attendance/fetchAttendance", async (params = {}, { rejectWithValue }) => {
   try {
-    const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/attendance`);
+    const query = new URLSearchParams();
+    if (params.page) query.append("page", params.page);
+    if (params.limit) query.append("limit", params.limit);
+    if (params.search) query.append("search", params.search);
+    if (params.sortBy) query.append("sortBy", params.sortBy);
+    if (params.sortOrder) query.append("sortOrder", params.sortOrder);
+    if (params.employeeId) query.append("employeeId", params.employeeId);
+    if (params.date) query.append("date", params.date);
+
+    const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/attendance?${query.toString()}`);
     if (!res.ok) throw new Error("Failed to fetch attendance");
     return await res.json();
   } catch (err) {
@@ -123,8 +146,11 @@ const attendanceSlice = createSlice({
   name: "attendance",
   initialState: {
     shifts: [],
+    totalShifts: 0,
     rosters: [],
+    totalRosters: 0,
     attendance: [],
+    totalAttendance: 0,
     employees: [],
     loading: false,
     error: null,
@@ -138,21 +164,33 @@ const attendanceSlice = createSlice({
       .addCase(fetchEmployees.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
       // Shifts
       .addCase(fetchShifts.pending, (state) => { state.loading = true; state.error = null; })
-      .addCase(fetchShifts.fulfilled, (state, action) => { state.loading = false; state.shifts = action.payload; })
+      .addCase(fetchShifts.fulfilled, (state, action) => {
+        state.loading = false;
+        state.shifts = action.payload?.data || (Array.isArray(action.payload) ? action.payload : []);
+        state.totalShifts = action.payload?.pagination?.total || state.shifts.length;
+      })
       .addCase(fetchShifts.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
       .addCase(createShift.fulfilled, (state, action) => { state.shifts.push(action.payload); })
       .addCase(deleteShift.fulfilled, (state, action) => { state.shifts = state.shifts.filter(s => s.id !== action.payload); })
       
       // Rosters
       .addCase(fetchRosters.pending, (state) => { state.loading = true; state.error = null; })
-      .addCase(fetchRosters.fulfilled, (state, action) => { state.loading = false; state.rosters = action.payload; })
+      .addCase(fetchRosters.fulfilled, (state, action) => {
+        state.loading = false;
+        state.rosters = action.payload?.data || (Array.isArray(action.payload) ? action.payload : []);
+        state.totalRosters = action.payload?.pagination?.total || state.rosters.length;
+      })
       .addCase(fetchRosters.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
       .addCase(createRoster.fulfilled, (state, action) => { state.rosters.push(action.payload); })
       .addCase(deleteRoster.fulfilled, (state, action) => { state.rosters = state.rosters.filter(r => r.id !== action.payload); })
       
       // Attendance
       .addCase(fetchAttendance.pending, (state) => { state.loading = true; state.error = null; })
-      .addCase(fetchAttendance.fulfilled, (state, action) => { state.loading = false; state.attendance = action.payload; })
+      .addCase(fetchAttendance.fulfilled, (state, action) => {
+        state.loading = false;
+        state.attendance = action.payload?.data || (Array.isArray(action.payload) ? action.payload : []);
+        state.totalAttendance = action.payload?.pagination?.total || state.attendance.length;
+      })
       .addCase(fetchAttendance.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
       .addCase(createAttendance.fulfilled, (state, action) => { state.attendance.push(action.payload); });
   }

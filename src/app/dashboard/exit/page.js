@@ -144,6 +144,17 @@ export default function ExitPage() {
     loading,
     selectedExit,
     setSelectedExit,
+    page,
+    setPage,
+    rows,
+    setRows,
+    search,
+    setSearch,
+    sortBy,
+    setSortBy,
+    sortOrder,
+    setSortOrder,
+    totalRecords,
     exitForm,
     editingExitId,
     exitFormErrors,
@@ -185,7 +196,7 @@ export default function ExitPage() {
 
   // Active employees list — includes currently edited employee even if exiting
   const activeEmployees = employees.filter(
-    (e) => e.status === "ACTIVE" || String(e.id) === String(exitForm.employeeId)
+    (e) => e.status !== "RELIEVED" || String(e.id) === String(exitForm.employeeId)
   );
 
   return (
@@ -356,9 +367,20 @@ export default function ExitPage() {
               <div className="lg:col-span-2 space-y-6">
                 <DataTable
                   title="Active Exits & Clearance Workflow"
-                  data={exits}
+                  lazy
+                  value={exits}
+                  totalRecords={totalRecords}
+                  page={page}
+                  rows={rows}
+                  loading={loading}
+                  search={search}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onPageChange={(p) => setPage(p)}
+                  onRowsChange={(r) => { setRows(r); setPage(1); }}
+                  onSortChange={(k, dir) => { setSortBy(k); setSortOrder(dir); setPage(1); }}
+                  onSearchChange={(s) => { setSearch(s); setPage(1); }}
                   emptyMessage="No employee exit processes logged."
-                  searchKeys={["employee.firstName", "employee.lastName", "type", "status"]}
                   columns={[
                     {
                       key: "employee.firstName",

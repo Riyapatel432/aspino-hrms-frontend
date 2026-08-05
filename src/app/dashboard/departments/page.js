@@ -36,6 +36,14 @@ export default function DepartmentsPage() {
   const [requisitions, setRequisitions] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Server-side Data Handling state
+  const [page, setPage] = useState(1);
+  const [rows, setRows] = useState(10);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("name");
+  const [sortOrder, setSortOrder] = useState("asc");
+  const [totalRecords, setTotalRecords] = useState(0);
+
   // Form state
   const [formName, setFormName] = useState("");
   const [editingId, setEditingId] = useState(null);
@@ -52,16 +60,31 @@ export default function DepartmentsPage() {
   async function fetchData() {
     setLoading(true);
     try {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(rows),
+      });
+      if (search) params.append("search", search);
+      if (sortBy) params.append("sortBy", sortBy);
+      if (sortOrder) params.append("sortOrder", sortOrder);
+
       const [deptRes, reqRes] = await Promise.all([
-        apiFetch(`${API_URL}/staff-hrms/recruitment/departments`),
-        apiFetch(`${API_URL}/staff-hrms/recruitment/requisitions?limit=1000`),
+        apiFetch(`${API_URL}/staff-hrms/recruitment/departments?${params.toString()}`),
+        apiFetch(`${API_URL}/staff-hrms/recruitment/requisitions`),
       ]);
 
       const deptData = await deptRes.json();
       const reqData = await reqRes.json();
 
-      setDepartments(Array.isArray(deptData) ? deptData : []);
-      setRequisitions(Array.isArray(reqData.data) ? reqData.data : []);
+      if (deptData && deptData.data) {
+        setDepartments(Array.isArray(deptData.data) ? deptData.data : []);
+        setTotalRecords(deptData.pagination?.total || 0);
+        setPage(deptData.pagination?.page || page);
+        setRows(deptData.pagination?.limit || rows);
+      } else {
+        setDepartments(Array.isArray(deptData) ? deptData : []);
+      }
+      setRequisitions(Array.isArray(reqData?.data) ? reqData.data : Array.isArray(reqData) ? reqData : []);
     } catch (e) {
       console.error("Error loading department data:", e);
     } finally {
@@ -70,9 +93,8 @@ export default function DepartmentsPage() {
   }
 
   useEffect(() => {
-    async function load() { await fetchData(); }
-    load();
-  }, []);
+    fetchData();
+  }, [page, rows, search, sortBy, sortOrder]);
 
 
   // ---------------------------------------------------------------------------
@@ -222,8 +244,19 @@ export default function DepartmentsPage() {
           <div className="lg:col-span-2">
             <DataTable
               title="All Departments"
-              data={departments}
-              searchKeys={["name"]}
+              lazy
+              value={departments}
+              totalRecords={totalRecords}
+              page={page}
+              rows={rows}
+              loading={loading}
+              search={search}
+              sortBy={sortBy}
+              sortOrder={sortOrder}
+              onPageChange={(p) => setPage(p)}
+              onRowsChange={(r) => { setRows(r); setPage(1); }}
+              onSortChange={(k, dir) => { setSortBy(k); setSortOrder(dir); setPage(1); }}
+              onSearchChange={(s) => { setSearch(s); setPage(1); }}
               emptyMessage="No departments registered."
               columns={[
                 {

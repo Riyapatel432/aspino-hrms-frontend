@@ -36,6 +36,14 @@ export default function TrainingTypesPage() {
   const [trainings, setTrainings] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Server-side Data Handling state
+  const [page, setPage] = useState(1);
+  const [rows, setRows] = useState(10);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("name");
+  const [sortOrder, setSortOrder] = useState("asc");
+  const [totalRecords, setTotalRecords] = useState(0);
+
   // Form state — unified for both create and edit
   const [formName, setFormName] = useState("");
   const [editingId, setEditingId] = useState(null);
@@ -52,16 +60,31 @@ export default function TrainingTypesPage() {
   async function fetchData() {
     setLoading(true);
     try {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(rows),
+      });
+      if (search) params.append("search", search);
+      if (sortBy) params.append("sortBy", sortBy);
+      if (sortOrder) params.append("sortOrder", sortOrder);
+
       const [typeRes, trainRes] = await Promise.all([
-        apiFetch(`${API_URL}/staff-hrms/recruitment/trainingTypes`),
+        apiFetch(`${API_URL}/staff-hrms/recruitment/trainingTypes?${params.toString()}`),
         apiFetch(`${API_URL}/staff-hrms/training/trainings`),
       ]);
 
       const typeData = await typeRes.json();
       const trainData = await trainRes.json();
 
-      setTrainingTypes(Array.isArray(typeData) ? typeData : []);
-      setTrainings(Array.isArray(trainData) ? trainData : []);
+      if (typeData && typeData.data) {
+        setTrainingTypes(Array.isArray(typeData.data) ? typeData.data : []);
+        setTotalRecords(typeData.pagination?.total || 0);
+        setPage(typeData.pagination?.page || page);
+        setRows(typeData.pagination?.limit || rows);
+      } else {
+        setTrainingTypes(Array.isArray(typeData) ? typeData : []);
+      }
+      setTrainings(Array.isArray(trainData?.data) ? trainData.data : Array.isArray(trainData) ? trainData : []);
     } catch (e) {
       console.error("Error loading training type data:", e);
     } finally {
@@ -70,9 +93,8 @@ export default function TrainingTypesPage() {
   }
 
   useEffect(() => {
-    async function load() { await fetchData(); }
-    load();
-  }, []);
+    fetchData();
+  }, [page, rows, search, sortBy, sortOrder]);
 
 
   // ---------------------------------------------------------------------------
@@ -222,8 +244,19 @@ export default function TrainingTypesPage() {
           <div className="lg:col-span-2">
             <DataTable
               title="All Training Types"
-              data={trainingTypes}
-              searchKeys={["name"]}
+              lazy
+              value={trainingTypes}
+              totalRecords={totalRecords}
+              page={page}
+              rows={rows}
+              loading={loading}
+              search={search}
+              sortBy={sortBy}
+              sortOrder={sortOrder}
+              onPageChange={(p) => setPage(p)}
+              onRowsChange={(r) => { setRows(r); setPage(1); }}
+              onSortChange={(k, dir) => { setSortBy(k); setSortOrder(dir); setPage(1); }}
+              onSearchChange={(s) => { setSearch(s); setPage(1); }}
               emptyMessage="No training types registered."
               columns={[
                 {

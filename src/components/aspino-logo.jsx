@@ -1,19 +1,28 @@
+import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { Building2 } from "lucide-react";
 
 export function AspinoIcon({ className, size = 36 }) {
+  const [imgError, setImgError] = useState(false);
+
   return (
     <div
       className={cn(
-        "relative shrink-0 overflow-hidden flex items-center justify-center select-none",
+        "relative shrink-0 overflow-hidden flex items-center justify-center select-none bg-sky-500/10 rounded-xl",
         className
       )}
       style={{ width: size, height: size }}
     >
-      <img
-        src="/aspino-icon.png"
-        alt="Aspino"
-        className="w-full h-full object-contain"
-      />
+      {!imgError ? (
+        <img
+          src="/aspino-icon.png"
+          alt="Aspino"
+          className="w-full h-full object-contain"
+          onError={() => setImgError(true)}
+        />
+      ) : (
+        <Building2 className="w-2/3 h-2/3 text-sky-500" />
+      )}
     </div>
   );
 }

@@ -16,23 +16,43 @@ import {
 } from "@/components/ui/popover"
 
 export function DateTimePicker({ date, setDate, type = "datetime", placeholder = "Select date", minDate, disablePast = false, disabled }) {
-  const [open, setOpen] = React.useState(false)
+  const [open, setOpen] = React.useState(false);
 
-  // parse existing ISO date string if provided
-  const parsedDate = typeof date === 'string' && date ? new Date(date) : date;
-  
-  // Extract time from the date object
-  let initialTime = "";
-  if (parsedDate) {
-    const hh = String(parsedDate.getHours()).padStart(2, '0');
-    const mm = String(parsedDate.getMinutes()).padStart(2, '0');
-    initialTime = `${hh}:${mm}`;
-  } else if (typeof date === 'string' && date.includes(':') && !date.includes('-')) {
-    // If only time is passed (e.g. "10:30")
-    initialTime = date;
-  }
-  
-  const [timeStr, setTimeStr] = React.useState(initialTime);
+  // Helper to extract HH:mm time string safely
+  const extractTimeStr = (d) => {
+    if (!d) return "";
+    if (typeof d === "string") {
+      const trimmed = d.trim();
+      if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(trimmed)) {
+        const parts = trimmed.split(":");
+        return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+      }
+      const parsed = new Date(d);
+      if (!isNaN(parsed.getTime())) {
+        const hh = String(parsed.getHours()).padStart(2, '0');
+        const mm = String(parsed.getMinutes()).padStart(2, '0');
+        return `${hh}:${mm}`;
+      }
+    } else if (d instanceof Date && !isNaN(d.getTime())) {
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      return `${hh}:${mm}`;
+    }
+    return "";
+  };
+
+  const parsedDate = React.useMemo(() => {
+    if (!date) return null;
+    if (typeof date === 'string' && /^\d{1,2}:\d{2}/.test(date.trim())) return null;
+    const d = typeof date === 'string' ? new Date(date) : date;
+    return d && !isNaN(d.getTime()) ? d : null;
+  }, [date]);
+
+  const [timeStr, setTimeStr] = React.useState(() => extractTimeStr(date));
+
+  React.useEffect(() => {
+    setTimeStr(extractTimeStr(date));
+  }, [date]);
 
   // Update parent when either changes
   const updateParent = (newD, newT) => {

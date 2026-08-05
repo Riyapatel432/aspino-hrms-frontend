@@ -61,13 +61,32 @@ export default function OnboardingPage() {
     }
   }, [selectedEmp]);
 
+  const [page, setPage] = useState(1);
+  const [rows, setRows] = useState(10);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortOrder, setSortOrder] = useState("desc");
+  const [totalRecords, setTotalRecords] = useState(0);
+
   const fetchEmployees = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/employees?limit=1000`);
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(rows),
+      });
+      if (search) params.append("search", search);
+      if (sortBy) params.append("sortBy", sortBy);
+      if (sortOrder) params.append("sortOrder", sortOrder);
+
+      const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/employees?${params.toString()}`);
       const result = await res.json();
       const data = result.data || [];
       setEmployees(data);
+      setTotalRecords(result.pagination?.total || 0);
+      setPage(result.pagination?.page || page);
+      setRows(result.pagination?.limit || rows);
+
       if (data.length > 0) {
         setSelectedEmp(prev => {
           if (!prev) return data[0];
@@ -82,10 +101,9 @@ export default function OnboardingPage() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [backendUrl]);
+  }, [backendUrl, page, rows, search, sortBy, sortOrder]);
 
   useEffect(() => {
-    /* eslint-disable-next-line react-hooks/set-state-in-effect */
     fetchEmployees();
   }, [fetchEmployees]);
 
@@ -347,9 +365,20 @@ export default function OnboardingPage() {
           {/* Top Section: Onboarding Employees DataTable */}
           <DataTable
             title="Onboarding Employees"
-            data={employees}
+            lazy
+            value={employees}
+            totalRecords={totalRecords}
+            page={page}
+            rows={rows}
+            loading={loading}
+            search={search}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            onPageChange={(p) => setPage(p)}
+            onRowsChange={(r) => { setRows(r); setPage(1); }}
+            onSortChange={(k, dir) => { setSortBy(k); setSortOrder(dir); setPage(1); }}
+            onSearchChange={(s) => { setSearch(s); setPage(1); }}
             columns={onboardingColumns}
-            searchKeys={["firstName", "lastName", "employeeId", "department", "designation", "status", "probationStatus"]}
             emptyMessage="No onboarding profiles found."
           />
 
