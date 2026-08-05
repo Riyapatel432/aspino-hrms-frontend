@@ -423,8 +423,8 @@ export default function ActivityLogsPage() {
 
       {/* Payload Details Dialog */}
       <Dialog open={!!selectedLog} onOpenChange={(open) => !open && setSelectedLog(null)}>
-        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-6 rounded-3xl bg-white dark:bg-slate-900">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-6 rounded-3xl bg-white dark:bg-slate-900 overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
               <Activity className="w-5 h-5 text-sky-500" />
               Activity Details
@@ -435,7 +435,7 @@ export default function ActivityLogsPage() {
           </DialogHeader>
 
           {selectedLog && (
-            <ScrollArea className="flex-1 mt-4 pr-1">
+            <ScrollArea className="flex-1 min-h-0 mt-4 pr-3">
               <div className="space-y-4 text-xs pb-4">
                 {/* Meta details grid */}
                 <div className="grid grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border dark:border-slate-800/80">
@@ -499,14 +499,14 @@ export default function ActivityLogsPage() {
 
                   <div className="space-y-1">
                     <span className="font-bold text-slate-700 dark:text-slate-300 block">Request Payload (Sanitized)</span>
-                    <pre className="p-3 bg-slate-950 text-slate-100 rounded-xl overflow-x-auto text-[11px] font-mono leading-relaxed max-h-[160px] overflow-y-auto">
+                    <pre className="p-3 bg-slate-950 text-slate-100 rounded-xl overflow-x-auto text-[11px] font-mono leading-relaxed">
                       {formatJSON(selectedLog.requestBody)}
                     </pre>
                   </div>
 
                   <div className="space-y-1">
                     <span className="font-bold text-slate-700 dark:text-slate-300 block">Response Output (Sanitized)</span>
-                    <pre className="p-3 bg-slate-950 text-slate-100 rounded-xl overflow-x-auto text-[11px] font-mono leading-relaxed max-h-[180px] overflow-y-auto">
+                    <pre className="p-3 bg-slate-950 text-slate-100 rounded-xl overflow-x-auto text-[11px] font-mono leading-relaxed">
                       {formatJSON(selectedLog.responseBody)}
                     </pre>
                   </div>
@@ -515,8 +515,8 @@ export default function ActivityLogsPage() {
             </ScrollArea>
           )}
 
-          <DialogFooter className="border-t dark:border-slate-800 pt-4 mt-2">
-            <Button onClick={() => setSelectedLog(null)} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl h-9 text-xs">
+          <DialogFooter className="shrink-0 border-t dark:border-slate-800 pt-4 mt-2">
+            <Button onClick={() => setSelectedLog(null)} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl h-9 text-xs cursor-pointer">
               Close Detail Panel
             </Button>
           </DialogFooter>

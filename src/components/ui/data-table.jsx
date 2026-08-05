@@ -2,17 +2,17 @@
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import {
-  ChevronUp,
-  ChevronDown,
-  ChevronsUpDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-  Search,
-  Loader2,
-} from "lucide-react";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -20,223 +20,372 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-const PageBtn = ({ pg, label, disabled, active, onClick }) => (
-  <button
-    type="button"
-    onClick={() => onClick(pg)}
-    disabled={disabled}
-    className={`h-8 min-w-[32px] px-2 rounded-lg text-xs font-bold transition-all cursor-pointer select-none
-        ${active
-        ? "bg-sky-500 dark:bg-sky-600 text-white shadow-sm shadow-sky-200 dark:shadow-sky-900"
-        : "text-slate-500 hover:text-sky-500 dark:text-slate-400 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:text-slate-500"
-      }`}
-  >
-    {label ?? pg}
-  </button>
-);
+import {
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  PackageOpen,
+} from "lucide-react";
 
 /**
  * DataTable — Universal paginated, sortable, searchable table.
- * Supports both Client-side Mode and Server-side (Lazy) Mode.
+ * Designed like Aspino-GatePass with full support for client-side and server-side (lazy) modes.
  */
 export function DataTable({
   columns = [],
   data,
   value,
-  searchKeys,
+  searchable = true,
+  searchPlaceholder = "Search...",
   pageSize: defaultPageSize = 10,
-  emptyMessage = "No records found.",
+  rows: propRows,
+  emptyMessage = "No data found",
+  emptyDescription = "There are no records to display.",
   title,
   headerRight,
+  actions,
+  onRowClick,
+  searchKeys,
   // Lazy / Server-Side Mode Props
   lazy = false,
+  isServerSide: propIsServerSide,
   page: serverPage,
+  currentPage: propCurrentPage,
   rows: serverRows,
+  limit: propLimit,
   totalRecords: serverTotalRecords,
+  totalCount: propTotalCount,
+  totalPages: propTotalPages,
   loading = false,
   search: serverSearch,
+  searchQuery: propSearchQuery,
   sortBy: serverSortBy,
   sortOrder: serverSortOrder,
   onPageChange,
   onRowsChange,
+  onLimitChange,
   onSortChange,
   onSearchChange,
+  onSearchQueryChange,
   onPage,
   onSort,
   onSearch,
 }) {
-  const isLazy = lazy || serverTotalRecords !== undefined || onPageChange !== undefined || onPage !== undefined;
-
-  // Local state for non-lazy fallback
-  const [localSearch, setLocalSearch] = useState("");
-  const [localSortKey, setLocalSortKey] = useState(null);
-  const [localSortDir, setLocalSortDir] = useState("asc");
-  const [localPage, setLocalPage] = useState(1);
-  const [localPageSize, setLocalPageSize] = useState(defaultPageSize);
-
-  // Debounced search for lazy/server-side mode
-  const [inputSearch, setInputSearch] = useState(serverSearch ?? "");
-  const debounceRef = useRef(null);
-
-  // Sync inputSearch when serverSearch prop resets externally (e.g. clear button)
-  useEffect(() => {
-    if (serverSearch !== undefined && serverSearch !== inputSearch) {
-      setInputSearch(serverSearch);
-    }
-  }, [serverSearch]);
+  const isLazy =
+    lazy ||
+    propIsServerSide ||
+    serverTotalRecords !== undefined ||
+    propTotalCount !== undefined ||
+    onPageChange !== undefined ||
+    onPage !== undefined;
 
   const rawData = Array.isArray(value) ? value : Array.isArray(data) ? data : [];
 
-  // Effective state variables
-  const currentSearch = isLazy ? (serverSearch ?? localSearch) : localSearch;
-  const currentSortKey = isLazy ? (serverSortBy ?? localSortKey) : localSortKey;
-  const currentSortDir = isLazy ? (serverSortOrder ?? localSortDir) : localSortDir;
-  const currentPage = isLazy ? (serverPage ?? 1) : localPage;
-  const currentRows = isLazy ? (serverRows ?? defaultPageSize) : localPageSize;
+  // Effective page size
+  const effectivePageSize = propRows ?? serverRows ?? propLimit ?? defaultPageSize;
 
-  // Search Keys for client-side mode
-  const keys = searchKeys || columns.map((c) => c.key);
+  // Local state for client-side mode
+  const [localSearchQuery, setLocalSearchQuery] = useState("");
+  const [localCurrentPage, setLocalCurrentPage] = useState(1);
+  const [localSortConfig, setLocalSortConfig] = useState({ key: null, direction: null });
+  const [localRowsPerPage, setLocalRowsPerPage] = useState(effectivePageSize);
 
-  // Client-side filtering & sorting
-  const filtered = useMemo(() => {
-    if (isLazy || !currentSearch.trim()) return rawData;
-    const q = currentSearch.toLowerCase();
+  // Debounced input search for server-side mode
+  const activeServerSearch = serverSearch ?? propSearchQuery ?? "";
+  const [inputSearch, setInputSearch] = useState(activeServerSearch);
+  const debounceRef = useRef(null);
+
+  useEffect(() => {
+    if (activeServerSearch !== undefined && activeServerSearch !== inputSearch) {
+      setInputSearch(activeServerSearch);
+    }
+  }, [activeServerSearch]);
+
+  // Current state values
+  const activeSearchQuery = isLazy ? inputSearch : localSearchQuery;
+  const activeCurrentPage = isLazy ? (serverPage ?? propCurrentPage ?? 1) : localCurrentPage;
+  const activeRowsPerPage = isLazy ? effectivePageSize : localRowsPerPage;
+
+  // Client-side search filtering
+  const keysToSearch = useMemo(() => {
+    if (searchKeys && searchKeys.length > 0) return searchKeys;
+    return columns.map((c) => c.key || c.accessorKey || c.id).filter(Boolean);
+  }, [searchKeys, columns]);
+
+  const filteredData = useMemo(() => {
+    if (isLazy) return rawData;
+    if (!localSearchQuery.trim()) return rawData;
+    const q = localSearchQuery.toLowerCase();
     return rawData.filter((row) =>
-      keys.some((k) => {
-        const val = k.split(".").reduce((o, p) => o?.[p], row);
-        return String(val ?? "").toLowerCase().includes(q);
+      keysToSearch.some((colKey) => {
+        const value = colKey.split(".").reduce((o, p) => o?.[p], row);
+        if (value == null) return false;
+        return String(value).toLowerCase().includes(q);
       })
     );
-  }, [isLazy, rawData, currentSearch, keys]);
+  }, [rawData, localSearchQuery, keysToSearch, isLazy]);
 
-  const sorted = useMemo(() => {
-    if (isLazy || !currentSortKey) return filtered;
-    return [...filtered].sort((a, b) => {
-      const av = currentSortKey.split(".").reduce((o, p) => o?.[p], a) ?? "";
-      const bv = currentSortKey.split(".").reduce((o, p) => o?.[p], b) ?? "";
-      const cmp = String(av).localeCompare(String(bv), undefined, { numeric: true });
+  // Client-side sorting
+  const currentSortKey = isLazy ? (serverSortBy ?? null) : localSortConfig.key;
+  const currentSortDir = isLazy ? (serverSortOrder ?? null) : localSortConfig.direction;
+
+  const sortedData = useMemo(() => {
+    if (isLazy) return rawData;
+    if (!currentSortKey) return filteredData;
+    return [...filteredData].sort((a, b) => {
+      const aVal = currentSortKey.split(".").reduce((o, p) => o?.[p], a);
+      const bVal = currentSortKey.split(".").reduce((o, p) => o?.[p], b);
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+      const cmp = String(aVal).localeCompare(String(bVal), undefined, { numeric: true });
       return currentSortDir === "asc" ? cmp : -cmp;
     });
-  }, [isLazy, filtered, currentSortKey, currentSortDir]);
+  }, [filteredData, currentSortKey, currentSortDir, isLazy, rawData]);
 
-  // Total records & paginated data
-  const totalCount = isLazy ? (serverTotalRecords ?? rawData.length) : sorted.length;
-  const totalPages = Math.max(1, Math.ceil(totalCount / currentRows));
-  const safePage = Math.min(currentPage, totalPages);
-  const displayRows = isLazy ? rawData : sorted.slice((safePage - 1) * currentRows, safePage * currentRows);
+  // Total count & total pages calculation
+  const totalCount = isLazy
+    ? (serverTotalRecords ?? propTotalCount ?? rawData.length)
+    : sortedData.length;
 
-  // Handlers
-  const handlePage = (newPage) => {
-    if (isLazy) {
-      if (onPageChange) onPageChange(newPage);
-      if (onPage) onPage({ page: newPage, first: (newPage - 1) * currentRows, rows: currentRows });
-    } else {
-      setLocalPage(newPage);
-    }
-  };
+  const activeTotalPages = isLazy
+    ? (propTotalPages ?? Math.max(1, Math.ceil(totalCount / activeRowsPerPage)))
+    : Math.max(1, Math.ceil(sortedData.length / activeRowsPerPage));
 
-  const handleRows = (newRows) => {
-    if (isLazy) {
-      if (onRowsChange) onRowsChange(newRows);
-      if (onPageChange) onPageChange(1);
-      if (onPage) onPage({ page: 1, first: 0, rows: newRows });
-    } else {
-      setLocalPageSize(newRows);
-      setLocalPage(1);
-    }
-  };
+  const paginatedData = useMemo(() => {
+    if (isLazy) return rawData;
+    const safePage = Math.min(activeCurrentPage, activeTotalPages);
+    return sortedData.slice(
+      (safePage - 1) * activeRowsPerPage,
+      safePage * activeRowsPerPage
+    );
+  }, [sortedData, activeCurrentPage, activeRowsPerPage, activeTotalPages, isLazy, rawData]);
 
-  const handleSort = (key) => {
-    const nextDir = currentSortKey === key && currentSortDir === "asc" ? "desc" : "asc";
-    if (isLazy) {
-      if (onSortChange) onSortChange(key, nextDir);
-      if (onSort) onSort({ sortField: key, sortOrder: nextDir === "asc" ? 1 : -1 });
-      if (onPageChange) onPageChange(1);
-    } else {
-      setLocalSortKey(key);
-      setLocalSortDir(nextDir);
-      setLocalPage(1);
-    }
-  };
-
-  const handleSearch = (term) => {
+  // Event handlers
+  const handleSearchChange = (term) => {
     if (isLazy) {
       setInputSearch(term);
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
-        if (onSearchChange) onSearchChange(term);
-        if (onSearch) onSearch(term);
-        if (onPageChange) onPageChange(1);
+        onSearchChange?.(term);
+        onSearchQueryChange?.(term);
+        onSearch?.(term);
+        onPageChange?.(1);
       }, 350);
     } else {
-      setLocalSearch(term);
-      setLocalPage(1);
+      setLocalSearchQuery(term);
+      setLocalCurrentPage(1);
     }
   };
 
-  const SortIcon = ({ colKey }) => {
-    if (currentSortKey !== colKey)
-      return <ChevronsUpDown className="w-3 h-3 opacity-30 ml-1 inline" />;
-    return currentSortDir === "asc" || currentSortDir === 1 ? (
-      <ChevronUp className="w-3 h-3 text-sky-500 ml-1 inline" />
-    ) : (
-      <ChevronDown className="w-3 h-3 text-sky-500 ml-1 inline" />
-    );
+  const handleSort = (key) => {
+    if (!key) return;
+    const isAsc = currentSortKey === key && (currentSortDir === "asc" || currentSortDir === 1);
+    const nextDir = isAsc ? "desc" : "asc";
+
+    if (isLazy) {
+      onSortChange?.(key, nextDir);
+      onSort?.({ sortField: key, sortOrder: nextDir === "asc" ? 1 : -1 });
+      onPageChange?.(1);
+    } else {
+      setLocalSortConfig({ key, direction: nextDir });
+      setLocalCurrentPage(1);
+    }
   };
 
-  // Smart page numbers
-  const pageNumbers = useMemo(() => {
-    if (totalPages <= 7)
-      return Array.from({ length: totalPages }, (_, i) => i + 1);
-    const delta = 1;
-    const left = Math.max(2, safePage - delta);
-    const right = Math.min(totalPages - 1, safePage + delta);
-    const range = [];
-    for (let i = left; i <= right; i++) range.push(i);
-    const withDots = [];
-    if (left > 2) withDots.push("...");
-    range.forEach((p) => withDots.push(p));
-    if (right < totalPages - 1) withDots.push("...");
-    return [1, ...withDots, totalPages];
-  }, [totalPages, safePage]);
+  const handlePageChange = (newPage) => {
+    if (isLazy) {
+      onPageChange?.(newPage);
+      onPage?.({
+        page: newPage,
+        first: (newPage - 1) * activeRowsPerPage,
+        rows: activeRowsPerPage,
+      });
+    } else {
+      setLocalCurrentPage(newPage);
+    }
+  };
+
+  const handleLimitChange = (newLimit) => {
+    if (isLazy) {
+      onRowsChange?.(newLimit);
+      onLimitChange?.(newLimit);
+      onPageChange?.(1);
+      onPage?.({ page: 1, first: 0, rows: newLimit });
+    } else {
+      setLocalRowsPerPage(newLimit);
+      setLocalCurrentPage(1);
+    }
+  };
+
+  const getSortIcon = (colKey) => {
+    if (currentSortKey !== colKey) {
+      return <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground/50" />;
+    }
+    if (currentSortDir === "asc" || currentSortDir === 1) {
+      return <ArrowUp className="h-3.5 w-3.5 text-aspino-primary" />;
+    }
+    return <ArrowDown className="h-3.5 w-3.5 text-aspino-primary" />;
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-4 animate-fade-in">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-10 w-72" />
+          <Skeleton className="h-10 w-32" />
+        </div>
+        <div className="rounded-xl border bg-card overflow-hidden">
+          <div className="p-0">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex items-center gap-4 px-6 py-4 border-b last:border-0">
+                {columns.map((_, j) => (
+                  <Skeleton key={j} className="h-5 flex-1" />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const effectiveHeaderRight = headerRight || actions;
 
   return (
-    <div className="relative bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-md overflow-hidden">
-      {/* Header */}
-      <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex flex-wrap justify-between items-center gap-3">
-        <div className="flex items-center gap-3 flex-wrap">
+    <div className="space-y-4 animate-fade-in">
+      {/* Toolbar */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3 flex-wrap w-full sm:w-auto">
           {title && (
-            <h3 className="font-extrabold text-slate-800 dark:text-white text-sm">
+            <h3 className="font-bold text-slate-800 dark:text-white text-sm">
               {title}
             </h3>
           )}
-          {/* Search */}
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <Input
-              value={isLazy ? inputSearch : currentSearch}
-              onChange={(e) => handleSearch(e.target.value)}
-              placeholder="Search..."
-              className="pl-8 pr-3 h-8 w-48 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-400/40 placeholder:text-slate-400 transition"
-            />
-          </div>
+          {searchable && (
+            <div className="relative w-full sm:w-80">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder={searchPlaceholder}
+                value={activeSearchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                className="pl-10 h-10 bg-background border-border/60 focus:border-aspino-primary/50 transition-colors"
+              />
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
-          {headerRight}
-          {/* Rows per page */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-slate-400 font-medium">Rows:</span>
+        <div className="flex items-center gap-2 flex-wrap ml-auto sm:ml-0">
+          {effectiveHeaderRight}
+          <Badge variant="secondary" className="font-normal text-xs">
+            {totalCount} record{totalCount !== 1 ? "s" : ""}
+          </Badge>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="rounded-xl border bg-card overflow-hidden shadow-sm">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/40 hover:bg-muted/40">
+              {columns.map((col, index) => {
+                const colKey = col.key || col.accessorKey || col.id || `col-${index}`;
+                const colLabel = col.label ?? col.header ?? "";
+                const isSortable = col.sortable !== false;
+
+                return (
+                  <TableHead
+                    key={colKey}
+                    className={`font-semibold text-xs uppercase tracking-wider text-muted-foreground ${
+                      isSortable
+                        ? "cursor-pointer select-none hover:text-foreground transition-colors"
+                        : ""
+                    }`}
+                    onClick={() => isSortable && handleSort(colKey)}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      {colLabel}
+                      {isSortable && getSortIcon(colKey)}
+                    </div>
+                  </TableHead>
+                );
+              })}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {paginatedData.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="h-48">
+                  <div className="flex flex-col items-center justify-center gap-3 text-muted-foreground py-8">
+                    <div className="rounded-full bg-muted p-4">
+                      <PackageOpen className="h-8 w-8 text-muted-foreground/60" />
+                    </div>
+                    <div className="text-center">
+                      <p className="font-medium">
+                        {activeSearchQuery
+                          ? `No results for "${activeSearchQuery}"`
+                          : emptyMessage}
+                      </p>
+                      <p className="text-sm text-muted-foreground/70">{emptyDescription}</p>
+                    </div>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              paginatedData.map((row, i) => (
+                <TableRow
+                  key={row.id ?? i}
+                  className={`transition-colors ${
+                    onRowClick ? "cursor-pointer hover:bg-accent/50" : "hover:bg-muted/30"
+                  }`}
+                  onClick={() => onRowClick?.(row)}
+                >
+                  {columns.map((col, j) => {
+                    const colKey = col.key || col.accessorKey || col.id || `cell-${j}`;
+                    return (
+                      <TableCell key={colKey} className="py-3.5">
+                        {col.render
+                          ? col.render(row)
+                          : col.cell
+                          ? col.cell(row)
+                          : (() => {
+                              const val = colKey
+                                ?.split(".")
+                                .reduce((o, p) => o?.[p], row);
+                              return val != null ? (
+                                String(val)
+                              ) : (
+                                <span className="text-muted-foreground/40">-</span>
+                              );
+                            })()}
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Pagination */}
+      {activeTotalPages > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>Rows per page</span>
             <Select
-              value={String(currentRows)}
-              onValueChange={(val) => handleRows(Number(val))}
+              value={String(activeRowsPerPage)}
+              onValueChange={(val) => handleLimitChange(Number(val))}
             >
-              <SelectTrigger className="h-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 px-2 cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-400/40 w-[70px]">
-                <SelectValue placeholder={String(currentRows)} />
+              <SelectTrigger className="h-8 w-[70px]">
+                <SelectValue />
               </SelectTrigger>
-              <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                {[5, 10, 25, 50, 100].map((n) => (
+              <SelectContent>
+                {[5, 10, 20, 25, 50, 100].map((n) => (
                   <SelectItem key={n} value={String(n)}>
                     {n}
                   </SelectItem>
@@ -244,148 +393,52 @@ export function DataTable({
               </SelectContent>
             </Select>
           </div>
-        </div>
-      </div>
 
-      {/* Table Area with Loading Overlay */}
-      <div className="relative overflow-x-auto">
-        {loading && (
-          <div className="absolute inset-0 bg-white/60 dark:bg-slate-900/60 z-10 flex items-center justify-center backdrop-blur-[1px]">
-            <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-4 py-2 rounded-full shadow-lg border border-slate-100 dark:border-slate-700">
-              <Loader2 className="w-4 h-4 animate-spin text-sky-500" />
-              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Loading data...
-              </span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">
+              Page {activeCurrentPage} of {activeTotalPages}
+            </span>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => handlePageChange(1)}
+                disabled={activeCurrentPage <= 1}
+              >
+                <ChevronsLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => handlePageChange(activeCurrentPage - 1)}
+                disabled={activeCurrentPage <= 1}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => handlePageChange(activeCurrentPage + 1)}
+                disabled={activeCurrentPage >= activeTotalPages}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => handlePageChange(activeTotalPages)}
+                disabled={activeCurrentPage >= activeTotalPages}
+              >
+                <ChevronsRight className="h-4 w-4" />
+              </Button>
             </div>
           </div>
-        )}
-
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800">
-              {columns.map((col) => (
-                <th
-                  key={col.key}
-                  onClick={() =>
-                    col.sortable !== false && handleSort(col.key)
-                  }
-                  className={`p-4 text-[11px] font-black text-slate-500 uppercase tracking-wider whitespace-nowrap select-none
-                    ${
-                      col.sortable !== false
-                        ? "cursor-pointer hover:text-sky-500 transition-colors"
-                        : ""
-                    }`}
-                >
-                  {col.label}
-                  {col.sortable !== false && <SortIcon colKey={col.key} />}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
-            {displayRows.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={columns.length}
-                  className="p-10 text-center text-slate-400 text-sm font-medium"
-                >
-                  {currentSearch
-                    ? `No results for "${currentSearch}"`
-                    : emptyMessage}
-                </td>
-              </tr>
-            ) : (
-              displayRows.map((row, idx) => (
-                <tr
-                  key={row.id ?? idx}
-                  className="hover:bg-sky-50 dark:bg-sky-500/10/30 dark:hover:bg-slate-800/30 transition-colors"
-                >
-                  {columns.map((col) => (
-                    <td
-                      key={col.key}
-                      className="p-4 text-sm text-slate-700 dark:text-slate-300 align-top"
-                    >
-                      {col.render
-                        ? col.render(row)
-                        : (() => {
-                            const val = col.key.split(".").reduce((o, p) => o?.[p], row);
-                            return val != null ? (
-                              String(val)
-                            ) : (
-                              <span className="text-slate-300">-</span>
-                            );
-                          })()}
-                    </td>
-                  ))}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Footer / Pagination */}
-      <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex flex-wrap justify-between items-center gap-3">
-        <span className="text-xs text-slate-400 font-medium">
-          Showing{" "}
-          <strong className="text-slate-600 dark:text-slate-300">
-            {totalCount === 0 ? 0 : (safePage - 1) * currentRows + 1}
-            {"-"}
-            {Math.min(safePage * currentRows, totalCount)}
-          </strong>{" "}
-          of{" "}
-          <strong className="text-slate-600 dark:text-slate-300">
-            {totalCount}
-          </strong>{" "}
-          records
-        </span>
-
-        <div className="flex items-center gap-1">
-          <PageBtn
-            onClick={handlePage}
-            pg={1}
-            label={<ChevronsLeft className="w-3.5 h-3.5" />}
-            disabled={safePage <= 1}
-          />
-          <PageBtn
-            onClick={handlePage}
-            pg={safePage - 1}
-            label={<ChevronLeft className="w-3.5 h-3.5" />}
-            disabled={safePage <= 1}
-          />
-
-          {pageNumbers.map((p, i) =>
-            p === "..." ? (
-              <span
-                key={"dot-" + i}
-                className="px-1 text-slate-400 text-xs font-bold select-none"
-              >
-                ...
-              </span>
-            ) : (
-              <PageBtn
-                onClick={handlePage}
-                key={p}
-                pg={p}
-                active={p === safePage}
-              />
-            )
-          )}
-
-          <PageBtn
-            onClick={handlePage}
-            pg={safePage + 1}
-            label={<ChevronRight className="w-3.5 h-3.5" />}
-            disabled={safePage >= totalPages}
-          />
-          <PageBtn
-            onClick={handlePage}
-            pg={totalPages}
-            label={<ChevronsRight className="w-3.5 h-3.5" />}
-            disabled={safePage >= totalPages}
-          />
         </div>
-      </div>
+      )}
     </div>
   );
 }
