@@ -512,26 +512,26 @@ export default function MonthlyRunTab() {
     {
       key: "employee",
       label: "Employee",
-      render: (row) => <span className="font-semibold">{row.employee ? `${row.employee.firstName} ${row.employee.lastName}` : row.employeeId}</span>
+      render: (row) => <span className="font-semibold text-slate-900 dark:text-slate-100">{row.employee ? `${row.employee.firstName} ${row.employee.lastName}` : row.employeeId}</span>
     },
     {
       key: "days",
       label: "Payable Days / LWP",
       render: (row) => (
         <div className="text-xs">
-          <span className="font-bold text-slate-900">{row.payableDays} days</span>
-          {row.lwpDays > 0 && <span className="text-rose-600 block">({row.lwpDays} LWP)</span>}
+          <span className="font-bold text-slate-900 dark:text-slate-100">{row.payableDays} days</span>
+          {row.lwpDays > 0 && <span className="text-rose-600 dark:text-rose-400 block">({row.lwpDays} LWP)</span>}
         </div>
       )
     },
     {
       key: "basic",
       label: "Basic + HRA + DA",
-      render: (row) => <span className="text-xs">₹{row.basicSalary.toLocaleString()} + ₹{row.hra.toLocaleString()} + ₹{row.da.toLocaleString()}</span>
+      render: (row) => <span className="text-xs text-slate-600 dark:text-slate-400">₹{row.basicSalary.toLocaleString()} + ₹{row.hra.toLocaleString()} + ₹{row.da.toLocaleString()}</span>
     },
-    { key: "grossEarnings", label: "Gross Pay", render: (row) => <span className="font-bold text-sky-600">₹{row.grossEarnings.toLocaleString()}</span> },
-    { key: "deductions", label: "PF / ESI / PT", render: (row) => <span className="text-xs text-slate-600">₹{row.pfDeduction} / ₹{row.esiDeduction} / ₹{row.ptDeduction}</span> },
-    { key: "taxes", label: "TDS / Loan", render: (row) => <span className="text-xs text-amber-700">₹{row.tdsDeduction} / ₹{row.loanRecovery}</span> },
+    { key: "grossEarnings", label: "Gross Pay", render: (row) => <span className="font-bold text-sky-600 dark:text-sky-400">₹{row.grossEarnings.toLocaleString()}</span> },
+    { key: "deductions", label: "PF / ESI / PT", render: (row) => <span className="text-xs text-slate-600 dark:text-slate-400">₹{row.pfDeduction} / ₹{row.esiDeduction} / ₹{row.ptDeduction}</span> },
+    { key: "taxes", label: "TDS / Loan", render: (row) => <span className="text-xs text-amber-700 dark:text-amber-500">₹{row.tdsDeduction} / ₹{row.loanRecovery}</span> },
     { key: "netSalary", label: "Net Pay", render: (row) => <span className="font-extrabold text-emerald-600 dark:text-emerald-400">₹{row.netSalary.toLocaleString()}</span> }
   ];
 
@@ -562,7 +562,7 @@ export default function MonthlyRunTab() {
             <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b pb-6">
               <div className="flex items-center gap-4">
                 <div>
-                  <Label className="text-xs text-slate-500">Select Month</Label>
+                  <Label className="text-xs text-slate-500 dark:text-slate-400">Select Month</Label>
                   <Select value={String(selectedMonth)} onValueChange={(val) => setSelectedMonth(Number(val))}>
                     <SelectTrigger className="w-36 rounded-xl h-10"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -575,7 +575,7 @@ export default function MonthlyRunTab() {
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-xs text-slate-500">Year</Label>
+                  <Label className="text-xs text-slate-500 dark:text-slate-400">Year</Label>
                   <Input type="number" value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="w-28 rounded-xl h-10" />
                 </div>
               </div>
@@ -596,31 +596,31 @@ export default function MonthlyRunTab() {
             {currentRun && (
               <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border">
-                  <span className="text-xs text-slate-500">Payroll Run Status</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Payroll Run Status</span>
                   <div className="mt-1">
-                    <Badge className={currentRun.status === "APPROVED" ? "bg-emerald-100 text-emerald-800 text-sm" : "bg-amber-100 text-amber-800 text-sm"}>
+                    <Badge className={currentRun.status === "APPROVED" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400 text-sm" : "bg-amber-100 text-amber-800 dark:bg-amber-950/30 dark:text-amber-400 text-sm"}>
                       {currentRun.status}
                     </Badge>
                   </div>
                 </div>
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border">
-                  <span className="text-xs text-slate-500">Total Direct Employees</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Total Direct Employees</span>
                   <p className="text-2xl font-extrabold text-slate-900 dark:text-slate-100 mt-1">{currentRun.totalEmployees}</p>
                 </div>
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border">
-                  <span className="text-xs text-slate-500">Total Monthly Gross</span>
-                  <p className="text-2xl font-extrabold text-sky-600 mt-1">₹{currentRun.totalGross.toLocaleString()}</p>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Total Monthly Gross</span>
+                  <p className="text-2xl font-extrabold text-sky-600 dark:text-sky-400 mt-1">₹{currentRun.totalGross.toLocaleString()}</p>
                 </div>
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border">
-                  <span className="text-xs text-slate-500">Total Net Disbursement</span>
-                  <p className="text-2xl font-extrabold text-emerald-600 mt-1">₹{currentRun.totalNet.toLocaleString()}</p>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Total Net Disbursement</span>
+                  <p className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-1">₹{currentRun.totalNet.toLocaleString()}</p>
                 </div>
               </div>
             )}
 
             {/* Detailed Preview Table */}
             <div className="mt-6">
-              <h3 className="text-base font-bold mb-3">Employee Payroll Breakdown Preview</h3>
+              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-3">Employee Payroll Breakdown Preview</h3>
               <DataTable
                 columns={payslipPreviewColumns}
                 data={payslips?.data || []}
