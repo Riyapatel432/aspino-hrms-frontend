@@ -22,12 +22,20 @@ import {
   Building2,
   CalendarOff,
   GraduationCap,
+  Calendar,
   Briefcase,
   UserCheck,
   UserMinus,
   Clock,
   Award,
   History,
+  Banknote,
+  Calculator,
+  ShieldCheck,
+  RefreshCw,
+  FileText,
+  FileCheck,
+  Landmark,
 } from "lucide-react";
 
 const menuItems = [
@@ -50,15 +58,22 @@ const menuItems = [
         icon: Building2,
       },
       {
-        title: "Leave Master",
-        href: "/dashboard/leave-master",
-        icon: CalendarOff,
+        title: "Financial Year Master",
+        href: "/dashboard/financial-year",
+        icon: Calendar,
       },
       {
         title: "Training Type",
         href: "/dashboard/training-type",
         icon: GraduationCap,
       },
+      {
+        title: "Leave Master",
+        href: "/dashboard/leave-master",
+        icon: CalendarOff,
+      },
+      
+     
     ],
   },
   {
@@ -94,6 +109,46 @@ const menuItems = [
         href: "/dashboard/performance-training",
         icon: Award,
       },
+    ],
+  },
+  {
+    group: "Payroll Modules",
+    items: [
+      {
+        title: "Salary Structures",
+        href: "/dashboard/payroll/salary-structures",
+        icon: Calculator,
+      },
+      {
+        title: "HRA & Tax Exemption",
+        href: "/dashboard/payroll/hra-tax",
+        icon: ShieldCheck,
+      },
+      {
+        title: "Loans & Advances",
+        href: "/dashboard/payroll/loans",
+        icon: Landmark,
+      },
+      {
+        title: "Monthly Payroll Run",
+        href: "/dashboard/payroll/monthly-run",
+        icon: RefreshCw,
+      },
+      {
+        title: "Payslips & Self-Service",
+        href: "/dashboard/payroll/payslips",
+        icon: FileText,
+      },
+      {
+        title: "Reports & Form 16",
+        href: "/dashboard/payroll/reports",
+        icon: FileCheck,
+      },
+    ],
+  },
+    {
+    group: "Logs",
+    items: [
       {
         title: "Activity Logs",
         href: "/dashboard/activity-logs",
@@ -135,7 +190,7 @@ export function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu className="gap-0.5 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:gap-1">
                 {group.items.map((item) => {
-                  const isActive = pathname === item.href;
+                  const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                   return (
                     <SidebarMenuItem key={item.href} className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center">
                       <SidebarMenuButton

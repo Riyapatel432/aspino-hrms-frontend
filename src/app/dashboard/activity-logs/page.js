@@ -423,7 +423,7 @@ export default function ActivityLogsPage() {
 
       {/* Payload Details Dialog */}
       <Dialog open={!!selectedLog} onOpenChange={(open) => !open && setSelectedLog(null)}>
-        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-6 rounded-3xl bg-white dark:bg-slate-900 overflow-hidden">
+        <DialogContent className="max-w-2xl sm:max-w-2xl max-h-[85vh] flex flex-col p-6 rounded-3xl bg-white dark:bg-slate-900 overflow-hidden">
           <DialogHeader className="shrink-0">
             <DialogTitle className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
               <Activity className="w-5 h-5 text-sky-500" />

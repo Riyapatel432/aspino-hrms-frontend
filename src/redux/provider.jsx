@@ -3,7 +3,7 @@
 import { Provider } from "react-redux";
 import { store } from "./store";
 import { useEffect } from "react";
-import { initializeAuthFromCookies } from "./slices/authSlice";
+import { initializeAuthFromCookies } from "../features/auth/store/authSlice";
 
 export function ReduxProvider({ children }) {
   useEffect(() => {

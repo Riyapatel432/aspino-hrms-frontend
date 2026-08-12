@@ -27,13 +27,8 @@ export default function RootLayout({ children }) {
       suppressHydrationWarning
       className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="light"
-          enableSystem
-          disableTransitionOnChange
-        >
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        <ThemeProvider defaultTheme="light">
           <ReduxProvider>
             {children}
           </ReduxProvider>

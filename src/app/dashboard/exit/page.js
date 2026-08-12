@@ -31,7 +31,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
-import { useExitWorkflow, calculateLwd } from "@/hooks/useExitWorkflow";
+import { useExitWorkflow, calculateLwd } from "@/features/exit/hooks/useExitWorkflow";
 
 // ---------------------------------------------------------------------------
 // Tab navigation configuration — avoids duplicated tab-ID magic strings
@@ -547,7 +547,17 @@ export default function ExitPage() {
               {/* Settlement form */}
               <div className="lg:col-span-2 space-y-6">
                 {selectedExit ? (
-                  <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-6">
+                  !selectedExit.clearances || selectedExit.clearances.length === 0 || selectedExit.clearances.some(c => c.status !== "CLEARED") ? (
+                    <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md flex flex-col items-center justify-center text-center space-y-3 h-40">
+                      <p className="text-amber-500 font-bold text-sm">
+                        Clearances Pending
+                      </p>
+                      <p className="text-slate-500 text-xs">
+                        All departmental clearances must be marked as "Cleared" before processing the Full & Final Settlement.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-6">
                     <div className="space-y-1">
                       <h3 className="font-black text-slate-800 dark:text-white text-lg">
                         Full & Final Settlement: {selectedExit.employee?.firstName} {selectedExit.employee?.lastName}
@@ -631,6 +641,7 @@ export default function ExitPage() {
                       </div>
                     )}
                   </div>
+                  )
                 ) : (
                   <p className="text-slate-500 text-sm">Select an exit profile to manage settlement.</p>
                 )}
@@ -685,17 +696,29 @@ export default function ExitPage() {
                   </div>
                 </div>
 
-                <Button
-                  onClick={() => window.print()}
-                  className="bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 h-10 px-4"
-                >
-                  <Printer className="w-4 h-4" aria-hidden="true" /> Print Document
-                </Button>
+                {selectedExit && selectedExit.status === "COMPLETED" && (
+                  <Button
+                    onClick={() => window.print()}
+                    className="bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 h-10 px-4"
+                  >
+                    <Printer className="w-4 h-4" aria-hidden="true" /> Print Document
+                  </Button>
+                )}
               </div>
 
               {/* Letter Preview */}
               {selectedExit ? (
-                <div className="bg-white dark:bg-slate-900 text-black dark:text-white p-8 sm:p-12 shadow-2xl rounded-3xl border border-slate-200 dark:border-slate-800 max-w-[800px] mx-auto min-h-[1000px] flex flex-col justify-between font-serif relative print-letter-card">
+                selectedExit.status !== "COMPLETED" ? (
+                  <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md flex flex-col items-center justify-center text-center space-y-3 h-40 print:hidden">
+                    <p className="text-amber-500 font-bold text-sm">
+                      Pending Final Approval
+                    </p>
+                    <p className="text-slate-500 text-xs">
+                      Relieving / Experience Letters can only be generated after the exit is Finalized and Settlement is marked as Paid.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-white dark:bg-slate-900 text-black dark:text-white p-8 sm:p-12 shadow-2xl rounded-3xl border border-slate-200 dark:border-slate-800 max-w-[800px] mx-auto min-h-[1000px] flex flex-col justify-between font-serif relative print-letter-card">
                   {/* Letter header */}
                   <div className="flex justify-between items-start border-b-2 border-[#1e40af] pb-6">
                     <div className="flex flex-col">
@@ -782,6 +805,7 @@ export default function ExitPage() {
                     </div>
                   </div>
                 </div>
+                )
               ) : (
                 <p className="text-slate-500 text-sm print:hidden">
                   Select an exit profile to display Relieving/Experience document preview.

@@ -119,6 +119,8 @@ export const fetchAttendance = createAsyncThunk("attendance/fetchAttendance", as
     if (params.sortOrder) query.append("sortOrder", params.sortOrder);
     if (params.employeeId) query.append("employeeId", params.employeeId);
     if (params.date) query.append("date", params.date);
+    if (params.month) query.append("month", params.month);
+    if (params.year) query.append("year", params.year);
 
     const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/attendance?${query.toString()}`);
     if (!res.ok) throw new Error("Failed to fetch attendance");
@@ -136,6 +138,20 @@ export const createAttendance = createAsyncThunk("attendance/createAttendance", 
       body: JSON.stringify(data),
     });
     if (!res.ok) throw new Error(await getErrorMsg(res, "Failed to create attendance"));
+    return await res.json();
+  } catch (err) {
+    return rejectWithValue(err.message);
+  }
+});
+
+export const bulkImportAttendance = createAsyncThunk("attendance/bulkImportAttendance", async (records, { rejectWithValue }) => {
+  try {
+    const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/attendance/bulk-import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ records }),
+    });
+    if (!res.ok) throw new Error(await getErrorMsg(res, "Failed to import attendance"));
     return await res.json();
   } catch (err) {
     return rejectWithValue(err.message);
@@ -170,8 +186,17 @@ const attendanceSlice = createSlice({
         state.totalShifts = action.payload?.pagination?.total || state.shifts.length;
       })
       .addCase(fetchShifts.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
-      .addCase(createShift.fulfilled, (state, action) => { state.shifts.push(action.payload); })
-      .addCase(deleteShift.fulfilled, (state, action) => { state.shifts = state.shifts.filter(s => s.id !== action.payload); })
+      .addCase(createShift.fulfilled, (state, action) => { 
+        state.shifts.push(action.payload); 
+        state.totalShifts += 1;
+      })
+      .addCase(deleteShift.fulfilled, (state, action) => { 
+        const initialLength = state.shifts.length;
+        state.shifts = state.shifts.filter(s => s.id !== action.payload); 
+        if (state.shifts.length < initialLength) {
+          state.totalShifts = Math.max(0, state.totalShifts - 1);
+        }
+      })
       
       // Rosters
       .addCase(fetchRosters.pending, (state) => { state.loading = true; state.error = null; })
@@ -181,8 +206,17 @@ const attendanceSlice = createSlice({
         state.totalRosters = action.payload?.pagination?.total || state.rosters.length;
       })
       .addCase(fetchRosters.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
-      .addCase(createRoster.fulfilled, (state, action) => { state.rosters.push(action.payload); })
-      .addCase(deleteRoster.fulfilled, (state, action) => { state.rosters = state.rosters.filter(r => r.id !== action.payload); })
+      .addCase(createRoster.fulfilled, (state, action) => { 
+        state.rosters.push(action.payload); 
+        state.totalRosters += 1;
+      })
+      .addCase(deleteRoster.fulfilled, (state, action) => { 
+        const initialLength = state.rosters.length;
+        state.rosters = state.rosters.filter(r => r.id !== action.payload); 
+        if (state.rosters.length < initialLength) {
+          state.totalRosters = Math.max(0, state.totalRosters - 1);
+        }
+      })
       
       // Attendance
       .addCase(fetchAttendance.pending, (state) => { state.loading = true; state.error = null; })
@@ -192,7 +226,10 @@ const attendanceSlice = createSlice({
         state.totalAttendance = action.payload?.pagination?.total || state.attendance.length;
       })
       .addCase(fetchAttendance.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
-      .addCase(createAttendance.fulfilled, (state, action) => { state.attendance.push(action.payload); });
+      .addCase(createAttendance.fulfilled, (state, action) => { 
+        state.attendance.push(action.payload); 
+        state.totalAttendance += 1;
+      });
   }
 });
 

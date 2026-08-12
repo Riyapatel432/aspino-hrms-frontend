@@ -374,12 +374,16 @@ export default function PerformanceTrainingPage() {
     try {
       if (deleteTarget.type === "cycle") {
         await handleDeleteCycle(deleteTarget.id);
+        if (newCycle.id === deleteTarget.id) setNewCycle({ id: null, name: "", startDate: "", endDate: "" });
       } else if (deleteTarget.type === "goal") {
         await handleDeleteGoal(deleteTarget.id);
+        if (newGoal.id === deleteTarget.id) setNewGoal({ id: null, employeeId: "", cycleId: "", title: "", description: "", weightage: "" });
       } else if (deleteTarget.type === "review") {
         await handleDeleteReview(deleteTarget.id);
+        if (newReview.id === deleteTarget.id) setNewReview({ id: null, employeeId: "", cycleId: "", selfRating: "", selfComments: "", managerRating: "", managerComments: "", finalRating: "", status: "" });
       } else if (deleteTarget.type === "training") {
         await handleDeleteTraining(deleteTarget.id);
+        if (newTraining.id === deleteTarget.id) setNewTraining({ id: null, employeeId: "", trainingName: "", trainingType: "", completionDate: "", expiryDate: "" });
       }
       setDeleteTarget(null);
     } catch (err) {
@@ -1067,7 +1071,7 @@ export default function PerformanceTrainingPage() {
                       </SelectTrigger>
                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                         {trainingTypes.length > 0 ? (
-                          trainingTypes.map((t) => (
+                          trainingTypes.filter(t => t.isActive !== false).map((t) => (
                             <SelectItem key={t.id} value={t.name}>{t.name.toUpperCase()}</SelectItem>
                           ))
                         ) : (

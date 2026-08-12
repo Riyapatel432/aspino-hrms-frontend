@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DataTable } from "@/components/ui/data-table";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { Switch } from "@/components/ui/switch";
 import {
   FolderTree,
   Plus,
@@ -33,7 +34,6 @@ function validateDepartmentName(name) {
 // ---------------------------------------------------------------------------
 export default function DepartmentsPage() {
   const [departments, setDepartments] = useState([]);
-  const [requisitions, setRequisitions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Server-side Data Handling state
@@ -46,6 +46,7 @@ export default function DepartmentsPage() {
 
   // Form state
   const [formName, setFormName] = useState("");
+  const [formIsActive, setFormIsActive] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [nameError, setNameError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -54,7 +55,6 @@ export default function DepartmentsPage() {
   const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
   const [deleting, setDeleting] = useState(false);
 
-  // ---------------------------------------------------------------------------
   // Data fetching
   // ---------------------------------------------------------------------------
   async function fetchData() {
@@ -68,13 +68,8 @@ export default function DepartmentsPage() {
       if (sortBy) params.append("sortBy", sortBy);
       if (sortOrder) params.append("sortOrder", sortOrder);
 
-      const [deptRes, reqRes] = await Promise.all([
-        apiFetch(`${API_URL}/staff-hrms/recruitment/departments?${params.toString()}`),
-        apiFetch(`${API_URL}/staff-hrms/recruitment/requisitions`),
-      ]);
-
+      const deptRes = await apiFetch(`${API_URL}/staff-hrms/recruitment/departments?${params.toString()}`);
       const deptData = await deptRes.json();
-      const reqData = await reqRes.json();
 
       if (deptData && deptData.data) {
         setDepartments(Array.isArray(deptData.data) ? deptData.data : []);
@@ -84,7 +79,6 @@ export default function DepartmentsPage() {
       } else {
         setDepartments(Array.isArray(deptData) ? deptData : []);
       }
-      setRequisitions(Array.isArray(reqData?.data) ? reqData.data : Array.isArray(reqData) ? reqData : []);
     } catch (e) {
       console.error("Error loading department data:", e);
     } finally {
@@ -103,12 +97,14 @@ export default function DepartmentsPage() {
   function startEditing(dept) {
     setEditingId(dept.id);
     setFormName(dept.name);
+    setFormIsActive(dept.isActive !== false);
     setNameError(null);
   }
 
   function cancelEdit() {
     setEditingId(null);
     setFormName("");
+    setFormIsActive(true);
     setNameError(null);
   }
 
@@ -133,7 +129,7 @@ export default function DepartmentsPage() {
       const res = await apiFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: formName.trim() }),
+        body: JSON.stringify({ name: formName.trim(), isActive: formIsActive }),
       });
 
       if (res.ok) {
@@ -160,15 +156,39 @@ export default function DepartmentsPage() {
         method: "DELETE",
       });
       if (res.ok) {
+        toast.success("Department deleted successfully");
+        cancelEdit();
         setDeleteTarget(null);
         fetchData();
       } else {
-        console.error("Department delete failed:", await res.text());
+        const msg = await getErrorMessage(res, "Failed to delete department");
+        toast.error(msg);
       }
     } catch (err) {
       console.error("Department delete error:", err);
+      toast.error("Failed to delete department");
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function handleToggleStatus(row) {
+    const nextStatus = row.isActive !== false ? false : true;
+    try {
+      const res = await apiFetch(`${API_URL}/staff-hrms/recruitment/departments/${row.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: nextStatus }),
+      });
+      if (res.ok) {
+        toast.success(`Department "${row.name}" set to ${nextStatus ? 'Active' : 'Inactive'}`);
+        fetchData();
+      } else {
+        toast.error("Failed to update status");
+      }
+    } catch (e) {
+      console.error("Status update error:", e);
+      toast.error("Status update failed");
     }
   }
 
@@ -217,6 +237,20 @@ export default function DepartmentsPage() {
                     {nameError}
                   </span>
                 )}
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  Status
+                </Label>
+                <div className="flex items-center gap-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-2.5 rounded-xl">
+                  <Switch
+                    checked={formIsActive}
+                    onCheckedChange={setFormIsActive}
+                  />
+                  <span className={`text-xs font-bold ${formIsActive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`}>
+                    {formIsActive ? "Active" : "Inactive"}
+                  </span>
+                </div>
               </div>
               <div className="flex gap-2 pt-2">
                 <Button
@@ -272,7 +306,21 @@ export default function DepartmentsPage() {
                   sortable: false,
                   render: (row) => (
                     <span className="text-xs font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 border border-sky-100 dark:border-sky-500/20 px-2.5 py-1 rounded-full">
-                      {requisitions.filter((r) => r.departmentId === row.id).length}
+                      {row.activeRequisitions || 0}
+                    </span>
+                  ),
+                },
+                {
+                  key: "isActive",
+                  label: "Status",
+                  sortable: false,
+                  render: (row) => (
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+                      row.isActive !== false
+                        ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700"
+                    }`}>
+                      {row.isActive !== false ? "Active" : "Inactive"}
                     </span>
                   ),
                 },

@@ -1,9 +1,10 @@
 import { configureStore } from "@reduxjs/toolkit";
-import authReducer from "./slices/authSlice";
-import attendanceReducer from "./slices/attendanceSlice";
-import leaveReducer from "./slices/leaveSlice";
-import recruitmentReducer from "./slices/recruitmentSlice";
-import profileReducer from "./slices/profileSlice";
+import authReducer from "../features/auth/store/authSlice";
+import attendanceReducer from "../features/attendance/store/attendanceSlice";
+import leaveReducer from "../features/leave/store/leaveSlice";
+import recruitmentReducer from "../features/recruitment/store/recruitmentSlice";
+import profileReducer from "../features/profile/store/profileSlice";
+import payrollReducer from "../features/payroll/store/payrollSlice";
 
 export const store = configureStore({
   reducer: {
@@ -12,6 +13,7 @@ export const store = configureStore({
     leave: leaveReducer,
     recruitment: recruitmentReducer,
     profile: profileReducer,
+    payroll: payrollReducer,
   },
   devTools: process.env.NODE_ENV !== "production",
 });

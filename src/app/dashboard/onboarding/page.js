@@ -30,6 +30,7 @@ import {
 
 export default function OnboardingPage() {
   const [employees, setEmployees] = useState([]);
+  const [banks, setBanks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [activeTab, setActiveTab] = useState("documents");
@@ -43,6 +44,8 @@ export default function OnboardingPage() {
     attendanceApp: false,
     vpn: false,
   });
+
+
 
   const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
   const [deleting, setDeleting] = useState(false);
@@ -105,6 +108,12 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     fetchEmployees();
+    
+    // Fetch banks
+    apiFetch(`${backendUrl}/staff-hrms/onboarding/banks`)
+      .then(res => res.json())
+      .then(data => setBanks(data))
+      .catch(err => console.error("Failed to fetch banks", err));
   }, [fetchEmployees]);
 
   const handleDeleteEmployee = async () => {
@@ -205,11 +214,14 @@ export default function OnboardingPage() {
       });
       if (res.ok) {
         fetchEmployees(true);
+        toast.success("System access updated");
       }
     } catch (err) {
       console.error(err);
     }
   };
+
+
 
   const handleUploadDoc = async (docId, file) => {
     if (!file) return;
@@ -310,6 +322,19 @@ export default function OnboardingPage() {
       ),
     },
     {
+      key: "bankStatus",
+      label: "Bank Details",
+      render: (row) => (
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+          row.bankName && row.accountNumber && row.ifscCode && row.panNumber
+            ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
+            : "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
+        }`}>
+          {row.bankName && row.accountNumber && row.ifscCode && row.panNumber ? "Filled" : "Pending"}
+        </span>
+      ),
+    },
+    {
       key: "status",
       label: "Status",
       render: (row) => (
@@ -399,16 +424,53 @@ export default function OnboardingPage() {
                       DOJ: {new Date(selectedEmp.dateOfJoining).toLocaleDateString()} | Probation Ends: {selectedEmp.probationEnd ? new Date(selectedEmp.probationEnd).toLocaleDateString() : 'N/A'}
                     </p>
                   </div>
-                  <div className="flex items-center gap-4">
-                    {/* QR Code display - URL-encoded to ensure it works */}
-                    <div className="flex flex-col items-center p-1.5 bg-white dark:bg-slate-800 border dark:border-slate-800 rounded-xl shadow-sm">
-                      <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=70x70&data=${encodeURIComponent(selectedEmp.employeeId || "")}`}
-                        alt="Employee QR Code"
-                        className="w-14 h-14"
-                      />
-                      <span className="text-[8px] font-bold text-slate-500 mt-1 uppercase tracking-wider">{selectedEmp.employeeId}</span>
-                    </div>
+                  <div className="flex items-center gap-3">
+                    {/* QR & PDF URL logic (Hosted on Next.js Port 3000) */}
+                    {(() => {
+                      // 1. qrUrl (for the QR image): Expose via Next.js port 3000. Uses network IP 192.168.1.5 if accessed on localhost
+                      // so that phones on Wi-Fi can scan and load it.
+                      const qrHostname = typeof window !== "undefined"
+                        ? (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? "192.168.1.5" : window.location.hostname)
+                        : "192.168.1.5";
+                      const token = selectedEmp.qrToken || selectedEmp.employeeId || "";
+                      const qrUrl = `http://${qrHostname}:3000/employee/pdf/${token}.pdf`;
+
+                      // 2. desktopPdfUrl (for Open/Copy on desktop): Point to port 3000 route handler directly.
+                      const desktopPdfUrl = typeof window !== "undefined"
+                        ? `${window.location.protocol}//${window.location.host}/employee/pdf/${token}.pdf`
+                        : `http://localhost:3000/employee/pdf/${token}.pdf`;
+
+                      return (
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="p-2 bg-white border-2 border-emerald-400 rounded-xl shadow-sm">
+                            <img
+                              src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=6&data=${encodeURIComponent(qrUrl)}&ecc=M`}
+                              alt="Employee PDF QR Code"
+                              className="w-24 h-24 rounded"
+                            />
+                          </div>
+                          <span className="text-[7px] font-mono text-slate-400 max-w-[110px] truncate" title={qrUrl}>
+                            {qrUrl.replace("http://","").replace("https://","").slice(0,26)}…
+                          </span>
+                          <div className="flex gap-1 mt-0.5">
+                            <button
+                              onClick={() => { if (desktopPdfUrl) navigator.clipboard.writeText(desktopPdfUrl).then(() => toast.success("PDF link copied!")); }}
+                              className="text-[9px] font-bold text-sky-500 hover:text-sky-600 bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-500/20 px-2 py-0.5 rounded-md cursor-pointer transition-colors"
+                            >
+                              Copy Link
+                            </button>
+                            <a
+                              href={desktopPdfUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[9px] font-bold text-emerald-500 hover:text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 px-2 py-0.5 rounded-md transition-colors"
+                            >
+                              Open PDF ↗
+                            </a>
+                          </div>
+                        </div>
+                      );
+                    })()}
                     <div className="flex flex-col items-end gap-1.5">
                       <span className="text-xs font-black bg-slate-100 dark:bg-slate-500/10 text-slate-600 dark:text-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-800/50">
                         Probation: {selectedEmp.probationStatus}
@@ -626,7 +688,24 @@ export default function OnboardingPage() {
                       {selectedEmp.probationStatus === 'UNDER_REVIEW' ? (
                         <div className="flex gap-2 shrink-0">
                           <Button
-                            onClick={() => handleUpdateProbation(selectedEmp.id, 'CONFIRMED')}
+                            onClick={() => {
+                              const docs = selectedEmp.documents || [];
+                              if (docs.length === 0) {
+                                toast.error("No documents found. Please collect and verify documents first.");
+                                return;
+                              }
+                              const unverified = docs.filter(d => d.status !== 'VERIFIED');
+                              if (unverified.length > 0) {
+                                toast.error("Please verify all documents before confirming.");
+                                return;
+                              }
+                              if (!selectedEmp.bankName || !selectedEmp.accountNumber || !selectedEmp.ifscCode || !selectedEmp.panNumber) {
+                                toast.error("Mandatory Bank & Statutory details are missing. Please fill them out first.");
+                                setActiveTab("bank");
+                                return;
+                              }
+                              handleUpdateProbation(selectedEmp.id, 'CONFIRMED');
+                            }}
                             className="bg-emerald-500 dark:bg-emerald-600 hover:bg-emerald-600 text-white font-bold rounded-xl text-xs h-9"
                           >
                             Confirm Employee

@@ -43,7 +43,7 @@ import {
   createSchedule,
   createOffer,
   updateOfferStatus
-} from "@/redux/slices/recruitmentSlice";
+} from "@/features/recruitment/store/recruitmentSlice";
 import { toast } from "sonner";
 
 export default function RecruitmentPage() {
@@ -91,45 +91,58 @@ export default function RecruitmentPage() {
   const [offerSortOrder, setOfferSortOrder] = useState("desc");
 
   useEffect(() => {
+    if (activeTab !== "requisitions") return;
     dispatch(fetchRequisitions({ page: reqPage, limit: reqRows, search: reqSearch, sortBy: reqSortBy, sortOrder: reqSortOrder }));
-  }, [dispatch, reqPage, reqRows, reqSearch, reqSortBy, reqSortOrder]);
+  }, [dispatch, activeTab, reqPage, reqRows, reqSearch, reqSortBy, reqSortOrder]);
 
   useEffect(() => {
+    if (activeTab !== "candidates") return;
     dispatch(fetchCandidates({ page: candPage, limit: candRows, search: candSearch, sortBy: candSortBy, sortOrder: candSortOrder }));
-  }, [dispatch, candPage, candRows, candSearch, candSortBy, candSortOrder]);
+  }, [dispatch, activeTab, candPage, candRows, candSearch, candSortBy, candSortOrder]);
 
   useEffect(() => {
+    if (activeTab !== "interviews") return;
     dispatch(fetchSchedules({ page: schedPage, limit: schedRows, search: schedSearch, sortBy: schedSortBy, sortOrder: schedSortOrder }));
-  }, [dispatch, schedPage, schedRows, schedSearch, schedSortBy, schedSortOrder]);
+  }, [dispatch, activeTab, schedPage, schedRows, schedSearch, schedSortBy, schedSortOrder]);
 
   useEffect(() => {
+    if (activeTab !== "offers") return;
     dispatch(fetchOffers({ page: offerPage, limit: offerRows, search: offerSearch, sortBy: offerSortBy, sortOrder: offerSortOrder }));
-  }, [dispatch, offerPage, offerRows, offerSearch, offerSortBy, offerSortOrder]);
+  }, [dispatch, activeTab, offerPage, offerRows, offerSearch, offerSortBy, offerSortOrder]);
 
   const [dropdownRequisitions, setDropdownRequisitions] = useState([]);
   const [dropdownCandidates, setDropdownCandidates] = useState([]);
 
+  // Departments: needed on Job Requisitions tab (form dropdown)
   useEffect(() => {
+    if (activeTab !== "requisitions") return;
     dispatch(fetchDepartments());
-    
-    const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-    // Fetch users for panel members dropdown
-    apiFetch(`${backendUrl}/users`)
-      .then(res => res.json())
-      .then(data => setUsers(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
-      .catch(err => console.error("Failed to fetch users:", err));
+  }, [dispatch, activeTab]);
 
-    // Fetch full list for form dropdowns
+  // Requisitions dropdown: needed on Candidates & Sourcing tab (Job Requisition select)
+  useEffect(() => {
+    if (activeTab !== "candidates") return;
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
     apiFetch(`${backendUrl}/staff-hrms/recruitment/requisitions`)
       .then(res => res.json())
       .then(data => setDropdownRequisitions(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
       .catch(err => console.error("Failed to fetch dropdown requisitions:", err));
+  }, [activeTab]);
 
+  // Candidates dropdown + Users: needed on Interview Scheduling tab (Candidate select & Panel Members)
+  useEffect(() => {
+    if (activeTab !== "interviews") return;
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
     apiFetch(`${backendUrl}/staff-hrms/recruitment/candidates`)
       .then(res => res.json())
       .then(data => setDropdownCandidates(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
       .catch(err => console.error("Failed to fetch dropdown candidates:", err));
-  }, [dispatch]);
+
+    apiFetch(`${backendUrl}/users`)
+      .then(res => res.json())
+      .then(data => setUsers(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
+      .catch(err => console.error("Failed to fetch users:", err));
+  }, [activeTab]);
 
   // Requisition Form State
   const [newReq, setNewReq] = useState({ title: "", departmentId: "", headcount: "", justification: "", raisedBy: "" });
@@ -139,7 +152,7 @@ export default function RecruitmentPage() {
   // Schedule Form State
   const [newSched, setNewSched] = useState({ candidateId: "", roundName: "", scheduledAt: "", panelists: "" });
   // Feedback Form State
-  const [newFeedback, setNewFeedback] = useState({ scheduleId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
+  const [newFeedback, setNewFeedback] = useState({ id: "", scheduleId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
   const [feedbackCandidateId, setFeedbackCandidateId] = useState("ALL");
   // Offer Form State
   const [newOffer, setNewOffer] = useState({ candidateId: "", role: "", salary: "", joiningDate: "" });
@@ -265,7 +278,11 @@ export default function RecruitmentPage() {
       }
     }
 
-    if (!newSched.roundName?.trim()) errs.roundName = "Interview round name is required.";
+    if (!newSched.roundName?.trim()) {
+      errs.roundName = "Interview round name is required.";
+    } else if (newSched.roundName.trim() === "0" || /^0+$/.test(newSched.roundName.trim())) {
+      errs.roundName = "Round name cannot be 0.";
+    }
     if (!newSched.scheduledAt) errs.scheduledAt = "Interview date and time is required.";
     else if (new Date(newSched.scheduledAt) < new Date()) {
       errs.scheduledAt = "Interview date and time cannot be in the past.";
@@ -340,6 +357,7 @@ export default function RecruitmentPage() {
           headcount: Number(newReq.headcount),
           raisedBy: newReq.raisedBy?.trim() || "HR Manager",
         })).unwrap();
+        dispatch(fetchRequisitions({ page: reqPage, limit: reqRows, search: reqSearch, sortBy: reqSortBy, sortOrder: reqSortOrder }));
         setNewReq({ title: "", departmentId: "", headcount: "", justification: "", raisedBy: "" });
         toast.success("Requisition created successfully");
       }
@@ -355,6 +373,10 @@ export default function RecruitmentPage() {
         method: "DELETE",
       });
       if (res.ok) {
+        if (newReq.id === reqId) {
+          setNewReq({ title: "", departmentId: "", headcount: "", justification: "", raisedBy: "" });
+          setFormErrors({});
+        }
         dispatch(fetchRequisitions());
         toast.success("Requisition deleted successfully");
       }
@@ -367,6 +389,23 @@ export default function RecruitmentPage() {
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    // Validate PDF only
+    if (file.type !== "application/pdf") {
+      setFormErrors((prev) => ({ ...prev, resumeUrl: "Only PDF files are allowed." }));
+      e.target.value = "";
+      return;
+    }
+
+    // Validate file size (max 2MB)
+    const maxSize = 2 * 1024 * 1024; // 2MB in bytes
+    if (file.size > maxSize) {
+      setFormErrors((prev) => ({ ...prev, resumeUrl: "File size must be less than 2 MB." }));
+      e.target.value = "";
+      return;
+    }
+
+    setFormErrors((prev) => ({ ...prev, resumeUrl: null }));
     const formData = new FormData();
     formData.append("file", file);
     setUploadingFile(true);
@@ -379,9 +418,12 @@ export default function RecruitmentPage() {
         const data = await res.json();
         setNewCand({ ...newCand, resumeUrl: data.url });
         if (formErrors.resumeUrl) setFormErrors({ ...formErrors, resumeUrl: null });
+      } else {
+        setFormErrors((prev) => ({ ...prev, resumeUrl: "Upload failed. Please try again." }));
       }
     } catch (err) {
       console.error("Upload error:", err);
+      setFormErrors((prev) => ({ ...prev, resumeUrl: "Upload error. Please try again." }));
     } finally {
       setUploadingFile(false);
     }
@@ -399,7 +441,8 @@ export default function RecruitmentPage() {
           body: JSON.stringify({
             name: newCand.name,
             email: newCand.email,
-            phone: newCand.phone
+            phone: newCand.phone,
+            resumeUrl: newCand.resumeUrl || undefined,
           })
         });
         if (res.ok) {
@@ -433,6 +476,10 @@ export default function RecruitmentPage() {
         method: "DELETE",
       });
       if (res.ok) {
+        if (newCand.id === candId) {
+          setNewCand({ name: "", email: "", phone: "", requisitionId: "", resumeUrl: "", experienceYears: "", skills: "" });
+          setFormErrors({});
+        }
         dispatch(fetchCandidates());
         toast.success("Candidate deleted successfully");
       }
@@ -517,6 +564,10 @@ export default function RecruitmentPage() {
         method: "DELETE",
       });
       if (res.ok) {
+        if (newSched.id === id) {
+          setNewSched({ candidateId: "", interviewer: "", scheduledAt: "", location: "" });
+          setFormErrors({});
+        }
         dispatch(fetchSchedules());
         toast.success("Schedule deleted successfully");
       }
@@ -530,20 +581,53 @@ export default function RecruitmentPage() {
     e.preventDefault();
     if (!validateFeedback()) return;
     try {
-      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/feedbacks`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newFeedback),
-      });
-      if (res.ok) {
-        setNewFeedback({ scheduleId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
-        dispatch(fetchSchedules());
-        dispatch(fetchCandidates());
-        toast.success("Feedback submitted");
+      if (newFeedback.id) {
+        // Edit mode
+        const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/feedbacks/${newFeedback.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scheduleId: newFeedback.scheduleId,
+            panelistName: newFeedback.panelistName,
+            rating: Number(newFeedback.rating),
+            comments: newFeedback.comments,
+            recommendation: newFeedback.recommendation,
+          }),
+        });
+        if (res.ok) {
+          setNewFeedback({ id: "", scheduleId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
+          setFormErrors({});
+          dispatch(fetchSchedules());
+          dispatch(fetchCandidates());
+          toast.success("Feedback updated successfully");
+        } else {
+          const msg = await getErrorMessage(res, "Failed to update feedback");
+          toast.error(msg);
+        }
+      } else {
+        // Create mode
+        const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/feedbacks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...newFeedback,
+            rating: Number(newFeedback.rating),
+          }),
+        });
+        if (res.ok) {
+          setNewFeedback({ id: "", scheduleId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
+          setFormErrors({});
+          dispatch(fetchSchedules());
+          dispatch(fetchCandidates());
+          toast.success("Feedback submitted successfully");
+        } else {
+          const msg = await getErrorMessage(res, "Failed to submit feedback");
+          toast.error(msg);
+        }
       }
     } catch (err) {
       console.error(err);
-      toast.error("Failed to submit feedback");
+      toast.error(newFeedback.id ? "Failed to update feedback" : "Failed to submit feedback");
     }
   };
 
@@ -589,6 +673,10 @@ export default function RecruitmentPage() {
         method: "DELETE",
       });
       if (res.ok) {
+        if (newOffer.id === id) {
+          setNewOffer({ candidateId: "", ctc: "", joiningDate: "", expiryDate: "" });
+          setFormErrors({});
+        }
         dispatch(fetchOffers());
         toast.success("Offer deleted successfully");
       }
@@ -956,7 +1044,7 @@ export default function RecruitmentPage() {
                         <SelectValue placeholder="Select..." />
                       </SelectTrigger>
                       <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                        {departments.map((dept) => (
+                        {departments.filter(dept => dept.isActive !== false || (newReq.id && String(dept.id) === String(newReq.departmentId))).map((dept) => (
                           <SelectItem key={dept.id} value={String(dept.id)}>
                             {dept.name}
                           </SelectItem>
@@ -1043,11 +1131,14 @@ export default function RecruitmentPage() {
                     {
                       key: "department.name",
                       label: "Department",
-                      render: (row) => (
-                        <span className="text-xs font-extrabold uppercase px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400">
-                          {row.department?.name || "Unknown"}
-                        </span>
-                      ),
+                      render: (row) => {
+                        const deptName = row.department?.name || departments.find(d => String(d.id) === String(row.departmentId))?.name || "Unknown";
+                        return (
+                          <span className="text-xs font-extrabold uppercase px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400">
+                            {deptName}
+                          </span>
+                        );
+                      },
                     },
                     {
                       key: "headcount",
@@ -1200,14 +1291,29 @@ export default function RecruitmentPage() {
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Resume / CV (PDF)</Label>
+                    {newCand.id && newCand.resumeUrl && (
+                      <div className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 mb-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-rose-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
+                        <a
+                          href={`${backendUrl}${newCand.resumeUrl}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-sky-600 dark:text-sky-400 font-semibold underline truncate"
+                        >
+                          View Current Resume
+                        </a>
+                        <span className="ml-auto text-[10px] text-slate-400">Replace below</span>
+                      </div>
+                    )}
                     <Input
                       id="resume-upload-input"
                       type="file"
                       accept=".pdf"
                       onChange={handleFileChange}
                     />
+                    <span className="text-[10px] text-slate-400 block mt-0.5">PDF only · Max 2 MB{newCand.id ? " · Upload to replace current resume" : ""}</span>
                     {uploadingFile && <span className="text-[10px] text-sky-500 font-semibold block">Uploading...</span>}
-                    {newCand.resumeUrl && <span className="text-[10px] text-emerald-500 font-semibold block">Uploaded successfully</span>}
+                    {newCand.resumeUrl && !uploadingFile && <span className="text-[10px] text-emerald-500 font-semibold block">{newCand.id ? "New resume uploaded — will replace on save" : "Uploaded successfully"}</span>}
                     {formErrors.resumeUrl && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.resumeUrl}</span>}
                   </div>
                   <div className="flex gap-2 mt-2">
@@ -1259,7 +1365,7 @@ export default function RecruitmentPage() {
                           <div>
                             <span className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-1.5 flex-wrap">
                               {row.name}
-                              {reHist.isReInterview && (
+                              {reHist.isReInterview && row.status !== "SELECTED" && row.status !== "ACCEPTED" && row.status !== "OFFERED" && (
                                 <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700 flex items-center gap-1" title="Candidate was previously rejected and is re-interviewing">
                                   <RotateCcw className="w-2.5 h-2.5" /> Re-Interview (Prev. Rejected)
                                 </span>
@@ -1275,7 +1381,7 @@ export default function RecruitmentPage() {
                       label: "Contact Info",
                       render: (row) => (
                         <div className="text-xs space-y-0.5">
-                          <span className="text-slate-600 dark:text-slate-300 block font-medium">{row.email}</span>
+                          <span className="text-slate-600 dark:text-slate-300 block font-medium">{row.email ? row.email.toLowerCase() : ""}</span>
                           {row.phone && <span className="text-slate-400 block">{row.phone}</span>}
                         </div>
                       ),
@@ -1595,7 +1701,7 @@ export default function RecruitmentPage() {
                 <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4">
                   <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
                     <Star className="w-5 h-5 text-sky-500" />
-                    Record Panelist Feedback
+                    {newFeedback.id ? "Edit Panelist Feedback" : "Record Panelist Feedback"}
                   </h3>
                   <form onSubmit={handleCreateFeedback} className="space-y-3" noValidate>
                     <div className="space-y-1">
@@ -1653,7 +1759,8 @@ export default function RecruitmentPage() {
                       const selSched = schedules.find(s => String(s.id) === String(newFeedback.scheduleId));
                       const cand = selSched?.candidate || candidates.find(c => String(c.id) === String(selSched?.candidateId));
                       const reHist = getReInterviewHistory(cand);
-                      if (!reHist.isReInterview) return null;
+                      const isFinalStatus = cand?.status === "SELECTED" || cand?.status === "ACCEPTED" || cand?.status === "OFFERED";
+                      if (!reHist.isReInterview || isFinalStatus) return null;
                       return (
                         <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-2xl text-xs text-amber-800 dark:text-amber-300 space-y-1">
                           <span className="font-bold flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
@@ -1689,10 +1796,30 @@ export default function RecruitmentPage() {
                           };
                         });
 
+                        let selectedPanelistValue = newFeedback.panelistName || "";
+
+                        if (newFeedback.panelistName) {
+                          const exactOrPartialMatch = panelistOptions.find(p => 
+                            p.name.toLowerCase() === newFeedback.panelistName.toLowerCase() ||
+                            p.name.toLowerCase().includes(newFeedback.panelistName.toLowerCase()) ||
+                            newFeedback.panelistName.toLowerCase().includes(p.name.toLowerCase())
+                          );
+                          if (exactOrPartialMatch) {
+                            selectedPanelistValue = exactOrPartialMatch.name;
+                          } else {
+                            panelistOptions.unshift({
+                              id: newFeedback.panelistName,
+                              name: newFeedback.panelistName,
+                              role: "PANELIST",
+                            });
+                            selectedPanelistValue = newFeedback.panelistName;
+                          }
+                        }
+
                         return (
                           <Select
                             disabled={!newFeedback.scheduleId}
-                            value={newFeedback.panelistName}
+                            value={selectedPanelistValue}
                             onValueChange={(val) => {
                               setNewFeedback({ ...newFeedback, panelistName: val });
                               if (formErrors.panelistName) setFormErrors({ ...formErrors, panelistName: null });
@@ -1753,19 +1880,34 @@ export default function RecruitmentPage() {
                         if (formErrors.recommendation) setFormErrors({ ...formErrors, recommendation: null });
                       }}>
                         <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                          <SelectValue placeholder="Select..." />
+                          <SelectValue placeholder="Select recommendation..." />
                         </SelectTrigger>
                         <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                          <SelectItem value="SELECT">Select Candidate</SelectItem>
-                          <SelectItem value="REJECT">Reject Candidate</SelectItem>
-                          <SelectItem value="HOLD">Hold Candidate</SelectItem>
+                          <SelectItem value="SELECT">SELECT (Recommend Candidate)</SelectItem>
+                          <SelectItem value="REJECT">REJECT Candidate</SelectItem>
+                          <SelectItem value="HOLD">HOLD Candidate</SelectItem>
                         </SelectContent>
                       </Select>
                       {formErrors.recommendation && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.recommendation}</span>}
                     </div>
-                    <Button type="submit" className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl">
-                      Submit Recommendation
-                    </Button>
+                    <div className="flex gap-2 mt-2">
+                      {newFeedback.id && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setNewFeedback({ id: "", scheduleId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
+                            setFormErrors({});
+                          }}
+                          className="w-1/3 rounded-xl font-bold"
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                      <Button type="submit" className={`bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl ${newFeedback.id ? 'w-2/3' : 'w-full'}`}>
+                        {newFeedback.id ? "Update Feedback" : "Submit Recommendation"}
+                      </Button>
+                    </div>
                   </form>
                 </div>
               </div>
@@ -1798,7 +1940,7 @@ export default function RecruitmentPage() {
                           <div>
                             <span className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-1.5 flex-wrap">
                               {row.candidate?.name}
-                              {reHist.isReInterview && (
+                              {reHist.isReInterview && cand?.status !== "SELECTED" && cand?.status !== "ACCEPTED" && cand?.status !== "OFFERED" && (
                                 <span className="text-[8px] font-black px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700 flex items-center gap-0.5">
                                   <RotateCcw className="w-2.5 h-2.5" /> Re-Interview
                                 </span>
@@ -1829,8 +1971,25 @@ export default function RecruitmentPage() {
                         const names = items.map((item) => {
                           const found = users.find((u) => String(u.id) === String(item) || u.name?.toLowerCase() === item.toLowerCase());
                           return found ? found.name : item;
-                        }).join(', ');
-                        return <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{names || '—'}</span>;
+                        }).filter(Boolean);
+
+                        if (names.length === 0) return <span className="text-xs text-slate-400">—</span>;
+
+                        const chunkSize = 2;
+                        const chunks = [];
+                        for (let i = 0; i < names.length; i += chunkSize) {
+                          chunks.push(names.slice(i, i + chunkSize).join(', '));
+                        }
+
+                        return (
+                          <div className="flex flex-col gap-0.5">
+                            {chunks.map((chunk, idx) => (
+                              <span key={idx} className="text-xs font-semibold text-slate-600 dark:text-slate-300 block leading-tight">
+                                {chunk}
+                              </span>
+                            ))}
+                          </div>
+                        );
                       },
                     },
                     {
@@ -1850,14 +2009,38 @@ export default function RecruitmentPage() {
                             <div key={fi} className="text-xs p-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-800 space-y-0.5">
                               <div className="flex justify-between items-center gap-2">
                                 <span className="font-extrabold text-slate-700 dark:text-slate-200">{f.panelistName}</span>
-                                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
-                                  f.recommendation === "SELECT" ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 dark:bg-emerald-500 dark:bg-emerald-600/10 dark:text-emerald-400"
-                                  : f.recommendation === "REJECT" ? "bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 dark:bg-red-50 dark:bg-red-500/100/10 dark:text-red-400"
-                                  : "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 dark:bg-amber-50 dark:bg-amber-500/100/10 dark:text-amber-400"
-                                }`}>
-                                  {f.recommendation} ({f.rating}/10)
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
+                                    f.recommendation === "SELECT" ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                    : f.recommendation === "REJECT" ? "bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400"
+                                    : "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                                  }`}>
+                                    {f.recommendation} ({f.rating}/10)
+                                  </span>
+                                  <button
+                                    type="button"
+                                    title="Edit Feedback"
+                                    onClick={() => {
+                                      setFeedbackCandidateId(row.candidateId || "ALL");
+                                      setNewFeedback({
+                                        id: f.id,
+                                        scheduleId: row.id,
+                                        panelistName: f.panelistName,
+                                        rating: f.rating !== undefined && f.rating !== null ? String(f.rating) : "",
+                                        comments: f.comments || "",
+                                        recommendation: f.recommendation || "",
+                                      });
+                                      setFormErrors({});
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-sky-500 rounded-md transition-colors"
+                                  >
+                                    <Edit className="w-3 h-3" />
+                                  </button>
+                                </div>
                               </div>
+                              {f.comments && (
+                                <p className="text-[10.5px] text-slate-500 dark:text-slate-400 italic line-clamp-2 mt-1">{f.comments}</p>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -1925,25 +2108,59 @@ export default function RecruitmentPage() {
                   <form onSubmit={handleSubmitOffer} className="space-y-3" noValidate>
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Select Selected Candidate</Label>
-                      <Select value={newOffer.candidateId} onValueChange={(val) => {
-                          const selectedCandId = val;
-                          const cand = candidates.find(c => c.id === selectedCandId);
-                          setNewOffer({
-                            ...newOffer,
-                            candidateId: selectedCandId,
-                            role: cand ? cand.requisition?.title || "" : ""
-                          });
-                          if (formErrors.candidateId) setFormErrors({ ...formErrors, candidateId: null });
-                      }}>
-                        <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                          <SelectValue placeholder="Select..." />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                          {candidates.filter(c => c.status === 'SELECTED' || c.status === 'INTERVIEWING' || c.status === 'SOURCED').map((c) => (
-                            <SelectItem key={c.id} value={String(c.id)}>{c.name} ({c.requisition?.title}) - {c.status}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {(() => {
+                        const allCandidatesList = Array.from(new Map(
+                          [...candidates, ...dropdownCandidates, ...(offers.map(o => o.candidate).filter(Boolean))]
+                            .map(c => [String(c.id), c])
+                        ).values());
+
+                        const offerCandOptions = allCandidatesList.filter(c => {
+                          const isSelected = c.status === 'SELECTED';
+                          const isCurrentEditing = newOffer.id && String(c.id) === String(newOffer.candidateId);
+                          const hasExistingOffer = Boolean(c.offer || offers.some(o => String(o.candidateId) === String(c.id)));
+                          return isCurrentEditing || (isSelected && !hasExistingOffer);
+                        });
+
+                        if (newOffer.candidateId && !offerCandOptions.some(c => String(c.id) === String(newOffer.candidateId))) {
+                          const currentOfferObj = offers.find(o => String(o.id) === String(newOffer.id));
+                          const foundCand = allCandidatesList.find(c => String(c.id) === String(newOffer.candidateId)) || currentOfferObj?.candidate;
+                          if (foundCand) {
+                            offerCandOptions.unshift(foundCand);
+                          } else {
+                            offerCandOptions.unshift({
+                              id: newOffer.candidateId,
+                              name: "Selected Candidate",
+                              status: "SELECTED"
+                            });
+                          }
+                        }
+
+                        return (
+                          <Select
+                            key={newOffer.id || newOffer.candidateId || 'new-offer-select'}
+                            value={newOffer.candidateId || ""}
+                            onValueChange={(val) => {
+                              const selectedCandId = val;
+                              const cand = allCandidatesList.find(c => String(c.id) === String(selectedCandId));
+                              setNewOffer({
+                                ...newOffer,
+                                candidateId: selectedCandId,
+                                role: cand ? cand.requisition?.title || newOffer.role : newOffer.role
+                              });
+                              if (formErrors.candidateId) setFormErrors({ ...formErrors, candidateId: null });
+                            }}
+                          >
+                            <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
+                              <SelectValue placeholder="Select..." />
+                            </SelectTrigger>
+                            <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                              {offerCandOptions.map((c) => (
+                                <SelectItem key={c.id} value={String(c.id)}>{c.name} ({c.requisition?.title || "Requisition"}) - {c.status}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        );
+                      })()}
                       {formErrors.candidateId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.candidateId}</span>}
                     </div>
                     <div className="space-y-1">
@@ -2026,12 +2243,15 @@ export default function RecruitmentPage() {
                     {
                       key: "candidate.name",
                       label: "Candidate",
-                      render: (row) => (
-                        <div>
-                          <span className="text-sm font-bold text-slate-800 dark:text-white block">{row.candidate?.name}</span>
-                          <span className="text-[10px] text-slate-400 font-bold uppercase mt-0.5 block">Status: {row.status}</span>
-                        </div>
-                      ),
+                      render: (row) => {
+                        const cand = row.candidate || candidates.find(c => String(c.id) === String(row.candidateId));
+                        return (
+                          <div>
+                            <span className="text-sm font-bold text-slate-800 dark:text-white block">{cand?.name}</span>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase mt-0.5 block">Status: {row.status}</span>
+                          </div>
+                        );
+                      },
                     },
                     {
                       key: "role",
@@ -2087,13 +2307,15 @@ export default function RecruitmentPage() {
                           )}
                           <button
                             onClick={() => {
+                              const candId = row.candidateId || row.candidate?.id || "";
                               setNewOffer({
                                 id: row.id,
-                                candidateId: row.candidateId,
-                                role: row.role,
-                                salary: row.salary,
-                                joiningDate: row.joiningDate ? row.joiningDate.split('T')[0] : ""
+                                candidateId: candId,
+                                role: row.role || row.candidate?.requisition?.title || "",
+                                salary: row.salary ?? 600000,
+                                joiningDate: row.joiningDate ? String(row.joiningDate).split('T')[0] : ""
                               });
+                              setFormErrors({});
                               window.scrollTo({ top: 0, behavior: 'smooth' });
                             }}
                             className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"

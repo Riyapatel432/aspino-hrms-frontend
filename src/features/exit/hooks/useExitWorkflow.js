@@ -115,6 +115,39 @@ export function useExitWorkflow() {
   
   useEffect(() => {
     selectedExitRef.current = selectedExit;
+    
+    // Auto-fetch settlement calculations or pre-fill existing settlement
+    async function fetchSettlementCalc() {
+      if (selectedExit) {
+        if (selectedExit.status !== "SETTLED" && selectedExit.status !== "COMPLETED") {
+          try {
+            const res = await apiFetch(`${API_URL}/staff-hrms/exit/settlements/${selectedExit.id}/calculate`);
+            if (res.ok) {
+              const data = await res.json();
+              setSettlement({
+                pendingSalary: data.pendingSalary ?? "",
+                leaveEncashment: data.leaveEncashment ?? "",
+                bonus: data.bonus ?? "",
+                recoveries: data.recoveries ?? "",
+              });
+            }
+          } catch (e) {
+            console.error("Failed to fetch settlement calculation:", e);
+          }
+        } else if (selectedExit.settlement) {
+          setSettlement({
+            pendingSalary: selectedExit.settlement.pendingSalary ?? "",
+            leaveEncashment: selectedExit.settlement.leaveEncashment ?? "",
+            bonus: selectedExit.settlement.bonus ?? "",
+            recoveries: selectedExit.settlement.recoveries ?? "",
+          });
+        }
+      } else {
+        setSettlement(DEFAULT_SETTLEMENT);
+      }
+    }
+    
+    fetchSettlementCalc();
   }, [selectedExit]);
 
   // ---------------------------------------------------------------------------

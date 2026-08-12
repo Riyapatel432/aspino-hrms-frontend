@@ -109,6 +109,20 @@ export const createLeaveMaster = createAsyncThunk("leave/createLeaveMaster", asy
   }
 });
 
+export const updateLeaveMaster = createAsyncThunk("leave/updateLeaveMaster", async ({ id, data }, { rejectWithValue }) => {
+  try {
+    const res = await apiFetch(`${backendUrl}/staff-hrms/leave/leave-master/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(await getErrorMsg(res, "Failed to update leave master"));
+    return await res.json();
+  } catch (err) {
+    return rejectWithValue(err.message);
+  }
+});
+
 export const deleteLeaveMaster = createAsyncThunk("leave/deleteLeaveMaster", async (id, { rejectWithValue }) => {
   try {
     const res = await apiFetch(`${backendUrl}/staff-hrms/leave/leave-master/${id}`, { method: "DELETE" });
@@ -188,7 +202,10 @@ const leaveSlice = createSlice({
         // Re-fetch is dispatched after this action in the page component;
         // still push here so new leave appears immediately if re-fetch is slow
         const exists = state.leaves.some(l => l.id === action.payload?.id);
-        if (!exists && action.payload?.id) state.leaves.unshift(action.payload);
+        if (!exists && action.payload?.id) {
+          state.leaves.unshift(action.payload);
+          state.totalLeaves += 1;
+        }
       })
       .addCase(updateLeaveStatus.fulfilled, (state, action) => {
         const index = state.leaves.findIndex(l => l.id === action.payload.id);
@@ -197,7 +214,13 @@ const leaveSlice = createSlice({
         }
       })
 
-      .addCase(deleteLeave.fulfilled, (state, action) => { state.leaves = state.leaves.filter(l => l.id !== action.payload); })
+      .addCase(deleteLeave.fulfilled, (state, action) => { 
+        const initialLength = state.leaves.length;
+        state.leaves = state.leaves.filter(l => l.id !== action.payload); 
+        if (state.leaves.length < initialLength) {
+          state.totalLeaves = Math.max(0, state.totalLeaves - 1);
+        }
+      })
 
       // Leave Masters
       .addCase(fetchLeaveMasters.pending, (state) => { state.loading = true; state.error = null; })
@@ -207,8 +230,21 @@ const leaveSlice = createSlice({
         state.totalLeaveMasters = action.payload?.pagination?.total || state.leaveMasters.length;
       })
       .addCase(fetchLeaveMasters.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
-      .addCase(createLeaveMaster.fulfilled, (state, action) => { state.leaveMasters.push(action.payload); })
-      .addCase(deleteLeaveMaster.fulfilled, (state, action) => { state.leaveMasters = state.leaveMasters.filter(lm => lm.id !== action.payload); })
+      .addCase(createLeaveMaster.fulfilled, (state, action) => { 
+        state.leaveMasters.push(action.payload); 
+        state.totalLeaveMasters += 1;
+      })
+      .addCase(updateLeaveMaster.fulfilled, (state, action) => {
+        const idx = state.leaveMasters.findIndex(lm => lm.id === action.payload.id);
+        if (idx !== -1) state.leaveMasters[idx] = action.payload;
+      })
+      .addCase(deleteLeaveMaster.fulfilled, (state, action) => { 
+        const initialLength = state.leaveMasters.length;
+        state.leaveMasters = state.leaveMasters.filter(lm => lm.id !== action.payload); 
+        if (state.leaveMasters.length < initialLength) {
+          state.totalLeaveMasters = Math.max(0, state.totalLeaveMasters - 1);
+        }
+      })
 
       // Holidays
       .addCase(fetchHolidays.pending, (state) => { state.loading = true; state.error = null; })
@@ -218,8 +254,17 @@ const leaveSlice = createSlice({
         state.totalHolidays = action.payload?.pagination?.total || state.holidays.length;
       })
       .addCase(fetchHolidays.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
-      .addCase(createHoliday.fulfilled, (state, action) => { state.holidays.push(action.payload); })
-      .addCase(deleteHoliday.fulfilled, (state, action) => { state.holidays = state.holidays.filter(h => h.id !== action.payload); });
+      .addCase(createHoliday.fulfilled, (state, action) => { 
+        state.holidays.push(action.payload); 
+        state.totalHolidays += 1;
+      })
+      .addCase(deleteHoliday.fulfilled, (state, action) => { 
+        const initialLength = state.holidays.length;
+        state.holidays = state.holidays.filter(h => h.id !== action.payload); 
+        if (state.holidays.length < initialLength) {
+          state.totalHolidays = Math.max(0, state.totalHolidays - 1);
+        }
+      });
   }
 });
 

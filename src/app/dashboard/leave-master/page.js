@@ -11,14 +11,17 @@ import {
   Plus,
   Loader2,
   Trash2,
+  Edit,
 } from "lucide-react";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { Switch } from "@/components/ui/switch";
 import {
   fetchLeaveMasters,
   createLeaveMaster,
+  updateLeaveMaster,
   deleteLeaveMaster,
-} from "@/redux/slices/leaveSlice";
-import { fetchDepartments } from "@/redux/slices/recruitmentSlice";
+} from "@/features/leave/store/leaveSlice";
+import { fetchDepartments } from "@/features/recruitment/store/recruitmentSlice";
 import { toast } from "sonner";
 import { useDispatch, useSelector } from "react-redux";
 import { useEffect } from "react";
@@ -38,6 +41,8 @@ export default function LeaveMasterPage() {
   const [sortOrder, setSortOrder] = useState("asc");
 
   const [localDepts, setLocalDepts] = useState([]);
+  const [fiscalYearOptions, setFiscalYearOptions] = useState([]);
+  const [requisitions, setRequisitions] = useState([]);
 
   useEffect(() => {
     dispatch(fetchLeaveMasters({ page, limit: rows, search, sortBy, sortOrder }));
@@ -48,11 +53,22 @@ export default function LeaveMasterPage() {
       .then(res => res.json())
       .then(data => setLocalDepts(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
       .catch(err => console.error(err));
+
+    apiFetch(`${backendUrl}/staff-hrms/recruitment/fiscal-years`)
+      .then(res => res.json())
+      .then(data => setFiscalYearOptions(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
+      .catch(err => console.error("Failed to fetch fiscal years:", err));
+
+    apiFetch(`${backendUrl}/staff-hrms/recruitment/requisitions`)
+      .then(res => res.json())
+      .then(data => setRequisitions(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
+      .catch(err => console.error("Failed to fetch requisitions:", err));
   }, [dispatch, page, rows, search, sortBy, sortOrder]);
 
   const deptOptions = departments.length > 0 ? departments : localDepts;
   const loading = isLoadingLM;
 
+  const [editingId, setEditingId] = useState(null);
   const [newLeaveMaster, setNewLeaveMaster] = useState({ 
     department: "", 
     fiscalYear: "", 
@@ -60,9 +76,31 @@ export default function LeaveMasterPage() {
     sickLeave: "", 
     earnedLeave: "", 
     otherLeave: "", 
-    effectiveFrom: "" 
+    effectiveFrom: "",
+    isActive: true
   });
   const [formErrors, setFormErrors] = useState({});
+
+  const startEditing = (row) => {
+    setEditingId(row.id);
+    setNewLeaveMaster({
+      department: row.department,
+      fiscalYear: row.fiscalYear,
+      casualLeave: String(row.casualLeave),
+      sickLeave: String(row.sickLeave),
+      earnedLeave: String(row.earnedLeave),
+      otherLeave: String(row.otherLeave || 0),
+      effectiveFrom: row.effectiveFrom ? new Date(row.effectiveFrom).toISOString().split('T')[0] : "",
+      isActive: row.isActive !== false,
+    });
+    setFormErrors({});
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setNewLeaveMaster({ department: "", fiscalYear: "", casualLeave: "", sickLeave: "", earnedLeave: "", otherLeave: "", effectiveFrom: "", isActive: true });
+    setFormErrors({});
+  };
 
   const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
   const [deleting, setDeleting] = useState(false);
@@ -96,24 +134,32 @@ export default function LeaveMasterPage() {
     return Object.keys(errs).length === 0;
   };
 
-  const handleCreateLeaveMaster = async (e) => {
+  const handleSaveLeaveMaster = async (e) => {
     e.preventDefault();
     if (!validateLeaveMaster()) return;
     try {
-      await dispatch(createLeaveMaster({
+      const payload = {
         ...newLeaveMaster,
         casualLeave: Number(newLeaveMaster.casualLeave),
         sickLeave: Number(newLeaveMaster.sickLeave),
         earnedLeave: Number(newLeaveMaster.earnedLeave),
         otherLeave: Number(newLeaveMaster.otherLeave),
-      })).unwrap();
+        isActive: newLeaveMaster.isActive !== false
+      };
+
+      if (editingId) {
+        await dispatch(updateLeaveMaster({ id: editingId, data: payload })).unwrap();
+        toast.success("Leave Master updated successfully");
+      } else {
+        await dispatch(createLeaveMaster(payload)).unwrap();
+        toast.success("Leave Master created successfully");
+      }
       
-      setNewLeaveMaster({ department: "", fiscalYear: "", casualLeave: "", sickLeave: "", earnedLeave: "", otherLeave: "", effectiveFrom: "" });
-      setFormErrors({});
-      toast.success("Leave Master created successfully");
+      cancelEdit();
+      dispatch(fetchLeaveMasters({ page, limit: rows, search, sortBy, sortOrder }));
     } catch (err) {
       console.error(err);
-      toast.error("Failed to create Leave Master");
+      toast.error(typeof err === "string" ? err : "Failed to save Leave Master");
     }
   };
 
@@ -122,6 +168,7 @@ export default function LeaveMasterPage() {
     setDeleting(true);
     try {
       await dispatch(deleteLeaveMaster(deleteTarget.id)).unwrap();
+      cancelEdit();
       setDeleteTarget(null);
       toast.success("Leave Master deleted successfully");
     } catch (err) {
@@ -132,9 +179,67 @@ export default function LeaveMasterPage() {
     }
   };
 
+  const handleToggleStatus = async (row) => {
+    const nextStatus = row.isActive !== false ? false : true;
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      const res = await apiFetch(`${backendUrl}/staff-hrms/leave/leave-master/${row.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: nextStatus }),
+      });
+      if (res.ok) {
+        toast.success(`Leave Master "${row.department} (${row.fiscalYear})" set to ${nextStatus ? 'Active' : 'Inactive'}`);
+        dispatch(fetchLeaveMasters({ page, limit: rows, search, sortBy, sortOrder }));
+      } else {
+        toast.error("Failed to update status");
+      }
+    } catch (e) {
+      console.error("Status update error:", e);
+      toast.error("Status update failed");
+    }
+  };
+
   const leaveMasterColumns = [
-    { key: "department", label: "Department", render: (row) => <span className="font-extrabold text-slate-800 dark:text-white">{row.department}</span> },
-    { key: "fiscalYear", label: "Fiscal Year", render: (row) => <span className="text-xs font-bold text-sky-500">{row.fiscalYear}</span> },
+    { 
+      key: "department", 
+      label: "Department", 
+      render: (row) => {
+        const deptObj = deptOptions.find((d) => String(d.id) === String(row.department) || String(d.name).toLowerCase() === String(row.department).toLowerCase());
+        return <span className="font-extrabold text-slate-800 dark:text-white">{deptObj ? deptObj.name : row.department}</span>;
+      } 
+    },
+    { 
+      key: "fiscalYear", 
+      label: "Fiscal Year", 
+      render: (row) => {
+        const fyObj = fiscalYearOptions.find((f) => String(f.id) === String(row.fiscalYear) || String(f.code) === String(row.fiscalYear) || String(f.name).toLowerCase() === String(row.fiscalYear).toLowerCase());
+        return <span className="text-xs font-bold text-sky-500">{fyObj ? fyObj.name : row.fiscalYear}</span>;
+      } 
+    },
+    {
+      key: "requisitions",
+      label: "Active Requisitions",
+      sortable: false,
+      render: (row) => {
+        const deptObj = deptOptions.find((d) => String(d.id) === String(row.department) || String(d.name).toLowerCase() === String(row.department).toLowerCase());
+        const targetDeptId = deptObj ? deptObj.id : row.department;
+        const targetDeptName = deptObj ? deptObj.name : row.department;
+
+        const count = requisitions.filter((r) => 
+          (r.departmentId && String(r.departmentId) === String(targetDeptId)) ||
+          (r.department?.id && String(r.department.id) === String(targetDeptId)) ||
+          (r.department?.name && String(r.department.name).toLowerCase() === String(targetDeptName).toLowerCase()) ||
+          (typeof r.department === "string" && String(r.department).toLowerCase() === String(targetDeptName).toLowerCase())
+        ).length;
+
+        return (
+          <span className="text-xs font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 border border-sky-100 dark:border-sky-500/20 px-2.5 py-1 rounded-full">
+            {count}
+          </span>
+        );
+      },
+    },
     { key: "totalLeave", label: "Total Quota", render: (row) => <span className="text-xs font-black">{row.totalLeave} days</span> },
     {
       key: "details",
@@ -151,16 +256,40 @@ export default function LeaveMasterPage() {
       render: (row) => <span className="text-xs text-slate-500">{new Date(row.effectiveFrom).toLocaleDateString()}</span>
     },
     {
+      key: "isActive",
+      label: "Status",
+      sortable: false,
+      render: (row) => (
+        <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+          row.isActive !== false
+            ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20"
+            : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700"
+        }`}>
+          {row.isActive !== false ? "Active" : "Inactive"}
+        </span>
+      ),
+    },
+    {
       key: "actions",
       label: "Actions",
       sortable: false,
       render: (row) => (
-        <button
-          onClick={() => setDeleteTarget({ id: row.id, name: `${row.department} (${row.fiscalYear})` })}
-          className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => startEditing(row)}
+            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+            title="Edit Leave Master"
+          >
+            <Edit className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setDeleteTarget({ id: row.id, name: `${row.department} (${row.fiscalYear})` })}
+            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
+            title="Delete Leave Master"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
       )
     }
   ];
@@ -187,9 +316,9 @@ export default function LeaveMasterPage() {
         <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
           <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
             <Plus className="w-5 h-5 text-sky-500" />
-            Define Leave Master
+            {editingId ? "Edit Leave Master" : "Define Leave Master"}
           </h3>
-          <form onSubmit={handleCreateLeaveMaster} className="space-y-3" noValidate>
+          <form onSubmit={handleSaveLeaveMaster} className="space-y-3" noValidate>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Department</Label>
@@ -201,8 +330,8 @@ export default function LeaveMasterPage() {
                     <SelectValue placeholder="Select..." />
                   </SelectTrigger>
                   <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                    {deptOptions.map(d => (
-                      <SelectItem key={d.id} value={String(d.name)}>{d.name}</SelectItem>
+                    {deptOptions.filter(d => d.isActive !== false).map(d => (
+                      <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -218,11 +347,16 @@ export default function LeaveMasterPage() {
                     <SelectValue placeholder="Select..." />
                   </SelectTrigger>
                   <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                    <SelectItem value="FY24">FY24</SelectItem>
-                    <SelectItem value="FY25">FY25</SelectItem>
-                    <SelectItem value="FY26">FY26</SelectItem>
-                    <SelectItem value="FY27">FY27</SelectItem>
-                    <SelectItem value="FY28">FY28</SelectItem>
+                    {(fiscalYearOptions.length > 0 ? fiscalYearOptions : [
+                      { id: "FY25", name: "FY 2024-25", code: "FY25" },
+                      { id: "FY26", name: "FY 2025-26", code: "FY26" },
+                      { id: "FY27", name: "FY 2026-27", code: "FY27" },
+                      { id: "FY28", name: "FY 2027-28", code: "FY28" }
+                    ]).filter(fy => fy.isActive !== false).map(fy => (
+                      <SelectItem key={fy.id || fy.code || fy.name} value={String(fy.id || fy.code || fy.name)}>
+                        {fy.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 {formErrors.fiscalYear && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.fiscalYear}</span>}
@@ -272,7 +406,28 @@ export default function LeaveMasterPage() {
               }} />
               {formErrors.effectiveFrom && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.effectiveFrom}</span>}
             </div>
-            <Button type="submit" className="w-full bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl mt-2">Save Master</Button>
+            <div className="space-y-1">
+              <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Status</Label>
+              <div className="flex items-center gap-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-2.5 rounded-xl">
+                <Switch
+                  checked={newLeaveMaster.isActive !== false}
+                  onCheckedChange={(val) => setNewLeaveMaster({ ...newLeaveMaster, isActive: val })}
+                />
+                <span className={`text-xs font-bold ${newLeaveMaster.isActive !== false ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`}>
+                  {newLeaveMaster.isActive !== false ? "Active" : "Inactive"}
+                </span>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button type="submit" className="flex-1 bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl">
+                {editingId ? "Update Master" : "Save Master"}
+              </Button>
+              {editingId && (
+                <Button type="button" variant="outline" className="rounded-xl font-bold" onClick={cancelEdit}>
+                  Cancel
+                </Button>
+              )}
+            </div>
           </form>
         </div>
         {/* Leave Master DataTable */}

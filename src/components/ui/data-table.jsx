@@ -121,13 +121,23 @@ export function DataTable({
     if (isLazy) return rawData;
     if (!localSearchQuery.trim()) return rawData;
     const q = localSearchQuery.toLowerCase();
-    return rawData.filter((row) =>
-      keysToSearch.some((colKey) => {
+    return rawData.filter((row) => {
+      // Direct employee full name match
+      if (row.firstName || row.lastName) {
+        const fullName = `${row.firstName || ""} ${row.lastName || ""}`.trim().toLowerCase();
+        if (fullName.includes(q)) return true;
+      }
+      // Nested employee full name match
+      if (row.employee && typeof row.employee === "object") {
+        const fullName = `${row.employee.firstName || ""} ${row.employee.lastName || ""}`.trim().toLowerCase();
+        if (fullName.includes(q)) return true;
+      }
+      return keysToSearch.some((colKey) => {
         const value = colKey.split(".").reduce((o, p) => o?.[p], row);
         if (value == null) return false;
         return String(value).toLowerCase().includes(q);
-      })
-    );
+      });
+    });
   }, [rawData, localSearchQuery, keysToSearch, isLazy]);
 
   // Client-side sorting
@@ -385,7 +395,7 @@ export function DataTable({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {[5, 10, 20, 25, 50, 100].map((n) => (
+                {[1, 5, 10, 20, 25, 50, 100].map((n) => (
                   <SelectItem key={n} value={String(n)}>
                     {n}
                   </SelectItem>

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DataTable } from "@/components/ui/data-table";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { Switch } from "@/components/ui/switch";
 import {
   FolderTree,
   Plus,
@@ -33,7 +34,6 @@ function validateTrainingTypeName(name) {
 // ---------------------------------------------------------------------------
 export default function TrainingTypesPage() {
   const [trainingTypes, setTrainingTypes] = useState([]);
-  const [trainings, setTrainings] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Server-side Data Handling state
@@ -46,6 +46,7 @@ export default function TrainingTypesPage() {
 
   // Form state — unified for both create and edit
   const [formName, setFormName] = useState("");
+  const [formIsActive, setFormIsActive] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [nameError, setNameError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -68,25 +69,17 @@ export default function TrainingTypesPage() {
       if (sortBy) params.append("sortBy", sortBy);
       if (sortOrder) params.append("sortOrder", sortOrder);
 
-      const [typeRes, trainRes] = await Promise.all([
-        apiFetch(`${API_URL}/staff-hrms/recruitment/trainingTypes?${params.toString()}`),
-        apiFetch(`${API_URL}/staff-hrms/training/trainings`),
-      ]);
+      const typeRes = await apiFetch(`${API_URL}/staff-hrms/recruitment/training-types?${params.toString()}`);
+      const data = await typeRes.json();
 
-      const typeData = await typeRes.json();
-      const trainData = await trainRes.json();
-
-      if (typeData && typeData.data) {
-        setTrainingTypes(Array.isArray(typeData.data) ? typeData.data : []);
-        setTotalRecords(typeData.pagination?.total || 0);
-        setPage(typeData.pagination?.page || page);
-        setRows(typeData.pagination?.limit || rows);
+      if (data && data.data) {
+        setTrainingTypes(Array.isArray(data.data) ? data.data : []);
+        setTotalRecords(data.total || 0);
       } else {
-        setTrainingTypes(Array.isArray(typeData) ? typeData : []);
+        setTrainingTypes(Array.isArray(data) ? data : []);
       }
-      setTrainings(Array.isArray(trainData?.data) ? trainData.data : Array.isArray(trainData) ? trainData : []);
     } catch (e) {
-      console.error("Error loading training type data:", e);
+      console.error("Error loading training types:", e);
     } finally {
       setLoading(false);
     }
@@ -103,12 +96,14 @@ export default function TrainingTypesPage() {
   function startEditing(type) {
     setEditingId(type.id);
     setFormName(type.name);
+    setFormIsActive(type.isActive !== false);
     setNameError(null);
   }
 
   function cancelEdit() {
     setEditingId(null);
     setFormName("");
+    setFormIsActive(true);
     setNameError(null);
   }
 
@@ -126,14 +121,14 @@ export default function TrainingTypesPage() {
     setSubmitting(true);
     try {
       const url = editingId
-        ? `${API_URL}/staff-hrms/recruitment/trainingTypes/${editingId}`
-        : `${API_URL}/staff-hrms/recruitment/trainingTypes`;
+        ? `${API_URL}/staff-hrms/recruitment/training-types/${editingId}`
+        : `${API_URL}/staff-hrms/recruitment/training-types`;
       const method = editingId ? "PATCH" : "POST";
 
       const res = await apiFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: formName.trim() }),
+        body: JSON.stringify({ name: formName.trim(), isActive: formIsActive }),
       });
 
       if (res.ok) {
@@ -156,19 +151,43 @@ export default function TrainingTypesPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      const res = await apiFetch(`${API_URL}/staff-hrms/recruitment/trainingTypes/${deleteTarget.id}`, {
+      const res = await apiFetch(`${API_URL}/staff-hrms/recruitment/training-types/${deleteTarget.id}`, {
         method: "DELETE",
       });
       if (res.ok) {
+        toast.success("Training type deleted successfully");
+        cancelEdit();
         setDeleteTarget(null);
         fetchData();
       } else {
-        console.error("Training type delete failed:", await res.text());
+        const msg = await getErrorMessage(res, "Failed to delete training type");
+        toast.error(msg);
       }
     } catch (err) {
       console.error("Training type delete error:", err);
+      toast.error("Failed to delete training type");
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function handleToggleStatus(row) {
+    const nextStatus = row.isActive !== false ? false : true;
+    try {
+      const res = await apiFetch(`${API_URL}/staff-hrms/recruitment/training-types/${row.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: nextStatus }),
+      });
+      if (res.ok) {
+        toast.success(`Training type "${row.name}" set to ${nextStatus ? 'Active' : 'Inactive'}`);
+        fetchData();
+      } else {
+        toast.error("Failed to update status");
+      }
+    } catch (e) {
+      console.error("Status update error:", e);
+      toast.error("Status update failed");
     }
   }
 
@@ -217,6 +236,20 @@ export default function TrainingTypesPage() {
                     {nameError}
                   </span>
                 )}
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  Status
+                </Label>
+                <div className="flex items-center gap-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-2.5 rounded-xl">
+                  <Switch
+                    checked={formIsActive}
+                    onCheckedChange={setFormIsActive}
+                  />
+                  <span className={`text-xs font-bold ${formIsActive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`}>
+                    {formIsActive ? "Active" : "Inactive"}
+                  </span>
+                </div>
               </div>
               <div className="flex gap-2 pt-2">
                 <Button
@@ -272,7 +305,21 @@ export default function TrainingTypesPage() {
                   sortable: false,
                   render: (row) => (
                     <span className="text-xs font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 border border-sky-100 dark:border-sky-500/20 px-2.5 py-1 rounded-full">
-                      {trainings.filter((t) => t.trainingType === row.name).length}
+                      {row.activeTrainings || 0}
+                    </span>
+                  ),
+                },
+                {
+                  key: "isActive",
+                  label: "Status",
+                  sortable: false,
+                  render: (row) => (
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+                      row.isActive !== false
+                        ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700"
+                    }`}>
+                      {row.isActive !== false ? "Active" : "Inactive"}
                     </span>
                   ),
                 },

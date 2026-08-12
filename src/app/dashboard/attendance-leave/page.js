@@ -9,8 +9,11 @@ import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataTable } from "@/components/ui/data-table";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import {
   CalendarDays,
   Clock,
@@ -20,6 +23,17 @@ import {
   Loader2,
   Trash2,
   Edit,
+  FileSpreadsheet,
+  Download,
+  Upload,
+  CheckCircle2,
+  AlertCircle,
+  UserCheck,
+  X,
+  Grid,
+  List,
+  Search,
+  RefreshCw,
 } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -32,7 +46,8 @@ import {
   createRoster,
   deleteRoster,
   createAttendance,
-} from "@/redux/slices/attendanceSlice";
+  bulkImportAttendance,
+} from "@/features/attendance/store/attendanceSlice";
 import {
   fetchLeaves,
   fetchLeaveMasters,
@@ -44,8 +59,8 @@ import {
   deleteLeave,
   createLeaveMaster,
   deleteLeaveMaster,
-} from "@/redux/slices/leaveSlice";
-import { fetchDepartments } from "@/redux/slices/recruitmentSlice";
+} from "@/features/leave/store/leaveSlice";
+import { fetchDepartments } from "@/features/recruitment/store/recruitmentSlice";
 import { toast } from "sonner";
 
 export default function AttendanceLeavePage() {
@@ -116,15 +131,356 @@ export default function AttendanceLeavePage() {
   const [holidaySortBy, setHolidaySortBy] = useState("date");
   const [holidaySortOrder, setHolidaySortOrder] = useState("asc");
 
-  const [dropdownShifts, setDropdownShifts] = useState([]);
+  // Year & Month filter states for Attendance
+  const [attMonth, setAttMonth] = useState((new Date().getMonth() + 1).toString());
+  const [attYear, setAttYear] = useState(new Date().getFullYear().toString());
+  const [attViewMode, setAttViewMode] = useState("matrix"); // "matrix" | "list"
+  const [showManualAttModal, setShowManualAttModal] = useState(false);
+  const [matrixSearch, setMatrixSearch] = useState("");
 
-  useEffect(() => {
-    dispatch(fetchAttendance({ page: attPage, limit: attRows, search: attSearch, sortBy: attSortBy, sortOrder: attSortOrder }));
-  }, [dispatch, attPage, attRows, attSearch, attSortBy, attSortOrder]);
+  const handleExportAttendanceCsv = () => {
+    const attList = Array.isArray(attendance?.data) ? attendance.data : (Array.isArray(attendance) ? attendance : []);
+    if (attList.length === 0) {
+      toast.error("No attendance records to export.");
+      return;
+    }
+    const formatHHMM = (val) => {
+      if (!val) return "";
+      const str = String(val).trim();
+      if (str.includes("T")) {
+        const timePart = str.split("T")[1];
+        return timePart ? timePart.substring(0, 5) : "";
+      }
+      return str.substring(0, 5);
+    };
+
+    const headers = "Employee Code,Employee Name,Date,Check In,Check Out,Status,OT Hours,Late Hours,Early Going Hours,Present Day\n";
+    const rows = attList.map(rec => {
+      const name = rec.employee ? `${rec.employee.firstName} ${rec.employee.lastName}` : "";
+      const code = rec.employee?.employeeId || rec.employeeId || "";
+      const date = rec.date ? rec.date.split('T')[0] : "";
+      const checkInStr = formatHHMM(rec.checkIn);
+      const checkOutStr = formatHHMM(rec.checkOut);
+      return `"${code}","${name}","${date}","${checkInStr}","${checkOutStr}","${rec.status || 'PRESENT'}","${rec.otHours || 0}","${rec.lateHours || 0}","${rec.earlyGoingHours || 0}","${rec.presentDay || 1.0}"`;
+    }).join("\n");
+    const blob = new Blob([headers + rows], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `attendance_export_${attYear}_${attMonth}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success("Attendance exported to CSV.");
+  };
+
+  const constructMatrixData = () => {
+    const targetYear = Number(attYear) || new Date().getFullYear();
+    const targetMonth = attMonth === "ALL" ? (new Date().getMonth() + 1) : Number(attMonth);
+    const totalDays = new Date(targetYear, targetMonth, 0).getDate();
+
+    const empList = Array.isArray(employees?.data) ? employees.data : (Array.isArray(employees) ? employees : []);
+    const attList = Array.isArray(attendance?.data) ? attendance.data : (Array.isArray(attendance) ? attendance : []);
+
+    const attMap = new Map();
+    attList.forEach((rec) => {
+      if (!rec.date) return;
+      const dateStr = typeof rec.date === "string" ? rec.date.split("T")[0] : new Date(rec.date).toISOString().split("T")[0];
+      const parts = dateStr.split("-");
+      if (parts.length >= 3) {
+        const recYear = parseInt(parts[0], 10);
+        const recMonth = parseInt(parts[1], 10);
+        const recDay = parseInt(parts[2], 10);
+
+        if (recYear === targetYear && recMonth === targetMonth) {
+          const empIdKey = rec.employeeId || rec.employee?.id;
+          const empCodeKey = rec.employee?.employeeId;
+          const normCode = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/gi, '');
+          if (empIdKey) {
+            attMap.set(`${empIdKey}_${recDay}`, rec);
+            attMap.set(`${empIdKey.toLowerCase()}_${recDay}`, rec);
+          }
+          if (empCodeKey) {
+            attMap.set(`${empCodeKey}_${recDay}`, rec);
+            attMap.set(`${empCodeKey.toLowerCase()}_${recDay}`, rec);
+            attMap.set(`${normCode(empCodeKey)}_${recDay}`, rec);
+          }
+        }
+      }
+    });
+
+    let filteredEmpList = empList;
+    if (matrixSearch && matrixSearch.trim()) {
+      const q = matrixSearch.trim().toLowerCase();
+      filteredEmpList = empList.filter(emp => 
+        (emp.firstName && emp.firstName.toLowerCase().includes(q)) ||
+        (emp.lastName && emp.lastName.toLowerCase().includes(q)) ||
+        (emp.employeeId && emp.employeeId.toLowerCase().includes(q)) ||
+        (emp.id && emp.id.toLowerCase().includes(q))
+      );
+    }
+
+    const rows = filteredEmpList.map((emp) => {
+      const empCodeKey = emp.employeeId || emp.id || "";
+      const normCode = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/gi, '');
+      let totalPresent = 0;
+
+      const daysData = {};
+      for (let day = 1; day <= totalDays; day++) {
+        const rec = attMap.get(`${emp.id}_${day}`) ||
+                    attMap.get(`${emp.id.toLowerCase()}_${day}`) ||
+                    (emp.employeeId ? attMap.get(`${emp.employeeId}_${day}`) : null) ||
+                    (emp.employeeId ? attMap.get(`${emp.employeeId.toLowerCase()}_${day}`) : null) ||
+                    (emp.employeeId ? attMap.get(`${normCode(emp.employeeId)}_${day}`) : null);
+        if (rec) {
+          const status = (rec.status || "PRESENT").toUpperCase();
+          if (status === "PRESENT" || rec.isSundayPresent || rec.isHolidayPresent) {
+            totalPresent += 1;
+          } else if (status === "HALFDAY" || rec.isHalfDay) {
+            totalPresent += 0.5;
+          }
+          daysData[day] = rec;
+        } else {
+          daysData[day] = null;
+        }
+      }
+
+      return {
+        employee: emp,
+        employeeId: empCodeKey,
+        name: `${emp.firstName || ""} ${emp.lastName || ""}`.trim() || empCodeKey,
+        cardNo: emp.employeeId || (emp.id ? emp.id.substring(0, 8) : "—"),
+        daysData,
+        totalPresent,
+      };
+    });
+
+    return { totalDays, rows, targetMonthName: new Date(targetYear, targetMonth - 1, 1).toLocaleString("default", { month: "long" }) };
+  };
+
+  // Bulk Attendance Import States
+  const [showBulkAttModal, setShowBulkAttModal] = useState(false);
+  const [bulkCsvText, setBulkCsvText] = useState("");
+  const [parsedAttRecords, setParsedAttRecords] = useState([]);
+  const [importingAtt, setImportingAtt] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+
+
+  const handleParseCsv = (text) => {
+    setBulkCsvText(text);
+    if (!text || !text.trim()) {
+      setParsedAttRecords([]);
+      return;
+    }
+    const lines = text.trim().split(/\r?\n/);
+    if (lines.length < 2) {
+      setParsedAttRecords([]);
+      return;
+    }
+    
+    // Dynamically inspect header line to detect column positions
+    const headerCols = lines[0].split(",").map(c => c.trim().toLowerCase().replace(/^"(.*)"$/, "$1"));
+    
+    let codeIdx = headerCols.findIndex(h => h.includes("code") || h.includes("employee id") || h.includes("card") || h === "id");
+    let dateIdx = headerCols.findIndex(h => h.includes("date"));
+    let inIdx = headerCols.findIndex(h => h.includes("check in") || h.includes("in time") || h === "checkin" || h === "in");
+    let outIdx = headerCols.findIndex(h => h.includes("check out") || h.includes("out time") || h === "checkout" || h === "out");
+    let statusIdx = headerCols.findIndex(h => h.includes("status"));
+    let otIdx = headerCols.findIndex(h => h.includes("ot"));
+    let lateIdx = headerCols.findIndex(h => h.includes("late"));
+    let earlyIdx = headerCols.findIndex(h => h.includes("early"));
+    let presentDayIdx = headerCols.findIndex(h => h.includes("present day"));
+
+    // Fallbacks if header matching didn't trigger
+    if (codeIdx === -1) codeIdx = 0;
+    if (dateIdx === -1) dateIdx = 1;
+    if (inIdx === -1) inIdx = 2;
+    if (outIdx === -1) outIdx = 3;
+    if (statusIdx === -1) statusIdx = 4;
+
+    // Special handling for exported CSVs where Column 1 is "Employee Name"
+    if (dateIdx === 1 && (headerCols[1]?.includes("name") || headerCols[1]?.includes("employee name"))) {
+      dateIdx = 2;
+      inIdx = 3;
+      outIdx = 4;
+      statusIdx = 5;
+    }
+
+    const records = [];
+    for (let i = 1; i < lines.length; i++) {
+      const rawLine = lines[i].trim();
+      if (!rawLine) continue;
+      const cols = rawLine.split(",").map(c => c.trim().replace(/^"(.*)"$/, "$1"));
+      if (cols.length === 0) continue;
+      
+      const formatTimeHHMM = (val) => {
+        if (!val) return "";
+        const str = String(val).trim();
+        if (str.includes("T")) {
+          const timePart = str.split("T")[1];
+          return timePart ? timePart.substring(0, 5) : str;
+        }
+        return str.substring(0, 5);
+      };
+
+      const code = cols[codeIdx] || "";
+      const date = cols[dateIdx] || "";
+      const checkIn = formatTimeHHMM(cols[inIdx]);
+      const checkOut = formatTimeHHMM(cols[outIdx]);
+      const status = cols[statusIdx] || "PRESENT";
+      const otHours = otIdx !== -1 && cols[otIdx] ? parseFloat(cols[otIdx]) : 0;
+      const lateHours = lateIdx !== -1 && cols[lateIdx] ? parseFloat(cols[lateIdx]) : 0;
+      const earlyGoingHours = earlyIdx !== -1 && cols[earlyIdx] ? parseFloat(cols[earlyIdx]) : 0;
+      const presentDay = presentDayIdx !== -1 && cols[presentDayIdx] ? parseFloat(cols[presentDayIdx]) : 1.0;
+      
+      records.push({
+        employeeCodeOrId: code,
+        date,
+        checkIn,
+        checkOut,
+        status,
+        otHours: isNaN(otHours) ? 0 : otHours,
+        lateHours: isNaN(lateHours) ? 0 : lateHours,
+        earlyGoingHours: isNaN(earlyGoingHours) ? 0 : earlyGoingHours,
+        presentDay: isNaN(presentDay) ? 1.0 : presentDay
+      });
+    }
+    setParsedAttRecords(records);
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result;
+      if (typeof content === "string") {
+        handleParseCsv(content);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleExecuteBulkImport = async () => {
+    if (parsedAttRecords.length === 0) {
+      toast.error("No records found to import. Please select a valid CSV file or paste data.");
+      return;
+    }
+    setImportingAtt(true);
+    setImportResult(null);
+    try {
+      const res = await dispatch(bulkImportAttendance(parsedAttRecords)).unwrap();
+      setImportResult(res);
+      if (res.successCount > 0) {
+        toast.success(`Successfully imported ${res.successCount} attendance records!`);
+        let targetMonth = attMonth;
+        let targetYear = attYear;
+        if (parsedAttRecords.length > 0 && parsedAttRecords[0].date) {
+          const rawDate = parsedAttRecords[0].date.trim();
+          const dateOnly = rawDate.includes("T") ? rawDate.split("T")[0] : rawDate;
+          const parts = dateOnly.split(/[\/\-\s]/);
+          if (parts.length === 3) {
+            const p0 = parseInt(parts[0], 10);
+            const p1 = parseInt(parts[1], 10);
+            const p2 = parseInt(parts[2], 10);
+            if (p0 > 1000) {
+              targetYear = String(p0);
+              targetMonth = String(p1);
+            } else if (p2 > 1000 || p2 < 100) {
+              targetYear = String(p2 < 100 ? 2000 + p2 : p2);
+              if (p1 <= 12 && p0 <= 31) {
+                targetMonth = String(p1);
+              } else {
+                targetMonth = String(p0);
+              }
+            }
+          }
+          setAttMonth(targetMonth);
+          setAttYear(targetYear);
+        }
+        await dispatch(fetchAttendance({
+          page: attPage,
+          limit: attViewMode === "matrix" ? 1000 : attRows,
+          search: attSearch,
+          sortBy: attSortBy,
+          sortOrder: attSortOrder,
+          month: targetMonth !== "ALL" ? targetMonth : undefined,
+          year: targetYear
+        })).unwrap();
+      }
+      if (res.failureCount > 0) {
+        toast.warning(`${res.failureCount} rows could not be imported. Check error report.`);
+      } else {
+        setShowBulkAttModal(false);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error(typeof err === "string" ? err : "Bulk import failed");
+    } finally {
+      setImportingAtt(false);
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/attendance/template`);
+      if (!res.ok) throw new Error("Failed to fetch template");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "attendance_import_template.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Attendance template downloaded successfully.");
+    } catch (err) {
+      console.error("Template download error:", err);
+      toast.error("Failed to download attendance template.");
+    }
+  };
+
+  const handleDownloadAttendanceErrorReport = () => {
+    if (!importResult || !importResult.errors || importResult.errors.length === 0) return;
+    const headers = "Row Number,Employee ID / Code,Error Details\n";
+    const rows = importResult.errors
+      .map(e => `"${e.row}","${(e.employeeCodeOrId || "").replace(/"/g, '""')}","${(e.error || "").replace(/"/g, '""')}"`)
+      .join("\n");
+    const csvContent = headers + rows;
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `attendance_import_errors_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success("Attendance error report sheet downloaded.");
+  };
+
+  const [dropdownShifts, setDropdownShifts] = useState([]);
+  const [fiscalYearOptions, setFiscalYearOptions] = useState([]);
 
   useEffect(() => {
     dispatch(fetchShifts({ page: shiftPage, limit: shiftRows, search: shiftSearch, sortBy: shiftSortBy, sortOrder: shiftSortOrder }));
   }, [dispatch, shiftPage, shiftRows, shiftSearch, shiftSortBy, shiftSortOrder]);
+
+  useEffect(() => {
+    dispatch(
+      fetchAttendance({
+        page: attPage,
+        limit: attViewMode === "matrix" ? 1000 : attRows,
+        search: attSearch,
+        sortBy: attSortBy,
+        sortOrder: attSortOrder,
+        month: attMonth !== "ALL" ? attMonth : undefined,
+        year: attYear,
+      })
+    );
+  }, [dispatch, attPage, attRows, attSearch, attSortBy, attSortOrder, attMonth, attYear, attViewMode]);
 
   useEffect(() => {
     dispatch(fetchRosters({ page: rosterPage, limit: rosterRows, search: rosterSearch, sortBy: rosterSortBy, sortOrder: rosterSortOrder }));
@@ -148,7 +504,19 @@ export default function AttendanceLeavePage() {
       .then(res => res.json())
       .then(data => setDropdownShifts(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
       .catch(err => console.error("Failed to fetch dropdown shifts:", err));
+
+    apiFetch(`${backendUrl}/staff-hrms/recruitment/fiscal-years`)
+      .then(res => res.json())
+      .then(data => setFiscalYearOptions(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
+      .catch(err => console.error("Failed to fetch fiscal years:", err));
+
+    apiFetch(`${backendUrl}/staff-hrms/recruitment/requisitions`)
+      .then(res => res.json())
+      .then(data => setRequisitions(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
+      .catch(err => console.error("Failed to fetch requisitions:", err));
   }, [dispatch]);
+
+  const [requisitions, setRequisitions] = useState([]);
 
   // Forms states
   const [newShift, setNewShift] = useState({ name: "", startTime: "", endTime: "" });
@@ -369,6 +737,14 @@ export default function AttendanceLeavePage() {
         checkOut: newAtt.checkOut ? `${newAtt.date}T${newAtt.checkOut}:00.000Z` : null,
       };
 
+      if (newAtt.date) {
+        const dObj = new Date(newAtt.date);
+        if (!isNaN(dObj.getTime())) {
+          setAttMonth((dObj.getMonth() + 1).toString());
+          setAttYear(dObj.getFullYear().toString());
+        }
+      }
+
       if (newAtt.id) {
         const res = await apiFetch(`${backendUrl}/staff-hrms/attendance/attendance/${newAtt.id}`, {
           method: "PATCH",
@@ -376,13 +752,14 @@ export default function AttendanceLeavePage() {
           body: JSON.stringify(payload)
         });
         if (res.ok) {
-          dispatch(fetchAttendance());
+          dispatch(fetchAttendance({ page: attPage, limit: attRows, search: attSearch, sortBy: attSortBy, sortOrder: attSortOrder, month: (new Date(newAtt.date).getMonth() + 1).toString(), year: new Date(newAtt.date).getFullYear().toString() }));
           toast.success("Attendance updated successfully");
         } else {
           toast.error("Failed to update attendance");
         }
       } else {
         await dispatch(createAttendance(payload)).unwrap();
+        dispatch(fetchAttendance({ page: attPage, limit: attRows, search: attSearch, sortBy: attSortBy, sortOrder: attSortOrder, month: (new Date(newAtt.date).getMonth() + 1).toString(), year: new Date(newAtt.date).getFullYear().toString() }));
         toast.success("Attendance captured successfully");
       }
       
@@ -543,16 +920,26 @@ export default function AttendanceLeavePage() {
     try {
       if (deleteTarget.type === "attendance") {
         await handleDeleteAttendance(deleteTarget.id);
+        if (newAtt.id === deleteTarget.id) {
+          setNewAtt({
+            employeeId: "", shiftId: "", date: "", checkIn: "", checkOut: "", otHours: "", isHalfDay: false, lateHours: "", earlyGoingHours: "", presentDay: "", isSundayPresent: false, isFullNightPresent: false, isHolidayPresent: false, captureMethod: "BIOMETRIC", status: ""
+          });
+        }
       } else if (deleteTarget.type === "roster") {
         await handleDeleteRoster(deleteTarget.id);
+        if (newRoster.id === deleteTarget.id) setNewRoster({ employeeId: "", shiftId: "", date: "" });
       } else if (deleteTarget.type === "shift") {
         await handleDeleteShift(deleteTarget.id);
+        if (newShift.id === deleteTarget.id) setNewShift({ name: "", startTime: "", endTime: "" });
       } else if (deleteTarget.type === "leave") {
         await handleDeleteLeave(deleteTarget.id);
+        if (newLeave.id === deleteTarget.id) setNewLeave({ employeeId: "", leaveType: "", startDate: "", endDate: "", reason: "" });
       } else if (deleteTarget.type === "holiday") {
         await handleDeleteHoliday(deleteTarget.id);
+        if (newHoliday.id === deleteTarget.id) setNewHoliday({ name: "", date: "" });
       } else if (deleteTarget.type === "leaveMaster") {
         await handleDeleteLeaveMaster(deleteTarget.id);
+        if (newLeaveMaster.id === deleteTarget.id) setNewLeaveMaster({ id: null, department: "", fiscalYear: "", casualLeave: "", sickLeave: "", earnedLeave: "", otherLeave: "", effectiveFrom: "" });
       }
       setDeleteTarget(null);
     } catch (err) {
@@ -752,16 +1139,17 @@ export default function AttendanceLeavePage() {
                 checkIn: row.checkIn ? new Date(row.checkIn).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : "",
                 checkOut: row.checkOut ? new Date(row.checkOut).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : "",
                 otHours: row.otHours || 0,
-                isHalfDay: row.isHalfDay || false,
+                isHalfDay: !!row.isHalfDay,
                 lateHours: row.lateHours || 0,
                 earlyGoingHours: row.earlyGoingHours || 0,
                 presentDay: row.presentDay || 1.0,
-                isSundayPresent: row.isSundayPresent || false,
-                isFullNightPresent: row.isFullNightPresent || false,
-                isHolidayPresent: row.isHolidayPresent || false,
+                isSundayPresent: !!row.isSundayPresent,
+                isFullNightPresent: !!row.isFullNightPresent,
+                isHolidayPresent: !!row.isHolidayPresent,
                 captureMethod: row.captureMethod || "BIOMETRIC",
                 status: row.status || "PRESENT"
               });
+              setShowManualAttModal(true);
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
             className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
@@ -989,8 +1377,40 @@ export default function AttendanceLeavePage() {
   ];
 
   const leaveMasterColumns = [
-    { key: "department", label: "Department", render: (row) => <span className="font-extrabold text-slate-800 dark:text-white">{row.department}</span> },
-    { key: "fiscalYear", label: "Fiscal Year", render: (row) => <span className="text-xs font-bold text-sky-500">{row.fiscalYear}</span> },
+    { 
+      key: "department", 
+      label: "Department", 
+      render: (row) => {
+        const deptObj = departments.find((d) => String(d.id) === String(row.department) || String(d.name).toLowerCase() === String(row.department).toLowerCase());
+        return <span className="font-extrabold text-slate-800 dark:text-white">{deptObj ? deptObj.name : row.department}</span>;
+      } 
+    },
+    { 
+      key: "fiscalYear", 
+      label: "Fiscal Year", 
+      render: (row) => {
+        const fyObj = fiscalYearOptions.find((f) => String(f.id) === String(row.fiscalYear) || String(f.code) === String(row.fiscalYear) || String(f.name).toLowerCase() === String(row.fiscalYear).toLowerCase());
+        return <span className="text-xs font-bold text-sky-500">{fyObj ? fyObj.name : row.fiscalYear}</span>;
+      } 
+    },
+    {
+      key: "requisitions",
+      label: "Active Requisitions",
+      sortable: false,
+      render: (row) => {
+        const count = requisitions.filter((r) => 
+          String(r.departmentId) === String(row.department) ||
+          r.department?.id === row.department ||
+          (r.department?.name && String(r.department.name).toLowerCase() === String(row.department).toLowerCase()) ||
+          (typeof r.department === "string" && String(r.department).toLowerCase() === String(row.department).toLowerCase())
+        ).length;
+        return (
+          <span className="text-xs font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 border border-sky-100 dark:border-sky-500/20 px-2.5 py-1 rounded-full">
+            {count}
+          </span>
+        );
+      },
+    },
     { key: "totalLeave", label: "Total Quota", render: (row) => <span className="text-xs font-black">{row.totalLeave} days</span> },
     {
       key: "details",
@@ -1115,7 +1535,8 @@ export default function AttendanceLeavePage() {
         })}
       </div>
 
-      {loading ? (
+{
+      loading ? (
         <div className="flex justify-center items-center py-20">
           <Loader2 className="w-8 h-8 text-sky-500 animate-spin" />
         </div>
@@ -1123,238 +1544,258 @@ export default function AttendanceLeavePage() {
         <div className="space-y-6">
           {/* TAB 1: ATTENDANCE */}
           {activeTab === "attendance" && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Capture Form */}
-              <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
-                <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                  <Plus className="w-5 h-5 text-sky-500" />
-                  Capture Attendance
-                </h3>
-                <form onSubmit={handleSubmitAttendance} className="space-y-3" noValidate>
-                  <div className="space-y-1">
-                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Employee *</Label>
-                    <Select value={newAtt.employeeId} onValueChange={(val) => {
-                      setNewAtt({ ...newAtt, employeeId: val });
-                      if (formErrors.employeeId) setFormErrors({ ...formErrors, employeeId: null });
-                    }}>
-                      <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                        <SelectValue placeholder="Select..." />
-                      </SelectTrigger>
-                      <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                        {employees.map((e) => (
-                          <SelectItem key={e.id} value={String(e.id)}>{e.firstName} {e.lastName} ({e.employeeId})</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {formErrors.employeeId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.employeeId}</span>}
+            <div className="space-y-6">
+              {/* Header Action & Filter Bar */}
+              <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-5 shadow-sm space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Clock className="w-5 h-5 text-sky-500" />
+                      Daily Attendance Management
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      Manage employee attendance logs, view monthly matrix grid, or perform bulk CSV imports.
+                    </p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Shift *</Label>
-                      <Select value={newAtt.shiftId} onValueChange={(val) => {
-                        setNewAtt({ ...newAtt, shiftId: val });
-                        if (formErrors.shiftId) setFormErrors({ ...formErrors, shiftId: null });
-                      }}>
-                        <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                          <SelectValue placeholder="Select..." />
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* View Switcher Toggle */}
+                    <div className="bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setAttViewMode("matrix")}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                          attViewMode === "matrix"
+                            ? "bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-400 shadow-sm"
+                            : "text-slate-500 hover:text-slate-800 dark:text-slate-400"
+                        }`}
+                      >
+                        <Grid className="w-3.5 h-3.5" />
+                        Monthly Matrix
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAttViewMode("list")}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                          attViewMode === "list"
+                            ? "bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-400 shadow-sm"
+                            : "text-slate-500 hover:text-slate-800 dark:text-slate-400"
+                        }`}
+                      >
+                        <List className="w-3.5 h-3.5" />
+                        Detailed Logs Table
+                      </button>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setShowBulkAttModal(true);
+                        setImportResult(null);
+                      }}
+                      className="border-emerald-500 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer"
+                    >
+                      <Upload className="w-3.5 h-3.5 text-emerald-500" />
+                      Bulk Excel / CSV Import
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleExportAttendanceCsv}
+                      className="rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer border-slate-200 dark:border-slate-700"
+                    >
+                      <Download className="w-3.5 h-3.5 text-sky-500" />
+                      Export CSV
+                    </Button>
+
+                    <Button
+                      type="button"
+                      onClick={() => setShowManualAttModal(true)}
+                      className="bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-2xl h-9 px-4 text-xs gap-1.5 shadow-md cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                       Add Daily Attendance
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Filter Controls Row */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <div className="flex flex-wrap items-center gap-3">
+                    {/* Year Dropdown */}
+                    <div className="w-28">
+                      <Select value={attYear} onValueChange={(val) => { setAttYear(val); setAttPage(1); }}>
+                        <SelectTrigger className="h-9 text-xs font-bold rounded-xl bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+                          <SelectValue placeholder="Year" />
                         </SelectTrigger>
                         <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                          {shifts.map((s) => (
-                            <SelectItem key={s.id} value={String(s.id)}>{s.name} ({s.startTime}-{s.endTime})</SelectItem>
+                          {["2024", "2025", "2026", "2027", "2028"].map((y) => (
+                            <SelectItem key={y} value={y}>{y}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      {formErrors.shiftId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.shiftId}</span>}
                     </div>
 
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Date *</Label>
-                      <DateTimePicker type="date" date={newAtt.date} setDate={(val) => {
-                        setNewAtt({ ...newAtt, date: val });
-                        if (formErrors.date) setFormErrors({ ...formErrors, date: null });
-                      }} />
-                      {formErrors.date && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.date}</span>}
+                    {/* Month Dropdown */}
+                    <div className="w-36">
+                      <Select value={attMonth} onValueChange={(val) => { setAttMonth(val); setAttPage(1); }}>
+                        <SelectTrigger className="h-9 text-xs font-bold rounded-xl bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+                          <SelectValue placeholder="Month" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                          <SelectItem value="ALL">All Months</SelectItem>
+                          {[
+                            "January", "February", "March", "April", "May", "June",
+                            "July", "August", "September", "October", "November", "December"
+                          ].map((mName, idx) => (
+                            <SelectItem key={idx + 1} value={String(idx + 1)}>{mName}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
+
+                    {/* Search Input for Matrix */}
+                    {/* {attViewMode === "matrix" && (
+                      <div className="relative w-64">
+                        <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                        <Input
+                          placeholder="Search employee name or code..."
+                          value={matrixSearch}
+                          onChange={(e) => setMatrixSearch(e.target.value)}
+                          className="pl-9 h-9 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                        />
+                      </div>
+                    )} */}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">In Time *</Label>
-                      <DateTimePicker type="time" date={newAtt.checkIn} setDate={(val) => {
-                        setNewAtt({ ...newAtt, checkIn: val });
-                        if (formErrors.checkIn) setFormErrors({ ...formErrors, checkIn: null });
-                      }} />
-                      {formErrors.checkIn && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.checkIn}</span>}
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Out Time *</Label>
-                      <DateTimePicker type="time" date={newAtt.checkOut} setDate={(val) => {
-                        setNewAtt({ ...newAtt, checkOut: val });
-                        if (formErrors.checkOut) setFormErrors({ ...formErrors, checkOut: null });
-                      }} />
-                      {formErrors.checkOut && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.checkOut}</span>}
-                    </div>
-                  </div>
-
-                  {/* Calculated Work Hours & OT */}
-                  <div className="grid grid-cols-2 gap-3 bg-slate-50 dark:bg-slate-800 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
-                    <div className="space-y-0.5">
-                      <Label className="text-[11px] font-bold text-slate-500 block">Total Work Hour *</Label>
-                      <span className="text-base font-black text-sky-600 dark:text-sky-400 block">
-                        {calculateWorkHours(newAtt.checkIn, newAtt.checkOut)} hrs
+                  {/* Status Legend Bar for Matrix */}
+                  {attViewMode === "matrix" && (
+                    <div className="flex items-center gap-3 text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                      <span className="flex items-center gap-1">
+                        <span className="size-4 bg-emerald-500 text-white font-bold text-[9px] rounded flex items-center justify-center">P</span> Present
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="size-4 bg-rose-500 text-white font-bold text-[9px] rounded flex items-center justify-center">A</span> Absent
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="size-4 bg-amber-500 text-white font-bold text-[9px] rounded flex items-center justify-center">HD</span> Half Day
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="size-4 bg-indigo-500 text-white font-bold text-[9px] rounded flex items-center justify-center">CL</span> Leave
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="size-4 bg-teal-600 text-white font-bold text-[9px] rounded flex items-center justify-center">SP</span> Special
                       </span>
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 block">OT Hours</Label>
-                      <Input
-                        type="number"
-                        step="0.5"
-                        min="0"
-                        className="h-8 text-xs rounded-lg"
-                        value={newAtt.otHours}
-                        onChange={(e) => {
-                          setNewAtt({ ...newAtt, otHours: e.target.value });
-                          if (formErrors.otHours) setFormErrors({ ...formErrors, otHours: null });
-                        }}
-                      />
-                      {formErrors.otHours && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.otHours}</span>}
-                    </div>
-                  </div>
-
-                  {/* Late Hour & Early Going */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Late Hour</Label>
-                      <Input
-                        type="number"
-                        step="0.5"
-                        min="0"
-                        className="h-9 text-xs rounded-xl"
-                        value={newAtt.lateHours}
-                        onChange={(e) => {
-                          setNewAtt({ ...newAtt, lateHours: e.target.value });
-                          if (formErrors.lateHours) setFormErrors({ ...formErrors, lateHours: null });
-                        }}
-                      />
-                      {formErrors.lateHours && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.lateHours}</span>}
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Early Going</Label>
-                      <Input
-                        type="number"
-                        step="0.5"
-                        min="0"
-                        className="h-9 text-xs rounded-xl"
-                        value={newAtt.earlyGoingHours}
-                        onChange={(e) => {
-                          setNewAtt({ ...newAtt, earlyGoingHours: e.target.value });
-                          if (formErrors.earlyGoingHours) setFormErrors({ ...formErrors, earlyGoingHours: null });
-                        }}
-                      />
-                      {formErrors.earlyGoingHours && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.earlyGoingHours}</span>}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Present Day (1.0 / 0.5)</Label>
-                      <Input
-                        type="number"
-                        step="0.5"
-                        min="0"
-                        max="1"
-                        className="h-9 text-xs rounded-xl"
-                        value={newAtt.presentDay}
-                        onChange={(e) => {
-                          setNewAtt({ ...newAtt, presentDay: e.target.value });
-                          if (formErrors.presentDay) setFormErrors({ ...formErrors, presentDay: null });
-                        }}
-                      />
-                      {formErrors.presentDay && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.presentDay}</span>}
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Capture Method</Label>
-                      <Select value={newAtt.captureMethod} onValueChange={(val) => setNewAtt({ ...newAtt, captureMethod: val })}>
-<SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-<SelectValue placeholder="Select..." />
-</SelectTrigger>
-<SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-
-                        <SelectItem value="BIOMETRIC">Biometric Device Sync</SelectItem>
-                        <SelectItem value="MOBILE_APP">Mobile App Check-In</SelectItem>
-                        <SelectItem value="MANUAL_ADMIN">Manual HR Entry</SelectItem>
-                      </SelectContent>
-</Select>
-                    </div>
-                  </div>
-
-                  {/* Special Attendance Checkboxes */}
-                  <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300 block">Attendance Flags</Label>
-                    <div className="grid grid-cols-2 gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <Checkbox
-                          checked={newAtt.isHalfDay}
-                          onCheckedChange={(checked) => setNewAtt({ ...newAtt, isHalfDay: checked })}
-                          className="mt-0.5"
-                        />
-                        Half Day
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <Checkbox
-                          checked={newAtt.isSundayPresent}
-                          onCheckedChange={(checked) => setNewAtt({ ...newAtt, isSundayPresent: checked })}
-                          className="mt-0.5"
-                        />
-                        Sunday Present
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <Checkbox
-                          checked={newAtt.isFullNightPresent}
-                          onCheckedChange={(checked) => setNewAtt({ ...newAtt, isFullNightPresent: checked })}
-                          className="mt-0.5"
-                        />
-                        Full Night Present
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <Checkbox
-                          checked={newAtt.isHolidayPresent}
-                          onCheckedChange={(checked) => setNewAtt({ ...newAtt, isHolidayPresent: checked })}
-                          className="mt-0.5"
-                        />
-                        Holiday Present
-                      </label>
-                    </div>
-                  </div>
-
-                  <Button type="submit" className="w-full bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl mt-3 h-10">
-                    Save Log
-                  </Button>
-                </form>
+                  )}
+                </div>
               </div>
 
-              {/* Attendance DataTable */}
-              <div className="lg:col-span-2">
-                <DataTable
-                  title="Daily Attendance Logs"
-                  lazy
-                  value={attendance}
-                  totalRecords={totalAttendance}
-                  page={attPage}
-                  rows={attRows}
-                  loading={attTableLoading}
-                  search={attSearch}
-                  sortBy={attSortBy}
-                  sortOrder={attSortOrder}
-                  onPageChange={(p) => setAttPage(p)}
-                  onRowsChange={(r) => { setAttRows(r); setAttPage(1); }}
-                  onSortChange={(k, dir) => { setAttSortBy(k); setAttSortOrder(dir); setAttPage(1); }}
-                  onSearchChange={(s) => { setAttSearch(s); setAttPage(1); }}
-                  columns={attendanceColumns}
-                  emptyMessage="No attendance records logged."
-                />
-              </div>
+              {/* DETAILED DATATABLE VIEW */}
+              {attViewMode === "list" && (
+                <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-5 shadow-sm overflow-hidden">
+                  <DataTable
+                    title="Daily Attendance Logs"
+                    lazy={true}
+                    columns={attendanceColumns}
+                    data={Array.isArray(attendance) ? attendance : (attendance?.data || [])}
+                    totalRecords={totalAttendance}
+                    page={attPage}
+                    rows={attRows}
+                    loading={attTableLoading}
+                    search={attSearch}
+                    sortBy={attSortBy}
+                    sortOrder={attSortOrder}
+                    onPageChange={(p) => setAttPage(p)}
+                    onRowsChange={(r) => { setAttRows(r); setAttPage(1); }}
+                    onSortChange={(k, dir) => { setAttSortBy(k); setAttSortOrder(dir); setAttPage(1); }}
+                    onSearchChange={(s) => { setAttSearch(s); setAttPage(1); }}
+                    emptyMessage="No attendance records logged."
+                  />
+                </div>
+              )}
+
+              {/* MONTHLY MATRIX GRID VIEW USING DATATABLE */}
+              {attViewMode === "matrix" && (() => {
+                const matrix = constructMatrixData();
+                const matrixColumns = [
+                  {
+                    key: "employee",
+                    label: "Employee",
+                    render: (row) => (
+                      <div>
+                        <span className="block text-xs font-bold text-slate-800 dark:text-slate-100">{row.name}</span>
+                        <span className="text-[10px] font-normal text-slate-400 block">{row.employee?.department?.name || "General"}</span>
+                      </div>
+                    )
+                  },
+                  {
+                    key: "cardNo",
+                    label: "Card No.",
+                    render: (row) => <span className="font-mono text-[11px] text-slate-600 dark:text-slate-400 font-semibold">{row.cardNo}</span>
+                  },
+                  ...Array.from({ length: matrix.totalDays }, (_, i) => {
+                    const d = i + 1;
+                    return {
+                      key: `day_${d}`,
+                      label: String(d),
+                      render: (row) => {
+                        const rec = row.daysData[d];
+                        if (!rec) return <span className="font-bold text-slate-300 dark:text-slate-600 text-xs text-center block">-</span>;
+                        const st = (rec.status || "PRESENT").toUpperCase();
+                        let badgeColor = "bg-emerald-500 text-white";
+                        let label = "P";
+
+                        if (st === "ABSENT") {
+                          badgeColor = "bg-rose-500 text-white";
+                          label = "A";
+                        } else if (st === "HALFDAY" || rec.isHalfDay) {
+                          badgeColor = "bg-amber-500 text-white";
+                          label = "HD";
+                        } else if (st === "LEAVE" || st === "CASUAL_LEAVE" || st === "SICK_LEAVE") {
+                          badgeColor = "bg-indigo-500 text-white";
+                          label = "CL";
+                        } else if (rec.isSundayPresent || rec.isHolidayPresent || rec.isFullNightPresent) {
+                          badgeColor = "bg-teal-600 text-white";
+                          label = "SP";
+                        }
+
+                        return (
+                          <span
+                            title={`${rec.date ? rec.date.split('T')[0] : ''} | Status: ${st} ${rec.checkIn ? '| In: ' + rec.checkIn : ''}`}
+                            className={`size-6 rounded-md font-bold text-[10px] flex items-center justify-center mx-auto shadow-sm cursor-pointer ${badgeColor}`}
+                          >
+                            {label}
+                          </span>
+                        );
+                      }
+                    };
+                  }),
+                  {
+                    key: "totalPresent",
+                    label: "Total",
+                    render: (row) => (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 text-xs font-extrabold block text-center">
+                        {row.totalPresent}
+                      </span>
+                    )
+                  }
+                ];
+
+                return (
+                  <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-5 shadow-sm overflow-hidden">
+                    <DataTable
+                      title={`Monthly Attendance Matrix (${matrix.targetMonthName} ${attYear})`}
+                      columns={matrixColumns}
+                      data={matrix.rows}
+                      pageSize={10}
+                      emptyMessage="No employee attendance records found for this period."
+                    />
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -1531,24 +1972,7 @@ export default function AttendanceLeavePage() {
           {/* TAB 3: LEAVES */}
           {activeTab === "leaves" && (
             <div className="space-y-6">
-              {/* Leave Sub-Tabs */}
-              <div className="flex border-b border-slate-200 dark:border-slate-800 gap-6">
-                <button
-                  onClick={() => setActiveLeaveTab("requests")}
-                  className={`pb-2 font-bold text-sm transition-all border-b-2 ${activeLeaveTab === "requests" ? "border-sky-50 dark:border-sky-500/200 text-sky-600 dark:text-sky-400" : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-200"}`}
-                >
-                  Leave Requests & Balances
-                </button>
-                <button
-                  onClick={() => setActiveLeaveTab("master")}
-                  className={`pb-2 font-bold text-sm transition-all border-b-2 ${activeLeaveTab === "master" ? "border-sky-50 dark:border-sky-500/200 text-sky-600 dark:text-sky-400" : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-200"}`}
-                >
-                  Department Leave Master
-                </button>
-              </div>
 
-              {activeLeaveTab === "requests" ? (
-                <>
               {/* Employee Filter Header for Leave Balances */}
               <div className="flex justify-between items-center bg-white dark:bg-slate-900 p-4 border dark:border-slate-800 rounded-3xl shadow-sm flex-wrap gap-3">
                 <div className="flex items-center gap-2">
@@ -1725,109 +2149,7 @@ export default function AttendanceLeavePage() {
                 />
               </div>
             </div>
-                </>
-              ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Leave Master Form */}
-                  <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
-                    <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                      <Plus className="w-5 h-5 text-sky-500" />
-                      Define Leave Master
-                    </h3>
-                    <form onSubmit={handleSubmitLeaveMaster} className="space-y-3" noValidate>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Department</Label>
-                          <Select value={newLeaveMaster.department} onValueChange={(val) => {
-                            setNewLeaveMaster({ ...newLeaveMaster, department: val });
-                            if (formErrors.dept) setFormErrors({ ...formErrors, dept: null });
-                          }}>
-                            <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                              <SelectValue placeholder="Select..." />
-                            </SelectTrigger>
-                            <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                              {departments.map(d => (
-                                <SelectItem key={d.id} value={String(d.name)}>{d.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          {formErrors.dept && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.dept}</span>}
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Fiscal Year</Label>
-                          <Select value={newLeaveMaster.fiscalYear} onValueChange={(val) => {
-                            setNewLeaveMaster({ ...newLeaveMaster, fiscalYear: val });
-                            if (formErrors.fiscalYear) setFormErrors({ ...formErrors, fiscalYear: null });
-                          }}>
-                            <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                              <SelectValue placeholder="Select..." />
-                            </SelectTrigger>
-                            <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                              <SelectItem value="FY24">FY24</SelectItem>
-                              <SelectItem value="FY25">FY25</SelectItem>
-                              <SelectItem value="FY26">FY26</SelectItem>
-                              <SelectItem value="FY27">FY27</SelectItem>
-                              <SelectItem value="FY28">FY28</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          {formErrors.fiscalYear && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.fiscalYear}</span>}
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Casual Leave</Label>
-                          <Input type="number" value={newLeaveMaster.casualLeave} onChange={(e) => {
-                            setNewLeaveMaster({ ...newLeaveMaster, casualLeave: Number(e.target.value) });
-                            if (formErrors.casualLeave) setFormErrors({ ...formErrors, casualLeave: null });
-                          }} />
-                          {formErrors.casualLeave && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.casualLeave}</span>}
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Sick Leave</Label>
-                          <Input type="number" value={newLeaveMaster.sickLeave} onChange={(e) => {
-                            setNewLeaveMaster({ ...newLeaveMaster, sickLeave: Number(e.target.value) });
-                            if (formErrors.sickLeave) setFormErrors({ ...formErrors, sickLeave: null });
-                          }} />
-                          {formErrors.sickLeave && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.sickLeave}</span>}
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Earned Leave</Label>
-                          <Input type="number" value={newLeaveMaster.earnedLeave} onChange={(e) => {
-                            setNewLeaveMaster({ ...newLeaveMaster, earnedLeave: Number(e.target.value) });
-                            if (formErrors.earnedLeave) setFormErrors({ ...formErrors, earnedLeave: null });
-                          }} />
-                          {formErrors.earnedLeave && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.earnedLeave}</span>}
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Other Leave</Label>
-                          <Input type="number" value={newLeaveMaster.otherLeave} onChange={(e) => setNewLeaveMaster({ ...newLeaveMaster, otherLeave: Number(e.target.value) })} />
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Effective From</Label>
-                        <DateTimePicker type="date" date={newLeaveMaster.effectiveFrom} setDate={(val) => {
-                          setNewLeaveMaster({ ...newLeaveMaster, effectiveFrom: val });
-                          if (formErrors.effectiveFrom) setFormErrors({ ...formErrors, effectiveFrom: null });
-                        }} />
-                        {formErrors.effectiveFrom && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.effectiveFrom}</span>}
-                      </div>
-                      <Button type="submit" className="w-full bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl mt-2">Save Master</Button>
-                    </form>
-                  </div>
-                  {/* Leave Master DataTable */}
-                  <div className="lg:col-span-2">
-                    <DataTable
-                      title="Department Leave Master"
-                      data={leaveMasters}
-                      columns={leaveMasterColumns}
-                      searchKeys={["department", "fiscalYear"]}
-                      emptyMessage="No leave master configured."
-                    />
-                  </div>
-                </div>
-              )}
+
             </div>
           )}
 
@@ -1892,6 +2214,425 @@ export default function AttendanceLeavePage() {
           )}
         </div>
       )}
+
+      {/* BULK ATTENDANCE IMPORT DIALOG */}
+      <Dialog open={showBulkAttModal} onOpenChange={setShowBulkAttModal}>
+        <DialogContent className="max-w-4xl sm:max-w-4xl border-0 shadow-2xl rounded-3xl p-0 overflow-hidden bg-slate-50 dark:bg-slate-950">
+          {/* Modal Header */}
+          <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 p-6 text-white flex justify-between items-start">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 bg-emerald-500/20 rounded-xl text-emerald-400">
+                  <FileSpreadsheet className="size-5" />
+                </span>
+                <DialogTitle className="text-xl font-extrabold tracking-tight">Bulk Attendance Excel / CSV Import</DialogTitle>
+              </div>
+              <DialogDescription className="text-slate-300 text-xs mt-1.5">
+                Upload an Excel/CSV file or paste CSV data to import attendance records for multiple employees at once.
+              </DialogDescription>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+            {/* Download Template Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                Need the standard import format template?
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDownloadTemplate}
+                className="h-9 text-xs font-bold rounded-xl border-slate-300 dark:border-slate-700 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5 text-sky-500" />
+                Download CSV Sample Template
+              </Button>
+            </div>
+
+            {/* Input Options: File Upload or Raw Paste */}
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Upload className="w-3.5 h-3.5 text-emerald-500" />
+                  Option A: Choose CSV File
+                </Label>
+                <input
+                  type="file"
+                  accept=".csv,.txt"
+                  onChange={handleFileUpload}
+                  className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 dark:file:bg-emerald-950 dark:file:text-emerald-300 hover:file:bg-emerald-100 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Option B: Paste CSV Data
+                </Label>
+                <Textarea
+                  placeholder="Employee Code,Date (YYYY-MM-DD),Check In,Check Out,Status,OT Hours..."
+                  rows={3}
+                  value={bulkCsvText}
+                  onChange={(e) => handleParseCsv(e.target.value)}
+                  className="text-xs font-mono rounded-xl bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                />
+              </div>
+            </div>
+
+            {/* Preview Table */}
+            {parsedAttRecords.length > 0 && (
+              <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                    Parsed Records Preview ({parsedAttRecords.length} rows ready)
+                  </span>
+                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                    Header row excluded automatically
+                  </span>
+                </div>
+                <div className="max-h-60 overflow-y-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                  <Table className="text-xs">
+                    <TableHeader className="bg-slate-50 dark:bg-slate-800 sticky top-0">
+                      <TableRow>
+                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">#</TableHead>
+                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Employee ID / Code</TableHead>
+                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Date</TableHead>
+                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Check In</TableHead>
+                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Check Out</TableHead>
+                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Status</TableHead>
+                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">OT Hrs</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {parsedAttRecords.map((row, idx) => (
+                        <TableRow key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                          <TableCell className="font-mono text-slate-400">{idx + 1}</TableCell>
+                          <TableCell className="font-bold text-slate-800 dark:text-slate-200">{row.employeeCodeOrId || "—"}</TableCell>
+                          <TableCell>{row.date || "—"}</TableCell>
+                          <TableCell>{row.checkIn || "—"}</TableCell>
+                          <TableCell>{row.checkOut || "—"}</TableCell>
+                          <TableCell>
+                            <Badge className="text-[10px] uppercase font-bold" variant={row.status === "PRESENT" ? "outline" : "secondary"}>
+                              {row.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{row.otHours || 0}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+
+            {/* Results Report */}
+            {importResult && (
+              <div className={`p-4 rounded-2xl border space-y-2 ${importResult.failureCount > 0 ? "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/50" : "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/50"}`}>
+                <div className="flex items-center justify-between font-bold text-xs">
+                  <span className="flex items-center gap-1.5 text-slate-800 dark:text-slate-200">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    Import Execution Summary
+                  </span>
+                  <span className="text-slate-600 dark:text-slate-300">
+                    Total: {importResult.total} | Success: <span className="text-emerald-600 dark:text-emerald-400">{importResult.successCount}</span> | Failed: <span className="text-rose-600 dark:text-rose-400">{importResult.failureCount}</span>
+                  </span>
+                </div>
+                {importResult.errors && importResult.errors.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-amber-200 dark:border-amber-800/40">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-amber-800 dark:text-amber-300 text-xs">Row Errors Detected:</span>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        onClick={handleDownloadAttendanceErrorReport}
+                        className="h-7 text-[11px] font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Download Error Sheet (.CSV)
+                      </Button>
+                    </div>
+                    <div className="space-y-1 text-[11px] max-h-28 overflow-y-auto bg-white/50 dark:bg-slate-900/50 p-2 rounded-xl border border-amber-200/50">
+                      {importResult.errors.map((err, i) => (
+                        <div key={i} className="text-rose-600 dark:text-rose-400 font-mono">
+                          Row {err.row} ({err.employeeCodeOrId}): {err.error}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Footer Buttons */}
+            <div className="flex justify-end items-center gap-3 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowBulkAttModal(false)}
+                className="rounded-xl h-11 px-6 text-xs font-semibold cursor-pointer"
+              >
+                Close
+              </Button>
+              <Button
+                type="button"
+                onClick={handleExecuteBulkImport}
+                disabled={importingAtt || parsedAttRecords.length === 0}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl h-11 px-8 cursor-pointer shadow-lg"
+              >
+                {importingAtt ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    Processing Import...
+                  </>
+                ) : (
+                  `Import & Upsert ${parsedAttRecords.length} Records`
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* MANUAL 1-BY-1 ATTENDANCE CAPTURE MODAL */}
+      <Dialog open={showManualAttModal} onOpenChange={setShowManualAttModal}>
+        <DialogContent className="max-w-3xl sm:max-w-3xl border-0 shadow-2xl rounded-3xl p-0 overflow-hidden bg-slate-50 dark:bg-slate-950">
+          {/* Modal Header */}
+          <div className="bg-gradient-to-r from-sky-900 via-indigo-900 to-slate-900 p-6 text-white flex justify-between items-start">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 bg-sky-500/20 rounded-xl text-sky-400">
+                  <Clock className="size-5" />
+                </span>
+                <DialogTitle className="text-xl font-extrabold tracking-tight">Capture Daily Attendance Log</DialogTitle>
+              </div>
+              <DialogDescription className="text-slate-300 text-xs mt-1.5">
+                Log manual attendance entry for an individual employee with shift, hours, OT, and status flags.
+              </DialogDescription>
+            </div>
+          </div>
+
+          <form onSubmit={async (e) => {
+            await handleSubmitAttendance(e);
+            setShowManualAttModal(false);
+          }} className="p-6 space-y-5 max-h-[80vh] overflow-y-auto" noValidate>
+
+            {/* Card 1: Employee & Shift Setup */}
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                <UserCheck className="size-4 text-sky-500" /> Employee & Shift Selection
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Select Employee *</Label>
+                  <Select value={newAtt.employeeId} onValueChange={(val) => {
+                    setNewAtt({ ...newAtt, employeeId: val });
+                    if (formErrors.employeeId) setFormErrors({ ...formErrors, employeeId: null });
+                  }}>
+                    <SelectTrigger className="rounded-xl mt-1.5 h-11"><SelectValue placeholder="Choose an employee" /></SelectTrigger>
+                    <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                      {(Array.isArray(employees?.data) ? employees.data : (Array.isArray(employees) ? employees : [])).map((e) => (
+                        <SelectItem key={e.id} value={String(e.id)}>{e.firstName} {e.lastName} ({e.employeeId})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {formErrors.employeeId && <span className="text-rose-500 text-[11px] font-bold block mt-1 pl-1">{formErrors.employeeId}</span>}
+                </div>
+
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Select Shift *</Label>
+                  <Select value={newAtt.shiftId || undefined} onValueChange={(val) => {
+                    setNewAtt({ ...newAtt, shiftId: val });
+                    if (formErrors.shiftId) setFormErrors({ ...formErrors, shiftId: null });
+                  }}>
+                    <SelectTrigger className="rounded-xl mt-1.5 h-11"><SelectValue placeholder="Choose a shift" /></SelectTrigger>
+                    <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                      {dropdownShifts.map((s) => (
+                        <SelectItem key={s.id} value={String(s.id)}>{s.name} ({s.startTime}-{s.endTime})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {formErrors.shiftId && <span className="text-rose-500 text-[11px] font-bold block mt-1 pl-1">{formErrors.shiftId}</span>}
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2: Date & Logged Hours */}
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                <Clock className="size-4 text-emerald-500" /> Date & Logged Hours
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Attendance Date *</Label>
+                  <div className="mt-1.5">
+                    <DateTimePicker type="date" date={newAtt.date} setDate={(val) => {
+                      setNewAtt({ ...newAtt, date: val });
+                      if (formErrors.date) setFormErrors({ ...formErrors, date: null });
+                    }} />
+                  </div>
+                  {formErrors.date && <span className="text-rose-500 text-[11px] font-bold block mt-1 pl-1">{formErrors.date}</span>}
+                </div>
+
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Check In Time *</Label>
+                  <div className="mt-1.5">
+                    <DateTimePicker type="time" date={newAtt.checkIn} setDate={(val) => {
+                      setNewAtt({ ...newAtt, checkIn: val });
+                      if (formErrors.checkIn) setFormErrors({ ...formErrors, checkIn: null });
+                    }} />
+                  </div>
+                  {formErrors.checkIn && <span className="text-rose-500 text-[11px] font-bold block mt-1 pl-1">{formErrors.checkIn}</span>}
+                </div>
+
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Check Out Time *</Label>
+                  <div className="mt-1.5">
+                    <DateTimePicker type="time" date={newAtt.checkOut} setDate={(val) => {
+                      setNewAtt({ ...newAtt, checkOut: val });
+                      if (formErrors.checkOut) setFormErrors({ ...formErrors, checkOut: null });
+                    }} />
+                  </div>
+                  {formErrors.checkOut && <span className="text-rose-500 text-[11px] font-bold block mt-1 pl-1">{formErrors.checkOut}</span>}
+                </div>
+              </div>
+
+              {/* Work Hours Breakdown Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-bold text-slate-500 uppercase block">Total Work Hours</Label>
+                  <span className="text-lg font-black text-sky-600 dark:text-sky-400 block">
+                    {calculateWorkHours(newAtt.checkIn, newAtt.checkOut)} hrs
+                  </span>
+                </div>
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">OT Hours</Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    className="rounded-xl mt-1 h-10"
+                    value={newAtt.otHours}
+                    onChange={(e) => {
+                      setNewAtt({ ...newAtt, otHours: e.target.value });
+                      if (formErrors.otHours) setFormErrors({ ...formErrors, otHours: null });
+                    }}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Late Hours</Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    className="rounded-xl mt-1 h-10"
+                    value={newAtt.lateHours}
+                    onChange={(e) => {
+                      setNewAtt({ ...newAtt, lateHours: e.target.value });
+                      if (formErrors.lateHours) setFormErrors({ ...formErrors, lateHours: null });
+                    }}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Early Going</Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    className="rounded-xl mt-1 h-10"
+                    value={newAtt.earlyGoingHours}
+                    onChange={(e) => {
+                      setNewAtt({ ...newAtt, earlyGoingHours: e.target.value });
+                      if (formErrors.earlyGoingHours) setFormErrors({ ...formErrors, earlyGoingHours: null });
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3: Attendance Status & Special Flags */}
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                <CheckCircle2 className="size-4 text-indigo-500" /> Attendance Status & Flags
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Present Day Credit (1.0 / 0.5)</Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    max="1"
+                    className="rounded-xl mt-1.5 h-11"
+                    value={newAtt.presentDay}
+                    onChange={(e) => {
+                      setNewAtt({ ...newAtt, presentDay: e.target.value });
+                      if (formErrors.presentDay) setFormErrors({ ...formErrors, presentDay: null });
+                    }}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Capture Method</Label>
+                  <Select value={newAtt.captureMethod || undefined} onValueChange={(val) => setNewAtt({ ...newAtt, captureMethod: val })}>
+                    <SelectTrigger className="rounded-xl mt-1.5 h-11"><SelectValue placeholder="Select Method..." /></SelectTrigger>
+                    <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                      <SelectItem value="BIOMETRIC">Biometric Device Sync</SelectItem>
+                      <SelectItem value="MOBILE_APP">Mobile App Check-In</SelectItem>
+                      <SelectItem value="MANUAL_ADMIN">Manual HR Entry</SelectItem>
+                      <SelectItem value="EXCEL_IMPORT">Excel / CSV Bulk Import</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Checkboxes */}
+              <div className="pt-2">
+                <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-2">Attendance Override Flags</Label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={newAtt.isHalfDay}
+                      onCheckedChange={(checked) => setNewAtt({ ...newAtt, isHalfDay: checked })}
+                    />
+                    Half Day
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={newAtt.isSundayPresent}
+                      onCheckedChange={(checked) => setNewAtt({ ...newAtt, isSundayPresent: checked })}
+                    />
+                    Sunday Present
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={newAtt.isFullNightPresent}
+                      onCheckedChange={(checked) => setNewAtt({ ...newAtt, isFullNightPresent: checked })}
+                    />
+                    Full Night Present
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={newAtt.isHolidayPresent}
+                      onCheckedChange={(checked) => setNewAtt({ ...newAtt, isHolidayPresent: checked })}
+                    />
+                    Holiday Present
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex justify-end items-center gap-3 pt-2">
+              <Button type="button" variant="outline" onClick={() => setShowManualAttModal(false)} className="rounded-xl h-11 px-6 text-xs font-semibold cursor-pointer">
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl h-11 px-8 shadow-lg cursor-pointer">
+                Save Attendance Log
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <DeleteConfirmDialog
