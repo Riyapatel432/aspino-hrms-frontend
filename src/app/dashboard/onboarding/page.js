@@ -299,7 +299,7 @@ export default function OnboardingPage() {
       label: "Department",
       render: (row) => (
         <span className="text-xs font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/40 dark:text-sky-400 px-2 py-0.5 rounded-md">
-          {row.department || "—"}
+          {row.department?.name || "—"}
         </span>
       ),
     },
@@ -418,7 +418,7 @@ export default function OnboardingPage() {
                       {selectedEmp.firstName} {selectedEmp.lastName}
                     </h3>
                     <p className="text-xs text-slate-500 font-semibold">
-                      Designation: <strong className="text-sky-500">{selectedEmp.designation}</strong> | Department: <strong className="text-sky-500">{selectedEmp.department}</strong>
+                      Designation: <strong className="text-sky-500">{selectedEmp.designation}</strong> | Department: <strong className="text-sky-500">{selectedEmp.department?.name || selectedEmp.department || "—"}</strong>
                     </p>
                     <p className="text-[11px] text-slate-400 font-semibold">
                       DOJ: {new Date(selectedEmp.dateOfJoining).toLocaleDateString()} | Probation Ends: {selectedEmp.probationEnd ? new Date(selectedEmp.probationEnd).toLocaleDateString() : 'N/A'}
@@ -699,11 +699,7 @@ export default function OnboardingPage() {
                                 toast.error("Please verify all documents before confirming.");
                                 return;
                               }
-                              if (!selectedEmp.bankName || !selectedEmp.accountNumber || !selectedEmp.ifscCode || !selectedEmp.panNumber) {
-                                toast.error("Mandatory Bank & Statutory details are missing. Please fill them out first.");
-                                setActiveTab("bank");
-                                return;
-                              }
+
                               handleUpdateProbation(selectedEmp.id, 'CONFIRMED');
                             }}
                             className="bg-emerald-500 dark:bg-emerald-600 hover:bg-emerald-600 text-white font-bold rounded-xl text-xs h-9"

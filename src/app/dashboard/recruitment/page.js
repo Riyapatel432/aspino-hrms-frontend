@@ -152,7 +152,7 @@ export default function RecruitmentPage() {
   // Schedule Form State
   const [newSched, setNewSched] = useState({ candidateId: "", roundName: "", scheduledAt: "", panelists: "" });
   // Feedback Form State
-  const [newFeedback, setNewFeedback] = useState({ id: "", scheduleId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
+  const [newFeedback, setNewFeedback] = useState({ id: "", scheduleId: "", panelistId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
   const [feedbackCandidateId, setFeedbackCandidateId] = useState("ALL");
   // Offer Form State
   const [newOffer, setNewOffer] = useState({ candidateId: "", role: "", salary: "", joiningDate: "" });
@@ -338,6 +338,7 @@ export default function RecruitmentPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             title: newReq.title,
+            departmentId: newReq.departmentId,
             headcount: Number(newReq.headcount),
             justification: newReq.justification
           })
@@ -442,6 +443,8 @@ export default function RecruitmentPage() {
             name: newCand.name,
             email: newCand.email,
             phone: newCand.phone,
+            source: newCand.source,
+            requisitionId: newCand.requisitionId,
             resumeUrl: newCand.resumeUrl || undefined,
           })
         });
@@ -589,13 +592,14 @@ export default function RecruitmentPage() {
           body: JSON.stringify({
             scheduleId: newFeedback.scheduleId,
             panelistName: newFeedback.panelistName,
+            panelistId: newFeedback.panelistId || null,
             rating: Number(newFeedback.rating),
             comments: newFeedback.comments,
             recommendation: newFeedback.recommendation,
           }),
         });
         if (res.ok) {
-          setNewFeedback({ id: "", scheduleId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
+          setNewFeedback({ id: "", scheduleId: "", panelistId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
           setFormErrors({});
           dispatch(fetchSchedules());
           dispatch(fetchCandidates());
@@ -615,7 +619,7 @@ export default function RecruitmentPage() {
           }),
         });
         if (res.ok) {
-          setNewFeedback({ id: "", scheduleId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
+          setNewFeedback({ id: "", scheduleId: "", panelistId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
           setFormErrors({});
           dispatch(fetchSchedules());
           dispatch(fetchCandidates());
@@ -1520,7 +1524,7 @@ export default function RecruitmentPage() {
                           <SelectValue placeholder="Select..." />
                         </SelectTrigger>
                         <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                          {candidates.filter(c => c.status !== 'SELECTED' && c.status !== 'ACCEPTED').map((c) => {
+                          {(dropdownCandidates.length > 0 ? dropdownCandidates : candidates).filter(c => c.status !== 'SELECTED' && c.status !== 'ACCEPTED').map((c) => {
                             const coolOff = getCandidateCoolOffInfo(c);
                             let labelSuffix = "";
                             if (coolOff.isCoolingOff) {
@@ -1540,7 +1544,7 @@ export default function RecruitmentPage() {
                     </div>
 
                     {newSched.candidateId && (() => {
-                      const selCand = candidates.find(c => String(c.id) === String(newSched.candidateId));
+                      const selCand = (dropdownCandidates.length > 0 ? dropdownCandidates : candidates).find(c => String(c.id) === String(newSched.candidateId));
                       if (!selCand) return null;
                       const coolOff = getCandidateCoolOffInfo(selCand);
                       const reHist = getReInterviewHistory(selCand);
@@ -1706,13 +1710,13 @@ export default function RecruitmentPage() {
                   <form onSubmit={handleCreateFeedback} className="space-y-3" noValidate>
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Filter by Candidate</Label>
-                      <Select value={feedbackCandidateId} onValueChange={(val) => { setFeedbackCandidateId(val); setNewFeedback({ ...newFeedback, scheduleId: "" }); }}>
+                      <Select value={feedbackCandidateId} onValueChange={(val) => { setFeedbackCandidateId(val); setNewFeedback({ ...newFeedback, scheduleId: "", panelistId: "", panelistName: "" }); }}>
                         <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
                           <SelectValue placeholder="All Candidates" />
                         </SelectTrigger>
                         <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                           <SelectItem value="ALL">All Candidates</SelectItem>
-                          {candidates.map((c) => (
+                          {(dropdownCandidates.length > 0 ? dropdownCandidates : candidates).map((c) => (
                             <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                           ))}
                         </SelectContent>
@@ -1735,6 +1739,7 @@ export default function RecruitmentPage() {
                         setNewFeedback({
                           ...newFeedback,
                           scheduleId: val,
+                          panelistId: firstUser ? firstUser.id : (assigned[0] || ""),
                           panelistName: firstUser ? firstUser.name : (assigned[0] || "")
                         });
                         if (formErrors.scheduleId) setFormErrors({ ...formErrors, scheduleId: null });
@@ -1796,32 +1801,37 @@ export default function RecruitmentPage() {
                           };
                         });
 
-                        let selectedPanelistValue = newFeedback.panelistName || "";
+                        let selectedPanelistValue = newFeedback.panelistId || newFeedback.panelistName || "";
 
-                        if (newFeedback.panelistName) {
+                        if (selectedPanelistValue) {
                           const exactOrPartialMatch = panelistOptions.find(p => 
-                            p.name.toLowerCase() === newFeedback.panelistName.toLowerCase() ||
-                            p.name.toLowerCase().includes(newFeedback.panelistName.toLowerCase()) ||
-                            newFeedback.panelistName.toLowerCase().includes(p.name.toLowerCase())
+                            String(p.id) === String(selectedPanelistValue) ||
+                            p.name.toLowerCase() === selectedPanelistValue.toLowerCase()
                           );
                           if (exactOrPartialMatch) {
-                            selectedPanelistValue = exactOrPartialMatch.name;
+                            selectedPanelistValue = exactOrPartialMatch.id;
                           } else {
                             panelistOptions.unshift({
-                              id: newFeedback.panelistName,
-                              name: newFeedback.panelistName,
+                              id: selectedPanelistValue,
+                              name: selectedPanelistValue,
                               role: "PANELIST",
                             });
-                            selectedPanelistValue = newFeedback.panelistName;
+                            selectedPanelistValue = selectedPanelistValue;
                           }
                         }
 
                         return (
                           <Select
+                            key={selectedPanelistValue || 'empty'}
                             disabled={!newFeedback.scheduleId}
                             value={selectedPanelistValue}
                             onValueChange={(val) => {
-                              setNewFeedback({ ...newFeedback, panelistName: val });
+                              const matchObj = panelistOptions.find(p => String(p.id) === String(val) || p.name.toLowerCase() === val.toLowerCase());
+                              setNewFeedback({ 
+                                ...newFeedback, 
+                                panelistId: matchObj ? matchObj.id : val,
+                                panelistName: matchObj ? matchObj.name : val 
+                              });
                               if (formErrors.panelistName) setFormErrors({ ...formErrors, panelistName: null });
                             }}
                           >
@@ -1831,7 +1841,7 @@ export default function RecruitmentPage() {
                             <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                               {panelistOptions.length > 0 ? (
                                 panelistOptions.map((p) => (
-                                  <SelectItem key={p.id} value={p.name}>
+                                  <SelectItem key={p.id} value={String(p.id)}>
                                     {p.name} ({p.role})
                                   </SelectItem>
                                 ))
@@ -1896,7 +1906,7 @@ export default function RecruitmentPage() {
                           type="button"
                           variant="outline"
                           onClick={() => {
-                            setNewFeedback({ id: "", scheduleId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
+                            setNewFeedback({ id: "", scheduleId: "", panelistId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
                             setFormErrors({});
                           }}
                           className="w-1/3 rounded-xl font-bold"
@@ -2022,10 +2032,12 @@ export default function RecruitmentPage() {
                                     title="Edit Feedback"
                                     onClick={() => {
                                       setFeedbackCandidateId(row.candidateId || "ALL");
+                                      const matchedUser = users.find(u => u.name?.toLowerCase() === f.panelistName?.toLowerCase());
                                       setNewFeedback({
                                         id: f.id,
                                         scheduleId: row.id,
-                                        panelistName: f.panelistName,
+                                        panelistId: f.panelistId || (matchedUser ? matchedUser.id : ""),
+                                        panelistName: f.panelistName || "",
                                         rating: f.rating !== undefined && f.rating !== null ? String(f.rating) : "",
                                         comments: f.comments || "",
                                         recommendation: f.recommendation || "",

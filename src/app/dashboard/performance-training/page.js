@@ -592,14 +592,17 @@ export default function PerformanceTrainingPage() {
     {
       key: "trainingType",
       label: "Type",
-      render: (row) => (
-        <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-full ${
-          row.trainingType === "COMPLIANCE" ? "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-500/20"
-          : "bg-slate-100 dark:bg-slate-500/10 text-slate-600 dark:text-slate-300"
-        }`}>
-          {row.trainingType}
-        </span>
-      ),
+      render: (row) => {
+        const typeName = typeof row.trainingType === 'object' && row.trainingType ? row.trainingType.name : row.trainingType;
+        return (
+          <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-full ${
+            typeName === "COMPLIANCE" ? "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-500/20"
+            : "bg-slate-100 dark:bg-slate-500/10 text-slate-600 dark:text-slate-300"
+          }`}>
+            {typeName}
+          </span>
+        );
+      },
     },
     {
       key: "completionDate",
@@ -631,7 +634,7 @@ export default function PerformanceTrainingPage() {
                 id: row.id,
                 employeeId: row.employeeId,
                 trainingName: row.trainingName,
-                trainingType: row.trainingType,
+                trainingType: typeof row.trainingType === 'object' && row.trainingType ? row.trainingType.name : row.trainingType,
                 completionDate: row.completionDate ? new Date(row.completionDate).toISOString().split('T')[0] : "",
                 expiryDate: row.expiryDate ? new Date(row.expiryDate).toISOString().split('T')[0] : ""
               });
@@ -649,7 +652,7 @@ export default function PerformanceTrainingPage() {
           >
             <Trash2 className="w-4 h-4" />
           </button>
-          {row.trainingType === "COMPLIANCE" && row.status === "COMPLETED" && (
+          {(typeof row.trainingType === 'object' ? row.trainingType?.name : row.trainingType) === "COMPLIANCE" && row.status === "COMPLETED" && (
             <button
               onClick={() => setCertificateData(row)}
               className="p-1.5 bg-white dark:bg-slate-800 text-indigo-400 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 hover:bg-indigo-500 hover:text-white hover:border-indigo-500 dark:hover:bg-indigo-500 rounded-lg transition-all"

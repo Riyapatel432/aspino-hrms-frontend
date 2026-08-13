@@ -83,9 +83,11 @@ export default function LeaveMasterPage() {
 
   const startEditing = (row) => {
     setEditingId(row.id);
+    const deptVal = typeof row.department === 'object' && row.department ? row.department.id : row.department;
+    const fyVal = typeof row.fiscalYear === 'object' && row.fiscalYear ? row.fiscalYear.id : row.fiscalYear;
     setNewLeaveMaster({
-      department: row.department,
-      fiscalYear: row.fiscalYear,
+      department: deptVal,
+      fiscalYear: fyVal,
       casualLeave: String(row.casualLeave),
       sickLeave: String(row.sickLeave),
       earnedLeave: String(row.earnedLeave),
@@ -205,16 +207,20 @@ export default function LeaveMasterPage() {
       key: "department", 
       label: "Department", 
       render: (row) => {
-        const deptObj = deptOptions.find((d) => String(d.id) === String(row.department) || String(d.name).toLowerCase() === String(row.department).toLowerCase());
-        return <span className="font-extrabold text-slate-800 dark:text-white">{deptObj ? deptObj.name : row.department}</span>;
+        const deptVal = typeof row.department === 'object' && row.department ? row.department.name : row.department;
+        const deptId = typeof row.department === 'object' && row.department ? row.department.id : row.department;
+        const deptObj = deptOptions.find((d) => String(d.id) === String(deptId) || String(d.name).toLowerCase() === String(deptVal).toLowerCase());
+        return <span className="font-extrabold text-slate-800 dark:text-white">{deptObj ? deptObj.name : deptVal}</span>;
       } 
     },
     { 
       key: "fiscalYear", 
       label: "Fiscal Year", 
       render: (row) => {
-        const fyObj = fiscalYearOptions.find((f) => String(f.id) === String(row.fiscalYear) || String(f.code) === String(row.fiscalYear) || String(f.name).toLowerCase() === String(row.fiscalYear).toLowerCase());
-        return <span className="text-xs font-bold text-sky-500">{fyObj ? fyObj.name : row.fiscalYear}</span>;
+        const fyVal = typeof row.fiscalYear === 'object' && row.fiscalYear ? row.fiscalYear.name : row.fiscalYear;
+        const fyId = typeof row.fiscalYear === 'object' && row.fiscalYear ? row.fiscalYear.id : row.fiscalYear;
+        const fyObj = fiscalYearOptions.find((f) => String(f.id) === String(fyId) || String(f.code) === String(fyVal) || String(f.name).toLowerCase() === String(fyVal).toLowerCase());
+        return <span className="text-xs font-bold text-sky-500">{fyObj ? fyObj.name : fyVal}</span>;
       } 
     },
     {
@@ -222,9 +228,11 @@ export default function LeaveMasterPage() {
       label: "Active Requisitions",
       sortable: false,
       render: (row) => {
-        const deptObj = deptOptions.find((d) => String(d.id) === String(row.department) || String(d.name).toLowerCase() === String(row.department).toLowerCase());
-        const targetDeptId = deptObj ? deptObj.id : row.department;
-        const targetDeptName = deptObj ? deptObj.name : row.department;
+        const deptVal = typeof row.department === 'object' && row.department ? row.department.name : row.department;
+        const deptId = typeof row.department === 'object' && row.department ? row.department.id : row.department;
+        const deptObj = deptOptions.find((d) => String(d.id) === String(deptId) || String(d.name).toLowerCase() === String(deptVal).toLowerCase());
+        const targetDeptId = deptObj ? deptObj.id : deptId;
+        const targetDeptName = deptObj ? deptObj.name : deptVal;
 
         const count = requisitions.filter((r) => 
           (r.departmentId && String(r.departmentId) === String(targetDeptId)) ||
@@ -283,7 +291,11 @@ export default function LeaveMasterPage() {
             <Edit className="w-4 h-4" />
           </button>
           <button
-            onClick={() => setDeleteTarget({ id: row.id, name: `${row.department} (${row.fiscalYear})` })}
+            onClick={() => {
+              const deptName = typeof row.department === 'object' && row.department ? row.department.name : row.department;
+              const fyName = typeof row.fiscalYear === 'object' && row.fiscalYear ? row.fiscalYear.name : row.fiscalYear;
+              setDeleteTarget({ id: row.id, name: `${deptName} (${fyName})` });
+            }}
             className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
             title="Delete Leave Master"
           >

@@ -1381,16 +1381,20 @@ export default function AttendanceLeavePage() {
       key: "department", 
       label: "Department", 
       render: (row) => {
-        const deptObj = departments.find((d) => String(d.id) === String(row.department) || String(d.name).toLowerCase() === String(row.department).toLowerCase());
-        return <span className="font-extrabold text-slate-800 dark:text-white">{deptObj ? deptObj.name : row.department}</span>;
+        const deptVal = typeof row.department === 'object' && row.department ? row.department.name : row.department;
+        const deptId = typeof row.department === 'object' && row.department ? row.department.id : row.department;
+        const deptObj = departments.find((d) => String(d.id) === String(deptId) || String(d.name).toLowerCase() === String(deptVal).toLowerCase());
+        return <span className="font-extrabold text-slate-800 dark:text-white">{deptObj ? deptObj.name : deptVal}</span>;
       } 
     },
     { 
       key: "fiscalYear", 
       label: "Fiscal Year", 
       render: (row) => {
-        const fyObj = fiscalYearOptions.find((f) => String(f.id) === String(row.fiscalYear) || String(f.code) === String(row.fiscalYear) || String(f.name).toLowerCase() === String(row.fiscalYear).toLowerCase());
-        return <span className="text-xs font-bold text-sky-500">{fyObj ? fyObj.name : row.fiscalYear}</span>;
+        const fyVal = typeof row.fiscalYear === 'object' && row.fiscalYear ? row.fiscalYear.name : row.fiscalYear;
+        const fyId = typeof row.fiscalYear === 'object' && row.fiscalYear ? row.fiscalYear.id : row.fiscalYear;
+        const fyObj = fiscalYearOptions.find((f) => String(f.id) === String(fyId) || String(f.code) === String(fyVal) || String(f.name).toLowerCase() === String(fyVal).toLowerCase());
+        return <span className="text-xs font-bold text-sky-500">{fyObj ? fyObj.name : fyVal}</span>;
       } 
     },
     {
@@ -1398,11 +1402,13 @@ export default function AttendanceLeavePage() {
       label: "Active Requisitions",
       sortable: false,
       render: (row) => {
+        const deptVal = typeof row.department === 'object' && row.department ? row.department.name : row.department;
+        const deptId = typeof row.department === 'object' && row.department ? row.department.id : row.department;
         const count = requisitions.filter((r) => 
-          String(r.departmentId) === String(row.department) ||
-          r.department?.id === row.department ||
-          (r.department?.name && String(r.department.name).toLowerCase() === String(row.department).toLowerCase()) ||
-          (typeof r.department === "string" && String(r.department).toLowerCase() === String(row.department).toLowerCase())
+          String(r.departmentId) === String(deptId) ||
+          r.department?.id === deptId ||
+          (r.department?.name && String(r.department.name).toLowerCase() === String(deptVal).toLowerCase()) ||
+          (typeof r.department === "string" && String(r.department).toLowerCase() === String(deptVal).toLowerCase())
         ).length;
         return (
           <span className="text-xs font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 border border-sky-100 dark:border-sky-500/20 px-2.5 py-1 rounded-full">
@@ -1434,10 +1440,12 @@ export default function AttendanceLeavePage() {
         <div className="flex gap-1.5 items-center">
           <button
             onClick={() => {
+              const deptId = typeof row.department === 'object' && row.department ? row.department.id : row.department;
+              const fyId = typeof row.fiscalYear === 'object' && row.fiscalYear ? row.fiscalYear.id : row.fiscalYear;
               setNewLeaveMaster({
                 id: row.id,
-                department: row.department,
-                fiscalYear: row.fiscalYear,
+                department: deptId,
+                fiscalYear: fyId,
                 casualLeave: row.casualLeave,
                 sickLeave: row.sickLeave,
                 earnedLeave: row.earnedLeave,
@@ -1452,7 +1460,11 @@ export default function AttendanceLeavePage() {
             <Edit className="w-4 h-4" />
           </button>
           <button
-            onClick={() => setDeleteTarget({ id: row.id, name: `leave master for ${row.department} (${row.fiscalYear})`, type: "leaveMaster", label: "Leave Master" })}
+            onClick={() => {
+              const deptName = typeof row.department === 'object' && row.department ? row.department.name : row.department;
+              const fyName = typeof row.fiscalYear === 'object' && row.fiscalYear ? row.fiscalYear.name : row.fiscalYear;
+              setDeleteTarget({ id: row.id, name: `leave master for ${deptName} (${fyName})`, type: "leaveMaster", label: "Leave Master" });
+            }}
             className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
             title="Delete"
           >
