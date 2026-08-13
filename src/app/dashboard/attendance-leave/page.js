@@ -531,12 +531,12 @@ export default function AttendanceLeavePage() {
     isHalfDay: false,
     lateHours: "",
     earlyGoingHours: "",
-    presentDay: "",
+    presentDay: "1",
     isSundayPresent: false,
     isFullNightPresent: false,
     isHolidayPresent: false,
-    captureMethod: "BIOMETRIC",
-    status: "",
+    captureMethod: "MANUAL_ADMIN",
+    status: "PRESENT",
   });
   const [newLeave, setNewLeave] = useState({ employeeId: "", leaveType: "", startDate: "", endDate: "", reason: "" });
   const [newHoliday, setNewHoliday] = useState({ name: "", date: "" });
@@ -573,12 +573,13 @@ export default function AttendanceLeavePage() {
   const validateAttendance = () => {
     const errs = {};
     if (!newAtt.employeeId) errs.employeeId = "Please select an employee.";
-    if (!newAtt.shiftId) errs.shiftId = "Please select a shift.";
+    // shiftId is optional — employee may not have an assigned shift
     if (!newAtt.date) errs.date = "Attendance date is required.";
     if (!newAtt.checkIn) errs.checkIn = "In Time is required.";
     if (!newAtt.checkOut) errs.checkOut = "Out Time is required.";
-    if (newAtt.presentDay === "" || newAtt.presentDay == null || Number(newAtt.presentDay) < 0 || Number(newAtt.presentDay) > 1.0) {
-      errs.presentDay = "Present day must be 1.0 or 0.5.";
+    const pd = newAtt.presentDay === "" || newAtt.presentDay == null ? NaN : Number(newAtt.presentDay);
+    if (isNaN(pd) || pd < 0 || pd > 1.0) {
+      errs.presentDay = "Present day must be between 0 and 1.0 (e.g. 1.0 or 0.5).";
     }
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
@@ -716,23 +717,26 @@ export default function AttendanceLeavePage() {
     if (!validateAttendance()) return;
     try {
       const workHours = calculateWorkHours(newAtt.checkIn, newAtt.checkOut);
-      const selectedShift = shifts.find(s => s.id === newAtt.shiftId);
+      // Find shift from all available shifts (dropdownShifts or Redux shifts)
+      const allShifts = dropdownShifts.length > 0 ? dropdownShifts : (Array.isArray(shifts) ? shifts : []);
+      const selectedShift = allShifts.find(s => String(s.id) === String(newAtt.shiftId));
+      const effectiveStatus = newAtt.isHalfDay ? "HALFDAY" : (newAtt.status || "PRESENT");
       const payload = {
         employeeId: newAtt.employeeId,
         date: newAtt.date,
-        status: newAtt.isHalfDay ? "HALFDAY" : newAtt.status,
-        shiftId: newAtt.shiftId,
+        status: effectiveStatus,
+        shiftId: newAtt.shiftId || undefined,
         shiftName: selectedShift?.name || "General Shift",
         totalWorkHours: Number(workHours),
         otHours: Number(newAtt.otHours || 0),
         lateHours: Number(newAtt.lateHours || 0),
         earlyGoingHours: Number(newAtt.earlyGoingHours || 0),
-        presentDay: Number(newAtt.presentDay || 1.0),
-        isHalfDay: newAtt.isHalfDay,
-        isSundayPresent: newAtt.isSundayPresent,
-        isFullNightPresent: newAtt.isFullNightPresent,
-        isHolidayPresent: newAtt.isHolidayPresent,
-        captureMethod: newAtt.captureMethod,
+        presentDay: newAtt.presentDay === "" || newAtt.presentDay == null ? 1.0 : Number(newAtt.presentDay),
+        isHalfDay: Boolean(newAtt.isHalfDay),
+        isSundayPresent: Boolean(newAtt.isSundayPresent),
+        isFullNightPresent: Boolean(newAtt.isFullNightPresent),
+        isHolidayPresent: Boolean(newAtt.isHolidayPresent),
+        captureMethod: newAtt.captureMethod || "MANUAL_ADMIN",
         checkIn: newAtt.checkIn ? `${newAtt.date}T${newAtt.checkIn}:00.000Z` : null,
         checkOut: newAtt.checkOut ? `${newAtt.date}T${newAtt.checkOut}:00.000Z` : null,
       };
@@ -752,15 +756,19 @@ export default function AttendanceLeavePage() {
           body: JSON.stringify(payload)
         });
         if (res.ok) {
-          dispatch(fetchAttendance({ page: attPage, limit: attRows, search: attSearch, sortBy: attSortBy, sortOrder: attSortOrder, month: (new Date(newAtt.date).getMonth() + 1).toString(), year: new Date(newAtt.date).getFullYear().toString() }));
+          dispatch(fetchAttendance({ page: attPage, limit: attViewMode === "matrix" ? 1000 : attRows, search: attSearch, sortBy: attSortBy, sortOrder: attSortOrder, month: (new Date(newAtt.date).getMonth() + 1).toString(), year: new Date(newAtt.date).getFullYear().toString() }));
           toast.success("Attendance updated successfully");
+          setShowManualAttModal(false);
         } else {
-          toast.error("Failed to update attendance");
+          const errData = await res.json().catch(() => ({}));
+          toast.error(errData?.message || "Failed to update attendance");
+          return;
         }
       } else {
         await dispatch(createAttendance(payload)).unwrap();
-        dispatch(fetchAttendance({ page: attPage, limit: attRows, search: attSearch, sortBy: attSortBy, sortOrder: attSortOrder, month: (new Date(newAtt.date).getMonth() + 1).toString(), year: new Date(newAtt.date).getFullYear().toString() }));
+        dispatch(fetchAttendance({ page: attPage, limit: attViewMode === "matrix" ? 1000 : attRows, search: attSearch, sortBy: attSortBy, sortOrder: attSortOrder, month: (new Date(newAtt.date).getMonth() + 1).toString(), year: new Date(newAtt.date).getFullYear().toString() }));
         toast.success("Attendance captured successfully");
+        setShowManualAttModal(false);
       }
       
       setNewAtt({
@@ -773,16 +781,16 @@ export default function AttendanceLeavePage() {
         isHalfDay: false,
         lateHours: "",
         earlyGoingHours: "",
-        presentDay: "",
+        presentDay: "1",
         isSundayPresent: false,
         isFullNightPresent: false,
         isHolidayPresent: false,
-        captureMethod: "BIOMETRIC",
-        status: "",
+        captureMethod: "MANUAL_ADMIN",
+        status: "PRESENT",
       });
     } catch (err) {
       console.error(err);
-      toast.error(newAtt.id ? "Failed to update attendance" : "Failed to capture attendance");
+      toast.error(typeof err === "string" ? err : (newAtt.id ? "Failed to update attendance" : "Failed to capture attendance"));
     }
   };
 
@@ -2424,10 +2432,7 @@ export default function AttendanceLeavePage() {
             </div>
           </div>
 
-          <form onSubmit={async (e) => {
-            await handleSubmitAttendance(e);
-            setShowManualAttModal(false);
-          }} className="p-6 space-y-5 max-h-[80vh] overflow-y-auto" noValidate>
+          <form onSubmit={handleSubmitAttendance} className="p-6 space-y-5 max-h-[80vh] overflow-y-auto" noValidate>
 
             {/* Card 1: Employee & Shift Setup */}
             <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
@@ -2567,7 +2572,24 @@ export default function AttendanceLeavePage() {
               <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-2">
                 <CheckCircle2 className="size-4 text-indigo-500" /> Attendance Status & Flags
               </h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Attendance Status *</Label>
+                  <Select value={newAtt.status || "PRESENT"} onValueChange={(val) => {
+                    const isHalf = val === "HALFDAY";
+                    setNewAtt({ ...newAtt, status: val, isHalfDay: isHalf, presentDay: isHalf ? "0.5" : "1" });
+                  }}>
+                    <SelectTrigger className="rounded-xl mt-1.5 h-11"><SelectValue placeholder="Select Status..." /></SelectTrigger>
+                    <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                      <SelectItem value="PRESENT">✅ Present</SelectItem>
+                      <SelectItem value="ABSENT">❌ Absent</SelectItem>
+                      <SelectItem value="HALFDAY">🌗 Half Day</SelectItem>
+                      <SelectItem value="LATE">🕐 Late</SelectItem>
+                      <SelectItem value="ON_LEAVE">🏖️ On Leave</SelectItem>
+                      <SelectItem value="HOLIDAY">🎉 Holiday</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div>
                   <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Present Day Credit (1.0 / 0.5)</Label>
                   <Input
@@ -2582,10 +2604,11 @@ export default function AttendanceLeavePage() {
                       if (formErrors.presentDay) setFormErrors({ ...formErrors, presentDay: null });
                     }}
                   />
+                  {formErrors.presentDay && <span className="text-rose-500 text-[11px] font-bold block mt-1 pl-1">{formErrors.presentDay}</span>}
                 </div>
                 <div>
                   <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Capture Method</Label>
-                  <Select value={newAtt.captureMethod || undefined} onValueChange={(val) => setNewAtt({ ...newAtt, captureMethod: val })}>
+                  <Select value={newAtt.captureMethod || "MANUAL_ADMIN"} onValueChange={(val) => setNewAtt({ ...newAtt, captureMethod: val })}>
                     <SelectTrigger className="rounded-xl mt-1.5 h-11"><SelectValue placeholder="Select Method..." /></SelectTrigger>
                     <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                       <SelectItem value="BIOMETRIC">Biometric Device Sync</SelectItem>

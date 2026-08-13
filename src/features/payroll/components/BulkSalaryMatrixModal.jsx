@@ -354,7 +354,7 @@ export default function BulkSalaryMatrixModal({ open, onOpenChange, banks = [] }
                             className="h-9 w-full rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-200 px-2 cursor-pointer focus:outline-none focus:ring-1 focus:ring-sky-500"
                           >
                             <option value="">Select Bank</option>
-                            {banks.map((b) => (
+                            {(banks || []).map((b) => (
                               <option key={b.id} value={String(b.id)}>
                                 {b.name}
                               </option>

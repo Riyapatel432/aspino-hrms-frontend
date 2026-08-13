@@ -68,9 +68,17 @@ import {
 export default function HraTaxTab() {
 
   const dispatch = useDispatch();
-  const { employees, salaryStructures, rentReceipts, taxDeclarations, loans, currentRun, payslips, loading, activeFinancialYear } = useSelector(
-    (state) => state.payroll
-  );
+  const {
+    employees = [],
+    salaryStructures = [],
+    rentReceipts = [],
+    taxDeclarations = [],
+    loans = [],
+    currentRun = null,
+    payslips = [],
+    loading = false,
+    activeFinancialYear = "",
+  } = useSelector((state) => state.payroll || {});
 
   const activeTab = "hra";
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -631,7 +639,7 @@ export default function HraTaxTab() {
                         >
                           <SelectTrigger className={`rounded-xl mt-1.5 h-11 ${rentErrors.employeeId ? 'border-red-500 border-2' : ''}`}><SelectValue placeholder="Select Employee" /></SelectTrigger>
                           <SelectContent>
-                            {employees.map((emp) => (
+                            {(employees || []).map((emp) => (
                               <SelectItem key={emp.id} value={emp.id}>
                                 {emp.firstName} {emp.lastName} ({emp.employeeId})
                               </SelectItem>
@@ -656,7 +664,7 @@ export default function HraTaxTab() {
                               <SelectValue placeholder="Select Financial Year" />
                             </SelectTrigger>
                             <SelectContent>
-                              {fiscalYears.map((fy) => (
+                              {(fiscalYears || []).map((fy) => (
                                 <SelectItem key={fy.id} value={fy.name}>
                                   {fy.name}
                                 </SelectItem>
@@ -770,7 +778,7 @@ export default function HraTaxTab() {
                           >
                             <SelectTrigger className={`rounded-xl mt-1.5 h-11 ${taxErrors.employeeId ? 'border-red-500 border-2' : ''}`}><SelectValue placeholder="Select Employee" /></SelectTrigger>
                             <SelectContent>
-                              {employees.map((emp) => (
+                              {(employees || []).map((emp) => (
                                 <SelectItem key={emp.id} value={emp.id}>
                                   {emp.firstName} {emp.lastName} ({emp.employeeId})
                                 </SelectItem>

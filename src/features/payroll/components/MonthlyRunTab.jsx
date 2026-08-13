@@ -68,9 +68,17 @@ import {
 export default function MonthlyRunTab() {
 
   const dispatch = useDispatch();
-  const { employees, salaryStructures, rentReceipts, taxDeclarations, loans, currentRun, payslips, loading, activeFinancialYear } = useSelector(
-    (state) => state.payroll
-  );
+  const {
+    employees = [],
+    salaryStructures = [],
+    rentReceipts = [],
+    taxDeclarations = [],
+    loans = [],
+    currentRun = null,
+    payslips = [],
+    loading = false,
+    activeFinancialYear = "",
+  } = useSelector((state) => state.payroll || {});
 
   const activeTab = "run";
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -333,6 +341,7 @@ export default function MonthlyRunTab() {
 
   const handleApproveRun = async () => {
     await dispatch(approvePayrollRun({ month: Number(selectedMonth), year: Number(selectedYear), approvedBy: "Finance Director" }));
+    await dispatch(fetchPayslips({ month: Number(selectedMonth), year: Number(selectedYear) }));
   };
 
   const handleExportBankTransfer = () => {

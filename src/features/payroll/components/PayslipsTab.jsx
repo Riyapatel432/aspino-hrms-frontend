@@ -68,13 +68,21 @@ import {
 export default function PayslipsTab() {
 
   const dispatch = useDispatch();
-  const { employees, salaryStructures, rentReceipts, taxDeclarations, loans, currentRun, payslips, loading, activeFinancialYear } = useSelector(
-    (state) => state.payroll
-  );
+  const {
+    employees = [],
+    salaryStructures = [],
+    rentReceipts = [],
+    taxDeclarations = [],
+    loans = [],
+    currentRun = null,
+    payslips = [],
+    loading = false,
+    activeFinancialYear = "",
+  } = useSelector((state) => state.payroll || {});
 
   const activeTab = "payslips";
-  const [selectedMonth, setSelectedMonth] = useState(String(new Date().getMonth() + 1));
-  const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
+  const [selectedMonth, setSelectedMonth] = useState("ALL");
+  const [selectedYear, setSelectedYear] = useState("ALL");
 
   // Dialog States
   const [isStructureOpen, setIsStructureOpen] = useState(false);

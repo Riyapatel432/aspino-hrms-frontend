@@ -1,6 +1,6 @@
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
-import { ReduxProvider } from "@/redux/provider";
+import { ReduxProvider } from "@/store/provider";
 import "./globals.css";
 
 const inter = Inter({

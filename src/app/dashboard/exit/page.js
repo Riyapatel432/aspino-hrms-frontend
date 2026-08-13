@@ -430,32 +430,39 @@ export default function ExitPage() {
                       label: "Clearances",
                       sortable: false,
                       render: (row) => (
-                        <div className="space-y-1.5">
-                          {(row.clearances ?? []).map((task) => (
-                            <div key={task.id} className="flex items-center justify-between gap-2 p-1.5 bg-slate-50 dark:bg-slate-800 rounded-lg">
-                              <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">{task.department}</span>
-                              {task.status === "PENDING" ? (
-                                <button
-                                  onClick={() => handleUpdateClearance(task.id, "CLEARED")}
-                                  className="bg-emerald-500 dark:bg-emerald-600 text-white text-[9px] font-bold rounded px-1.5 py-0.5 cursor-pointer"
-                                  aria-label={`Mark ${task.department} clearance as cleared`}
-                                >
-                                  Clear
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => handleUpdateClearance(task.id, "PENDING")}
-                                  className="cursor-pointer transition-colors"
-                                  title="Accidentally cleared? Click to revert back to PENDING"
-                                  aria-label={`Revert ${task.department} clearance to pending`}
-                                >
-                                  <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded text-emerald-700 dark:text-emerald-300 font-black hover:bg-rose-100 dark:hover:bg-rose-950 hover:text-rose-700 dark:hover:text-rose-300 hover:border-rose-200 dark:hover:border-rose-800 transition-all block">
-                                    CLEARED ↩ (Undo)
-                                  </span>
-                                </button>
-                              )}
-                            </div>
-                          ))}
+                        <div className="space-y-1.5 min-w-[140px]">
+                          {(row.clearances ?? []).length > 0 ? (
+                            (row.clearances ?? []).map((task) => {
+                              const deptName = task.department?.name || (typeof task.department === "string" ? task.department : "") || task.taskDescription || "Clearance";
+                              return (
+                                <div key={task.id} className="flex items-center justify-between gap-2 p-1.5 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                  <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 truncate max-w-[90px]">{deptName}</span>
+                                  {task.status === "PENDING" ? (
+                                    <button
+                                      onClick={() => handleUpdateClearance(task.id, "CLEARED")}
+                                      className="bg-emerald-500 dark:bg-emerald-600 hover:bg-emerald-600 text-white text-[9px] font-bold rounded px-2 py-0.5 cursor-pointer shadow-sm transition-all"
+                                      aria-label={`Mark ${deptName} clearance as cleared`}
+                                    >
+                                      Clear
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleUpdateClearance(task.id, "PENDING")}
+                                      className="cursor-pointer transition-colors"
+                                      title="Accidentally cleared? Click to revert back to PENDING"
+                                      aria-label={`Revert ${deptName} clearance to pending`}
+                                    >
+                                      <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded text-emerald-700 dark:text-emerald-300 font-black hover:bg-rose-100 dark:hover:bg-rose-950 hover:text-rose-700 dark:hover:text-rose-300 hover:border-rose-200 dark:hover:border-rose-800 transition-all block">
+                                        CLEARED ↩ (Undo)
+                                      </span>
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <span className="text-[10px] text-slate-400 italic">No tasks</span>
+                          )}
                         </div>
                       ),
                     },

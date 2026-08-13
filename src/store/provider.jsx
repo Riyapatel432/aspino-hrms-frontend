@@ -1,9 +1,9 @@
 "use client";
 
 import { Provider } from "react-redux";
-import { store } from "./store";
+import { store } from "./index";
 import { useEffect } from "react";
-import { initializeAuthFromCookies } from "../features/auth/store/authSlice";
+import { initializeAuthFromCookies } from "./slices/authSlice";
 
 export function ReduxProvider({ children }) {
   useEffect(() => {

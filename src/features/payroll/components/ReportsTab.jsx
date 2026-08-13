@@ -68,9 +68,17 @@ import {
 export default function ReportsTab() {
 
   const dispatch = useDispatch();
-  const { employees, salaryStructures, rentReceipts, taxDeclarations, loans, currentRun, payslips, loading, activeFinancialYear } = useSelector(
-    (state) => state.payroll
-  );
+  const {
+    employees = [],
+    salaryStructures = [],
+    rentReceipts = [],
+    taxDeclarations = [],
+    loans = [],
+    currentRun = null,
+    payslips = [],
+    loading = false,
+    activeFinancialYear = "",
+  } = useSelector((state) => state.payroll || {});
 
   const activeTab = "reports";
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);

@@ -82,9 +82,17 @@ import {
 export default function SalaryStructuresTab() {
 
   const dispatch = useDispatch();
-  const { employees, salaryStructures, rentReceipts, taxDeclarations, loans, currentRun, payslips, loading, activeFinancialYear } = useSelector(
-    (state) => state.payroll
-  );
+  const {
+    employees = [],
+    salaryStructures = [],
+    rentReceipts = [],
+    taxDeclarations = [],
+    loans = [],
+    currentRun = null,
+    payslips = [],
+    loading = false,
+    activeFinancialYear = "",
+  } = useSelector((state) => state.payroll || {});
 
   const activeTab = "structures";
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -955,10 +963,10 @@ export default function SalaryStructuresTab() {
                           >
                             <SelectTrigger className={`rounded-xl mt-1.5 h-11 ${structErrors.employeeId ? 'border-red-500 border-2' : ''}`}><SelectValue placeholder="Choose an employee" /></SelectTrigger>
                             <SelectContent>
-                              {employees.length === 0 ? (
+                              {(!employees || employees.length === 0) ? (
                                 <SelectItem value="none" disabled>No employees available</SelectItem>
                               ) : (
-                                employees.map((emp) => (
+                                (employees || []).map((emp) => (
                                   <SelectItem key={emp.id} value={emp.id}>
                                     {emp.firstName} {emp.lastName} ({emp.employeeId}) - {emp.designation}
                                   </SelectItem>

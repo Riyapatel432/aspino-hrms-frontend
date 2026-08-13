@@ -84,10 +84,18 @@ export default function LeaveMasterPage() {
   const startEditing = (row) => {
     setEditingId(row.id);
     const deptVal = typeof row.department === 'object' && row.department ? row.department.id : row.department;
-    const fyVal = typeof row.fiscalYear === 'object' && row.fiscalYear ? row.fiscalYear.id : row.fiscalYear;
+    const fyObj = typeof row.fiscalYear === 'object' && row.fiscalYear ? row.fiscalYear : null;
+    const fyRaw = fyObj ? (fyObj.id || fyObj.name) : row.fiscalYear;
+
+    const matchedFy = fiscalYearOptions.find(
+      (f) => String(f.id) === String(fyRaw) || String(f.name) === String(fyRaw) || String(f.code) === String(fyRaw) || (fyObj && (String(f.id) === String(fyObj.id) || String(f.name) === String(fyObj.name)))
+    );
+
+    const targetFyId = matchedFy ? matchedFy.id : fyRaw;
+
     setNewLeaveMaster({
       department: deptVal,
-      fiscalYear: fyVal,
+      fiscalYear: targetFyId,
       casualLeave: String(row.casualLeave),
       sickLeave: String(row.sickLeave),
       earnedLeave: String(row.earnedLeave),
@@ -365,7 +373,7 @@ export default function LeaveMasterPage() {
                       { id: "FY27", name: "FY 2026-27", code: "FY27" },
                       { id: "FY28", name: "FY 2027-28", code: "FY28" }
                     ]).filter(fy => fy.isActive !== false).map(fy => (
-                      <SelectItem key={fy.id || fy.code || fy.name} value={String(fy.id || fy.code || fy.name)}>
+                      <SelectItem key={fy.id || fy.code || fy.name} value={String(fy.id)}>
                         {fy.name}
                       </SelectItem>
                     ))}
