@@ -28,7 +28,10 @@ import {
   Download,
   RotateCcw,
   Printer,
-  Eye
+  Eye,
+  Sparkles,
+  UserPlus,
+  Users
 } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -112,11 +115,17 @@ export default function RecruitmentPage() {
 
   const [dropdownRequisitions, setDropdownRequisitions] = useState([]);
   const [dropdownCandidates, setDropdownCandidates] = useState([]);
+  const [dropdownEmployees, setDropdownEmployees] = useState([]);
 
-  // Departments: needed on Job Requisitions tab (form dropdown)
+  // Departments & Employees: needed on Job Requisitions tab (form dropdowns)
   useEffect(() => {
     if (activeTab !== "requisitions") return;
     dispatch(fetchDepartments());
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    apiFetch(`${backendUrl}/staff-hrms/recruitment/employees`)
+      .then(res => res.json())
+      .then(data => setDropdownEmployees(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
+      .catch(err => console.error("Failed to fetch employees for replacement:", err));
   }, [dispatch, activeTab]);
 
   // Requisitions dropdown: needed on Candidates & Sourcing tab (Job Requisition select)
@@ -145,12 +154,22 @@ export default function RecruitmentPage() {
   }, [activeTab]);
 
   // Requisition Form State
-  const [newReq, setNewReq] = useState({ title: "", departmentId: "", headcount: "", justification: "", raisedBy: "" });
+  const [newReq, setNewReq] = useState({
+    title: "",
+    departmentId: "",
+    headcount: 1,
+    experienceRequired: "",
+    justification: "",
+    jobSpecification: "",
+    requisitionType: "NEW_REQUIREMENT",
+    replacementForEmployeeId: "",
+    raisedBy: ""
+  });
   // Candidate Form State
-  const [newCand, setNewCand] = useState({ name: "", email: "", phone: "", source: "", requisitionId: "", resumeUrl: "" });
+  const [newCand, setNewCand] = useState({ name: "", email: "", phone: "", source: "", requisitionId: "", experienceYears: "", resumeUrl: "" });
   const [uploadingFile, setUploadingFile] = useState(false);
   // Schedule Form State
-  const [newSched, setNewSched] = useState({ candidateId: "", roundName: "", scheduledAt: "", panelists: "" });
+  const [newSched, setNewSched] = useState({ candidateId: "", roundName: "", scheduledAt: "", panelists: [] });
   // Feedback Form State
   const [newFeedback, setNewFeedback] = useState({ id: "", scheduleId: "", panelistId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
   const [feedbackCandidateId, setFeedbackCandidateId] = useState("ALL");
@@ -168,7 +187,132 @@ export default function RecruitmentPage() {
 
   const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
+  // --- Panelist Parsing & Display Helpers ---
+  const parsePanelistList = (raw) => {
+    if (!raw) return [];
+    let items = [];
+    if (Array.isArray(raw)) {
+      items = raw;
+    } else if (typeof raw === "string") {
+      let str = raw.trim();
+      while ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith('\\"') && str.endsWith('\\"'))) {
+        try { str = JSON.parse(str); } catch (e) { break; }
+      }
+      if (str.startsWith("[") || str.startsWith("{")) {
+        try {
+          const parsed = JSON.parse(str.replace(/^{/, "[").replace(/}$/, "]"));
+          if (Array.isArray(parsed)) items = parsed;
+        } catch (e) {
+          items = str.replace(/[{}\[\]\\"]/g, "").split(",").map(s => s.trim()).filter(Boolean);
+        }
+      } else {
+        items = str.split(",").map(s => s.trim()).filter(Boolean);
+      }
+    }
 
+    const cleaned = [];
+    for (const item of items) {
+      if (!item) continue;
+      if (typeof item === "string") {
+        const trimmed = item.replace(/[{}\[\]\\"]/g, "").trim();
+        if (trimmed) {
+          trimmed.split(",").forEach(sub => {
+            const s = sub.trim();
+            if (s) cleaned.push(s);
+          });
+        }
+      } else {
+        cleaned.push(String(item));
+      }
+    }
+    return Array.from(new Set(cleaned));
+  };
+
+  const formatPanelistNames = (rawPanelists, usersList = []) => {
+    const idsOrNames = parsePanelistList(rawPanelists);
+    if (idsOrNames.length === 0) return [];
+    return idsOrNames.map((item) => {
+      const found = (usersList || []).find((u) => String(u.id) === String(item) || u.name?.toLowerCase() === String(item).toLowerCase());
+      return found ? found.name : item;
+    }).filter(Boolean);
+  };
+
+  const computeEmployeeTenure = (doj, lastDay, createdAt) => {
+    const rawStart = doj || createdAt;
+    if (!rawStart) return "N/A";
+    const start = new Date(rawStart);
+    if (isNaN(start.getTime())) return "N/A";
+    const end = lastDay && !isNaN(new Date(lastDay).getTime()) ? new Date(lastDay) : new Date();
+    const diffTime = Math.max(0, end.getTime() - start.getTime());
+    const totalDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    const years = Math.floor(totalDays / 365.25);
+    const months = Math.floor((totalDays % 365.25) / 30.4375);
+    if (years === 0 && months === 0) return "< 1 Mo";
+    if (years === 0) return `${months} Mos`;
+    if (months === 0) return `${years} Yrs`;
+    return `${years} Yrs ${months} Mos`;
+  };
+
+  const getRoleExperienceEstimate = (designation) => {
+    if (!designation) return "2 - 4 Yrs";
+    const d = designation.toLowerCase();
+    if (d.includes("director") || d.includes("vp") || d.includes("head") || d.includes("chief")) return "10+ Yrs";
+    if (d.includes("principal") || d.includes("architect")) return "8+ Yrs";
+    if (d.includes("manager") || d.includes("lead")) return "5 - 8 Yrs";
+    if (d.includes("senior") || d.includes("sr")) return "4 - 6 Yrs";
+    if (d.includes("mid") || d.includes("specialist") || d.includes("supervisor")) return "2 - 4 Yrs";
+    if (d.includes("junior") || d.includes("jr") || d.includes("trainee") || d.includes("intern") || d.includes("associate")) return "0 - 1 Yr";
+    return "2 - 4 Yrs";
+  };
+
+  const getEmployeeExperienceDetails = (emp) => {
+    if (!emp) return { totalExp: "2 - 4 Yrs", companyTenure: "N/A", roleExp: "2 - 4 Yrs", formattedExp: "2 - 4 Yrs" };
+    const tenure = computeEmployeeTenure(emp.dateOfJoining, emp.exitProcess?.lastWorkingDay || emp.exitProcess?.resignationDate, emp.createdAt);
+    
+    let priorExp = Number(emp.totalExperienceYears) || Number(emp.experienceYears) || 0;
+    if (priorExp <= 0 && emp.email) {
+      const candMatch = (candidates || []).find(c => c.email?.toLowerCase() === emp.email?.toLowerCase());
+      if (candMatch && Number(candMatch.experienceYears) > 0) {
+        priorExp = Number(candMatch.experienceYears);
+      }
+    }
+    if (priorExp <= 0 && emp.id) {
+      const dropEmp = (dropdownEmployees || []).find(e => String(e.id) === String(emp.id));
+      if (dropEmp && Number(dropEmp.totalExperienceYears) > 0) {
+        priorExp = Number(dropEmp.totalExperienceYears);
+      }
+    }
+
+    const roleExp = getRoleExperienceEstimate(emp.designation);
+
+    let totalExpStr = roleExp;
+    if (priorExp > 0) {
+      totalExpStr = `${priorExp} Yrs`;
+    }
+
+    return {
+      totalExp: totalExpStr,
+      companyTenure: tenure,
+      roleExp,
+      formattedExp: `${totalExpStr} (Company Tenure: ${tenure})`,
+    };
+  };
+
+  const getEmployeeSalaryInfo = (emp) => {
+    if (!emp) return { annualCtc: 0, monthlyGross: 0, formattedCtc: "N/A" };
+    const salStruct = Array.isArray(emp.salaryStructures) ? emp.salaryStructures[0] : emp.salaryStructures;
+    const payslip = Array.isArray(emp.payslips) ? emp.payslips[0] : emp.payslips;
+
+    const gross = Number(salStruct?.grossSalary) || Number(payslip?.grossEarnings) || 0;
+    const basic = Number(salStruct?.basicSalary) || Number(payslip?.basicSalary) || 0;
+    const monthly = gross > 0 ? gross : basic;
+    const annual = monthly > 0 ? monthly * 12 : (Number(emp.offerSalary) || Number(emp.salary) || Number(emp.ctc) || 0);
+    return {
+      annualCtc: annual,
+      monthlyGross: monthly > 0 ? monthly : Math.round(annual / 12),
+      formattedCtc: annual > 0 ? `₹${annual.toLocaleString("en-IN")}` : "N/A",
+    };
+  };
 
   // --- Validation Helpers ---
   const getCandidateCoolOffInfo = (cand) => {
@@ -232,8 +376,15 @@ export default function RecruitmentPage() {
     
     if (!newReq.headcount || Number(newReq.headcount) < 1) errs.headcount = "Headcount must be at least 1.";
     
+    if (!newReq.jobSpecification?.trim()) errs.jobSpecification = "Job specification / requirements is required.";
+    else if (newReq.jobSpecification.trim().length < 10) errs.jobSpecification = "Job specification must be at least 10 characters.";
+
     if (!newReq.justification?.trim()) errs.justification = "Justification / business reason is required.";
     else if (newReq.justification.trim().length < 10) errs.justification = "Justification must be at least 10 characters.";
+
+    if (newReq.requisitionType === "REPLACEMENT" && !newReq.replacementForEmployeeId) {
+      errs.replacementForEmployeeId = "Please select the employee who is being replaced.";
+    }
     
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
@@ -287,11 +438,7 @@ export default function RecruitmentPage() {
     else if (new Date(newSched.scheduledAt) < new Date()) {
       errs.scheduledAt = "Interview date and time cannot be in the past.";
     }
-    const panelistsList = Array.isArray(newSched.panelists)
-      ? newSched.panelists
-      : typeof newSched.panelists === 'string'
-      ? newSched.panelists.split(',').map(s => s.trim()).filter(Boolean)
-      : [];
+    const panelistsList = parsePanelistList(newSched.panelists);
     if (panelistsList.length === 0) errs.panelists = "At least one panelist is required.";
     
     setFormErrors(errs);
@@ -340,12 +487,16 @@ export default function RecruitmentPage() {
             title: newReq.title,
             departmentId: newReq.departmentId,
             headcount: Number(newReq.headcount),
-            justification: newReq.justification
+            experienceRequired: newReq.experienceRequired === "" || newReq.experienceRequired === null ? 0 : Number(newReq.experienceRequired),
+            justification: newReq.justification,
+            jobSpecification: newReq.jobSpecification,
+            requisitionType: newReq.requisitionType || "NEW_REQUIREMENT",
+            replacementForEmployeeId: newReq.requisitionType === "REPLACEMENT" ? newReq.replacementForEmployeeId : null,
           })
         });
         if (res.ok) {
-          dispatch(fetchRequisitions());
-          setNewReq({ title: "", departmentId: "", headcount: "", justification: "", raisedBy: "" });
+          dispatch(fetchRequisitions({ page: reqPage, limit: reqRows, search: reqSearch, sortBy: reqSortBy, sortOrder: reqSortOrder }));
+          setNewReq({ title: "", departmentId: "", headcount: 1, experienceRequired: "", justification: "", jobSpecification: "", requisitionType: "NEW_REQUIREMENT", replacementForEmployeeId: "", raisedBy: "" });
           toast.success("Requisition updated successfully");
         } else {
           const msg = await getErrorMessage(res, "Failed to update requisition");
@@ -356,10 +507,14 @@ export default function RecruitmentPage() {
         await dispatch(createRequisition({
           ...newReq,
           headcount: Number(newReq.headcount),
+          experienceRequired: newReq.experienceRequired === "" || newReq.experienceRequired === null ? 0 : Number(newReq.experienceRequired),
           raisedBy: newReq.raisedBy?.trim() || "HR Manager",
+          jobSpecification: newReq.jobSpecification?.trim() || "",
+          requisitionType: newReq.requisitionType || "NEW_REQUIREMENT",
+          replacementForEmployeeId: newReq.requisitionType === "REPLACEMENT" ? newReq.replacementForEmployeeId : null,
         })).unwrap();
         dispatch(fetchRequisitions({ page: reqPage, limit: reqRows, search: reqSearch, sortBy: reqSortBy, sortOrder: reqSortOrder }));
-        setNewReq({ title: "", departmentId: "", headcount: "", justification: "", raisedBy: "" });
+        setNewReq({ title: "", departmentId: "", headcount: 1, experienceRequired: "", justification: "", jobSpecification: "", requisitionType: "NEW_REQUIREMENT", replacementForEmployeeId: "", raisedBy: "" });
         toast.success("Requisition created successfully");
       }
     } catch (err) {
@@ -375,10 +530,10 @@ export default function RecruitmentPage() {
       });
       if (res.ok) {
         if (newReq.id === reqId) {
-          setNewReq({ title: "", departmentId: "", headcount: "", justification: "", raisedBy: "" });
+          setNewReq({ title: "", departmentId: "", headcount: 1, justification: "", jobSpecification: "", requisitionType: "NEW_REQUIREMENT", replacementForEmployeeId: "", raisedBy: "" });
           setFormErrors({});
         }
-        dispatch(fetchRequisitions());
+        dispatch(fetchRequisitions({ page: reqPage, limit: reqRows, search: reqSearch, sortBy: reqSortBy, sortOrder: reqSortOrder }));
         toast.success("Requisition deleted successfully");
       }
     } catch (err) {
@@ -445,12 +600,13 @@ export default function RecruitmentPage() {
             phone: newCand.phone,
             source: newCand.source,
             requisitionId: newCand.requisitionId,
+            experienceYears: newCand.experienceYears === "" || newCand.experienceYears === null ? 0 : Number(newCand.experienceYears),
             resumeUrl: newCand.resumeUrl || undefined,
           })
         });
         if (res.ok) {
           dispatch(fetchCandidates());
-          setNewCand({ name: "", email: "", phone: "", source: "", requisitionId: "", resumeUrl: "" });
+          setNewCand({ name: "", email: "", phone: "", source: "", requisitionId: "", experienceYears: "", resumeUrl: "" });
           toast.success("Candidate updated successfully");
         } else {
           const msg = await getErrorMessage(res, "Failed to update candidate");
@@ -460,9 +616,10 @@ export default function RecruitmentPage() {
         // Create mode
         await dispatch(createCandidate({
           ...newCand,
+          experienceYears: newCand.experienceYears === "" || newCand.experienceYears === null ? 0 : Number(newCand.experienceYears),
           source: newCand.source || "Portal",
         })).unwrap();
-        setNewCand({ name: "", email: "", phone: "", source: "", requisitionId: "", resumeUrl: "" });
+        setNewCand({ name: "", email: "", phone: "", source: "", requisitionId: "", experienceYears: "", resumeUrl: "" });
         const fileInput = document.getElementById("resume-upload-input");
         if (fileInput) fileInput.value = "";
         toast.success("Candidate added successfully");
@@ -514,9 +671,7 @@ export default function RecruitmentPage() {
     e.preventDefault();
     if (!validateSchedule()) return;
     try {
-      const panelistsPayload = Array.isArray(newSched.panelists)
-        ? (newSched.panelists.length > 0 ? newSched.panelists.join(', ') : "")
-        : (typeof newSched.panelists === 'string' ? newSched.panelists : "");
+      const panelistsList = parsePanelistList(newSched.panelists);
       if (newSched.id) {
         // Edit mode
         const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/schedules/${newSched.id}`, {
@@ -526,7 +681,7 @@ export default function RecruitmentPage() {
             candidateId: newSched.candidateId,
             roundName: newSched.roundName,
             scheduledAt: newSched.scheduledAt,
-            panelists: panelistsPayload
+            panelists: panelistsList
           })
         });
         if (res.ok) {
@@ -541,7 +696,7 @@ export default function RecruitmentPage() {
         // Create mode
         await dispatch(createSchedule({
           ...newSched,
-          panelists: panelistsPayload,
+          panelists: panelistsList,
           roundName: newSched.roundName?.trim() || "Technical Round",
         })).unwrap();
         // Automatically update candidate status to INTERVIEWING if active
@@ -721,6 +876,24 @@ export default function RecruitmentPage() {
     }
   };
 
+  const getOrdinal = (n) => {
+    const s = ["th", "st", "nd", "rd"];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  };
+
+  const formatOfferDate = (dateString) => {
+    const d = dateString ? new Date(dateString) : new Date();
+    if (isNaN(d.getTime())) return new Date().toLocaleDateString("en-GB");
+    return `${getOrdinal(d.getDate())} ${d.toLocaleString("en-US", { month: "short" })} ${d.getFullYear()}`;
+  };
+
+  const formatJoiningDateFull = (dateString) => {
+    const d = dateString ? new Date(dateString) : new Date();
+    if (isNaN(d.getTime())) return "the date of joining";
+    return `${getOrdinal(d.getDate())} ${d.toLocaleString("en-US", { month: "long" })} ${d.getFullYear()}`;
+  };
+
   const handlePrintOfferLetter = (offer) => {
     if (!offer) return;
     const printWindow = window.open('', '_blank');
@@ -728,221 +901,336 @@ export default function RecruitmentPage() {
       toast.error("Please allow popups to print/download offer letter");
       return;
     }
+    const candidateName = offer.candidate?.name || "Ravi Babariya";
+    const role = offer.role || "PACKING SUPERVISOR";
+    const dateFormatted = formatOfferDate(offer.createdAt || new Date());
+    const joiningDateFormatted = formatJoiningDateFull(offer.joiningDate || new Date());
+    const year = new Date().getFullYear();
+    const seq = String(offer.id || "1").slice(-3).padStart(3, "0");
+    const refNo = `Ref.ASCPL/OL-${year}-${seq}`;
+
+    const candidateAddress = offer.candidate?.address || "Dadri, Kosamba Tarsadi";
+    const candidateCity = offer.candidate?.city || "Surat";
+    const candidateState = offer.candidate?.state || "Gujarat- 394 120";
+
+    const salaryClause = offer.salary
+      ? `Your annual salary package shall be mutually agreed at Rs. ${Number(offer.salary).toLocaleString('en-IN')}/- per annum at the time of an Interview.`
+      : `Your annual salary package shall be mutually agreed at the time of an Interview.`;
+
     const htmlContent = `
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Offer Letter - ${offer.candidate?.name || 'Candidate'}</title>
+          <title>Offer Letter - ${candidateName}</title>
+          <meta charset="utf-8" />
           <style>
             @page {
               size: A4 portrait;
-              margin: 0.8cm;
+              margin: 0;
             }
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            * {
+              box-sizing: border-box;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            html, body {
               margin: 0;
               padding: 0;
-              color: #0f172a;
+              width: 100%;
+              height: 100%;
               background: #ffffff;
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
+              color: #1e293b;
+              font-family: Arial, Helvetica, sans-serif;
             }
-            .offer-card {
-              border: 1px solid #cbd5e1;
-              border-radius: 12px;
-              padding: 32px;
-              max-width: 720px;
+            .a4-container {
+              position: relative;
+              width: 100%;
+              min-height: 100vh;
               margin: 0 auto;
+              padding: 0;
               background: #ffffff;
+              overflow: hidden;
+              display: flex;
+              flex-direction: column;
+              justify-content: space-between;
               box-sizing: border-box;
             }
-            .header-title {
-              text-align: center;
-              margin-bottom: 20px;
-              border-bottom: 1px solid #e2e8f0;
-              padding-bottom: 16px;
+            @media print {
+              html, body {
+                width: 210mm;
+                height: 297mm;
+              }
+              .a4-container {
+                width: 210mm;
+                height: 297mm;
+                max-height: 297mm;
+                page-break-after: avoid;
+                page-break-inside: avoid;
+              }
             }
-            .header-title h1 {
-              margin: 0;
-              font-size: 22px;
-              color: #0f172a;
-              font-weight: 900;
-              letter-spacing: 1px;
+            .watermark {
+              position: absolute;
+              top: 52%;
+              left: 50%;
+              transform: translate(-50%, -50%);
+              width: 440px;
+              opacity: 0.05;
+              pointer-events: none;
+              z-index: 0;
             }
-            .header-title p.subtitle {
-              margin: 4px 0 0 0;
-              font-size: 11px;
-              font-weight: bold;
-              color: #0ea5e9;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-            }
-            .header-title p.address {
-              margin: 4px 0 0 0;
-              font-size: 10px;
-              color: #64748b;
-            }
-            .meta-row {
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-start;
-              font-size: 11.5px;
-              margin-bottom: 20px;
-            }
-            .subject-box {
-              background: #f8fafc;
-              border-left: 4px solid #0ea5e9;
-              padding: 10px 14px;
-              border-radius: 0 8px 8px 0;
-              margin-bottom: 20px;
-              font-size: 11.5px;
-              font-weight: bold;
-              color: #0f172a;
-            }
-            .body-text {
-              font-size: 11.5px;
-              line-height: 1.6;
-              color: #334155;
-              text-align: justify;
-              margin-bottom: 20px;
-            }
-            .body-text p {
-              margin: 0 0 12px 0;
-            }
-            .table-title {
-              font-weight: bold;
-              font-size: 11.5px;
-              margin-bottom: 8px;
-              color: #0f172a;
-            }
-            .details-table {
+            /* Header */
+            .header-wrap {
+              position: relative;
               width: 100%;
-              border-collapse: collapse;
-              margin-bottom: 20px;
-              font-size: 11.5px;
-              border: 1px solid #e2e8f0;
-              border-radius: 8px;
-              overflow: hidden;
+              z-index: 1;
             }
-            .details-table td {
-              padding: 9px 14px;
-              border-bottom: 1px solid #e2e8f0;
+            .top-shapes {
+              position: relative;
+              width: 100%;
+              height: 44px;
             }
-            .details-table tr:nth-child(odd) {
-              background: #f8fafc;
+            .top-left-tab {
+              position: absolute;
+              top: 0;
+              left: 0;
+              width: 260px;
+              height: 34px;
+              background: #2073bd;
+              border-bottom-right-radius: 34px;
             }
-            .details-table tr:nth-child(even) {
-              background: #ffffff;
+            .top-right-ribbon {
+              position: absolute;
+              top: 0;
+              right: 0;
+              width: 155px;
+              height: 145px;
             }
-            .details-table td.label {
-              font-weight: bold;
-              color: #475569;
-              width: 42%;
+            .header-content {
+              padding: 0 54px;
+              margin-top: 0px;
             }
-            .details-table td.val {
-              font-weight: bold;
-              color: #0f172a;
-            }
-            .terms-section {
-              font-size: 11px;
-              color: #475569;
-              margin-bottom: 35px;
-            }
-            .terms-section h4 {
-              margin: 0 0 8px 0;
-              font-size: 11.5px;
-              color: #0f172a;
-              font-weight: bold;
-            }
-            .terms-section ol {
-              margin: 0;
-              padding-left: 18px;
-            }
-            .terms-section li {
-              margin-bottom: 6px;
-              text-align: justify;
-              line-height: 1.5;
-            }
-            .sig-grid {
+            .logo-row {
               display: flex;
               justify-content: space-between;
-              margin-top: 35px;
+              align-items: flex-end;
+              padding-bottom: 22px;
+            }
+            .logo-img {
+              width: 160px;
+              height: auto;
+              display: block;
+            }
+            .cin-text {
+              font-size: 11px;
+              font-weight: 700;
+              color: #1e293b;
+              letter-spacing: 0.3px;
+              margin-bottom: 4px;
+            }
+            /* Body */
+            .letter-content {
+              position: relative;
+              z-index: 1;
+              padding: 0 54px;
+              flex-grow: 1;
+            }
+            .recipient-block {
+              font-size: 13px;
+              line-height: 1.45;
+              color: #1e293b;
+              margin-bottom: 20px;
+            }
+            .recipient-block .ref {
+              font-weight: 500;
+            }
+            .recipient-block .date {
+              margin-bottom: 5px;
+            }
+            .recipient-block .name {
+              font-weight: 500;
+            }
+            .doc-title {
+              text-align: center;
+              font-size: 16px;
+              font-weight: 900;
+              text-decoration: underline;
+              letter-spacing: 0.6px;
+              margin: 18px 0 16px 0;
+              color: #162a55;
+            }
+            .intro-text {
+              text-align: justify;
+              font-size: 12.5px;
+              font-weight: 700;
+              line-height: 1.55;
+              margin-bottom: 14px;
+              color: #162a55;
+            }
+            .terms-list {
+              margin: 0 0 14px 0;
+              padding: 0;
+              list-style: none;
+            }
+            .terms-list li {
+              margin-bottom: 8px;
+              font-size: 12px;
+              line-height: 1.55;
+              text-align: justify;
+              color: #1e293b;
+            }
+            .checklist-heading {
+              font-weight: 700;
+              font-size: 12.5px;
+              margin: 16px 0 8px 0;
+              color: #162a55;
+            }
+            .checklist-list {
+              margin: 0 0 14px 0;
+              padding: 0;
+              list-style: none;
+            }
+            .checklist-list li {
+              margin-bottom: 4px;
               font-size: 11.5px;
+              line-height: 1.5;
+              position: relative;
+              padding-left: 14px;
+              color: #334155;
             }
-            .sig-col {
-              width: 45%;
-            }
-            .sig-line {
-              border-top: 1px solid #cbd5e1;
-              margin-top: 45px;
-              padding-top: 4px;
+            .checklist-list li::before {
+              content: "-";
+              position: absolute;
+              left: 0;
               font-weight: bold;
-              color: #0f172a;
             }
-            .sig-sub {
+            .closing-text {
+              font-size: 12px;
+              line-height: 1.55;
+              margin: 16px 0 14px 0;
+              color: #1e293b;
+            }
+            .signoff-block {
+              margin-top: 14px;
+              font-size: 12.5px;
+              line-height: 1.45;
+            }
+            .signoff-thanks {
+              font-weight: 700;
+              color: #162a55;
+              margin-bottom: 8px;
+            }
+            .signoff-company {
+              font-weight: 700;
+              color: #162a55;
+              margin-bottom: 24px;
+            }
+            /* Footer */
+            .footer-wrap {
+              position: relative;
+              z-index: 1;
+              width: 100%;
+            }
+            .office-text {
+              padding: 0 54px 10px 54px;
               font-size: 10.5px;
-              color: #64748b;
+              font-weight: 700;
+              color: #1e293b;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              gap: 4px;
+            }
+            .navy-bar {
+              background: #173660;
+              color: #ffffff;
+              padding: 12px 54px;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              font-size: 10.5px;
+              font-weight: 500;
+              letter-spacing: 0.2px;
             }
           </style>
         </head>
         <body>
-          <div class="offer-card">
-            <div class="header-title">
-              <h1>ASPINO CHEMICALS CORP</h1>
-              <p class="subtitle">GMP Certified Pharmaceutical & Chemical Unit</p>
-              <p class="address">HQ: Industrial Estate, Sector 5, India | Email: hr@aspinochemicals.com</p>
-            </div>
-            <div class="meta-row">
-              <div>
-                <strong>To,</strong><br/>
-                <strong style="font-size: 13px; color: #0f172a;">${offer.candidate?.name || ''}</strong><br/>
-                <span style="color: #64748b;">Email: ${offer.candidate?.email || ''}</span>
+          <div class="a4-container">
+            <img src="/aspino-logo.png" class="watermark" alt="Watermark" />
+
+            <div>
+              <div class="header-wrap">
+                <div class="top-shapes">
+                  <div class="top-left-tab"></div>
+                  <svg class="top-right-ribbon" viewBox="0 0 120 115" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M120 0C100 35 60 25 40 50C25 68 35 90 60 115C75 98 70 78 85 62C105 40 115 20 120 0Z" fill="#38bdf8" fill-opacity="0.85"/>
+                    <path d="M120 10C105 45 70 38 50 62C35 80 45 98 70 115C60 98 55 82 70 70C90 50 110 32 120 10Z" fill="#1b75bb"/>
+                    <path d="M120 22C110 50 78 48 62 70C48 88 58 102 78 115C68 100 64 86 78 76C96 60 112 40 120 22Z" fill="#173660"/>
+                  </svg>
+                </div>
+                <div class="header-content">
+                  <div class="logo-row">
+                    <img src="/aspino-logo.png" class="logo-img" alt="Aspino Speciality Chemicals Private Limited" />
+                    <div class="cin-text">CIN: U20297GJ2024PTC150782</div>
+                  </div>
+                </div>
               </div>
-              <div>
-                <strong>Date:</strong> ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+
+              <div class="letter-content">
+                <div class="recipient-block">
+                  <div class="ref">${refNo}</div>
+                  <div class="date">Dt. ${dateFormatted}</div>
+                  <div class="name">Mr. ${candidateName},</div>
+                  <div>${candidateAddress}</div>
+                  <div>${candidateCity}</div>
+                  <div>${candidateState}</div>
+                </div>
+
+                <div class="doc-title">OFFER LETTER</div>
+
+                <p class="intro-text">
+                  This has reference to your application and the subsequent interview you had with us, we are pleased to confirm our decision wherein we have mutually agreed upon the following:
+                </p>
+
+                <ul class="terms-list">
+                  <li><strong>1.</strong> You shall be designated as &quot;<strong>${role.toUpperCase()}</strong>&quot;.</li>
+                  <li><strong>2.</strong> ${salaryClause}</li>
+                  <li><strong>3.</strong> Acceptance of the offer would automatically bind you to agree with all the terms and conditions of the employment as discussed during the interview.</li>
+                  <li><strong>4.</strong> You will come to finish all formalities and collect appointment letter on or before <strong>${joiningDateFormatted}</strong></li>
+                </ul>
+
+                <div class="checklist-heading">Kindly bring the following documents on the date of joining:</div>
+                <ul class="checklist-list">
+                  <li>Copies of all education certificates for the purpose of admitting the date of birth and all mark sheets of all academic qualifications and achievements.</li>
+                  <li>Copy Experience Certificates</li>
+                  <li>Proof of past employments.</li>
+                  <li>Relieving letter from your current employer</li>
+                  <li>Photocopy of last salary slip.</li>
+                  <li>Four copies of passport size photographs</li>
+                  <li>Photocopy of driving license and your blood group details</li>
+                  <li>Two References.</li>
+                </ul>
+
+                <p class="closing-text">
+                  With best wishes for an enjoyable, exciting and prosperous career association with Aspino Specialty Chemicals Private Limited.
+                </p>
+
+                <div class="signoff-block">
+                  <div class="signoff-thanks">Thankfully yours,</div>
+                  <div class="signoff-company">For Aspino Speciality Chemicals Pvt.Ltd.</div>
+                </div>
               </div>
             </div>
-            <div class="subject-box">
-              Subject: Appointment & Offer of Employment
-            </div>
-            <div class="body-text">
-              <p>Dear ${offer.candidate?.name || ''},</p>
-              <p>We are pleased to extend to you a formal offer of employment for the position of <strong>${offer.role || ''}</strong> at Aspino Chemicals Corp. Following our comprehensive interview process and review of your professional accomplishments, we are confident that your technical expertise, qualifications, and industry knowledge will make a substantial contribution to the success and strategic objectives of our organization.</p>
-              <p>Under this appointment, your Annual CTC (Cost to Company) will be <strong>Rs. ${Number(offer.salary || 0).toLocaleString('en-IN')} per annum</strong>, subject to statutory deductions as applicable. The detailed breakdown and joining requirements are outlined below.</p>
-            </div>
-            <div class="table-title">Position Details:</div>
-            <table class="details-table">
-              <tr>
-                <td class="label">Offered Designation</td>
-                <td class="val">${offer.role || ''}</td>
-              </tr>
-              <tr>
-                <td class="label">Annual CTC (INR)</td>
-                <td class="val">Rs. ${Number(offer.salary || 0).toLocaleString('en-IN')} / annum</td>
-              </tr>
-              <tr>
-                <td class="label">Expected Joining Date</td>
-                <td class="val">${offer.joiningDate ? new Date(offer.joiningDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'N/A'}</td>
-              </tr>
-            </table>
-            <div class="terms-section">
-              <h4>Terms & Conditions:</h4>
-              <ol>
-                <li><strong>Credential Verification:</strong> This offer of employment is contingent upon successful completion of background checks, reference verifications, and submission of academic & professional credentials.</li>
-                <li><strong>Probationary Period:</strong> Upon commencement, you will undergo a probationary period of six (6) months. Confirmation is subject to satisfactory performance appraisals.</li>
-                <li><strong>Acceptance of Offer:</strong> Please indicate formal acceptance by signing and returning the duplicate copy of this letter on or before your scheduled joining date.</li>
-              </ol>
-            </div>
-            <div class="sig-grid">
-              <div class="sig-col">
-                <strong>Sincerely,</strong>
-                <div class="sig-line">Authorized Signatory</div>
-                <div class="sig-sub">HR Director, Aspino Chemicals Corp</div>
+
+            <div class="footer-wrap">
+              <div class="office-text">
+                <span>Registered office</span>
+                <span>📍</span>
+                <span>SRN-271,BLK-314, Nakoda Road, Ta-Mangrol, Hathuran, Surat, 394125, Gujarat - India.</span>
               </div>
-              <div class="sig-col">
-                <strong>Accepted & Agreed,</strong>
-                <div class="sig-line">Candidate Signature & Date</div>
-                <div class="sig-sub">${offer.candidate?.name || ''}</div>
+              <div class="navy-bar">
+                <span>📞 +91 98259 57173</span>
+                <span>✉ info@aspinochemicals.com</span>
+                <span>🌐 www.aspinochemicals.com</span>
               </div>
             </div>
           </div>
@@ -1026,6 +1314,172 @@ export default function RecruitmentPage() {
                   {newReq.id ? "Edit Requisition" : "Raise Requisition"}
                 </h3>
                 <form onSubmit={handleSubmitRequisition} className="space-y-3" noValidate>
+                  {/* Requirement Type Selector */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Requirement Type</Label>
+                    <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewReq({ ...newReq, requisitionType: "NEW_REQUIREMENT", replacementForEmployeeId: "" });
+                          if (formErrors.replacementForEmployeeId) setFormErrors({ ...formErrors, replacementForEmployeeId: null });
+                        }}
+                        className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          newReq.requisitionType !== "REPLACEMENT"
+                            ? "bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-400 shadow-xs"
+                            : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white"
+                        }`}
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        New Requirement
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewReq({ ...newReq, requisitionType: "REPLACEMENT" });
+                        }}
+                        className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          newReq.requisitionType === "REPLACEMENT"
+                            ? "bg-amber-500 text-white shadow-xs"
+                            : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white"
+                        }`}
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Replacement
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* If Replacement selected, show Employee dropdown */}
+                  {newReq.requisitionType === "REPLACEMENT" && (
+                    <div className="space-y-2 p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 animate-in fade-in duration-200">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+                          <Users className="w-3.5 h-3.5 text-amber-600" />
+                          Employee Being Replaced (Resigned / Terminated) <span className="text-rose-500">*</span>
+                        </Label>
+                        <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-100/80 dark:bg-amber-900/60 px-1.5 py-0.5 rounded">
+                          Auto-fills Role & Dept
+                        </span>
+                      </div>
+                      <Select
+                        value={newReq.replacementForEmployeeId || ""}
+                        onValueChange={(val) => {
+                          const emp = dropdownEmployees.find(e => String(e.id) === String(val));
+                          const salInfo = getEmployeeSalaryInfo(emp);
+                          const expDetails = getEmployeeExperienceDetails(emp);
+                          const exitType = emp?.exitProcess?.type === 'TERMINATION' ? 'Terminated' : 'Resigned';
+
+                          const autoMinExp = Number(emp?.totalExperienceYears) > 0 
+                            ? Number(emp.totalExperienceYears) 
+                            : (() => {
+                                const match = String(expDetails.totalExp).match(/\d+(\.\d+)?/);
+                                return match ? Number(match[0]) : 2;
+                              })();
+
+                          setNewReq(prev => ({
+                            ...prev,
+                            replacementForEmployeeId: val,
+                            // Auto-fetch & prefill Job Title, Department, and Min Experience
+                            title: emp?.designation ? emp.designation : prev.title,
+                            departmentId: emp?.departmentId ? String(emp.departmentId) : (emp?.department?.id ? String(emp.department.id) : prev.departmentId),
+                            experienceRequired: autoMinExp,
+                            // Auto-fill Job Specification & Justification with Total Experience & Salary Budget
+                            jobSpecification: (!prev.jobSpecification || prev.jobSpecification.trim() === "" || prev.jobSpecification.includes("Qualifications & Skills:"))
+                              ? `Qualifications & Skills: Min ${expDetails.totalExp} experience in ${emp?.designation || "relevant domain"}.${salInfo.annualCtc > 0 ? ` Target CTC: ~${salInfo.formattedCtc}/year.` : ""}`
+                              : prev.jobSpecification,
+                            justification: (!prev.justification || prev.justification.trim() === "" || prev.justification.includes("Replacement for"))
+                              ? `Replacement for ${emp?.firstName} ${emp?.lastName} (${emp?.employeeId || "ID"}) [${exitType}] in ${emp?.department?.name || "Department"}.${salInfo.annualCtc > 0 ? ` Requisite budget: ${salInfo.formattedCtc}/yr.` : ""}`
+                              : prev.justification,
+                          }));
+                          setFormErrors(prev => ({
+                            ...prev,
+                            replacementForEmployeeId: null,
+                            ...(emp?.designation ? { title: null } : {}),
+                            ...((emp?.departmentId || emp?.department?.id) ? { departmentId: null } : {}),
+                          }));
+                          if (emp) {
+                            const detailsStr = [
+                              salInfo.annualCtc > 0 ? `${salInfo.formattedCtc}/yr` : null,
+                              `Exp: ${autoMinExp} Yrs`
+                            ].filter(Boolean).join(" · ");
+                            toast.info(`Matched & Auto-fetched "${emp.designation || 'Role'}" (${detailsStr})`);
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="h-10 text-xs rounded-xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800/60 w-full">
+                          <SelectValue placeholder="Select resigned or terminated employee..." />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 max-h-60">
+                          {dropdownEmployees.length === 0 ? (
+                            <SelectItem value="none" disabled>No resigned or terminated employees found</SelectItem>
+                          ) : (
+                            dropdownEmployees.map((emp) => {
+                              const exitType = emp.exitProcess?.type;
+                              const exitTag = exitType === 'RESIGNATION'
+                                ? 'Resigned'
+                                : exitType === 'TERMINATION'
+                                  ? 'Terminated'
+                                  : emp.status === 'EXITING'
+                                    ? 'Exiting'
+                                    : emp.status === 'RELIEVED'
+                                      ? 'Relieved'
+                                      : 'Resigned';
+                              const sal = getEmployeeSalaryInfo(emp);
+                              const expDetails = getEmployeeExperienceDetails(emp);
+                              return (
+                                <SelectItem key={emp.id} value={String(emp.id)}>
+                                  {emp.firstName} {emp.lastName} ({emp.employeeId || "No ID"}) — {emp.designation || "Staff"} {emp.department?.name ? `[${emp.department.name}]` : ""} • [{exitTag}] • [Exp: {expDetails.totalExp} | Tenure: {expDetails.companyTenure}] {sal.annualCtc > 0 ? `• [CTC: ${sal.formattedCtc}]` : ""}
+                                </SelectItem>
+                              );
+                            })
+                          )}
+                        </SelectContent>
+                      </Select>
+                      {formErrors.replacementForEmployeeId && (
+                        <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.replacementForEmployeeId}</span>
+                      )}
+
+                      {/* Selected Employee Info Summary */}
+                      {(() => {
+                        const selectedEmp = dropdownEmployees.find(e => String(e.id) === String(newReq.replacementForEmployeeId));
+                        if (!selectedEmp) return null;
+                        const exitType = selectedEmp.exitProcess?.type || selectedEmp.status;
+                        const salInfo = getEmployeeSalaryInfo(selectedEmp);
+                        const expDetails = getEmployeeExperienceDetails(selectedEmp);
+
+                        return (
+                          <div className="text-[11px] bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/60 rounded-xl p-3 space-y-2 text-slate-700 dark:text-slate-200 shadow-xs">
+                            <div className="flex items-center justify-between border-b border-amber-100 dark:border-amber-900/40 pb-1.5">
+                              <span className="font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                                <CheckCircle className="w-3.5 h-3.5 text-emerald-500" /> Auto-filled Replacement Profile
+                              </span>
+                              <span className="text-[9.5px] font-extrabold uppercase px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 rounded">
+                                {exitType}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-[10.5px]">
+                              <div className="space-y-0.5">
+                                <span className="text-slate-400 block text-[9.5px] font-semibold">ROLE & DEPARTMENT</span>
+                                <span className="font-bold text-slate-800 dark:text-white block">{selectedEmp.designation || "Staff"}</span>
+                                <span className="text-slate-500 dark:text-slate-400 block">{selectedEmp.department?.name || "Department"}</span>
+                              </div>
+                              <div className="space-y-0.5">
+                                <span className="text-slate-400 block text-[9.5px] font-semibold">SALARY & EXPERIENCE MATCH</span>
+                                <span className="font-extrabold text-emerald-600 dark:text-emerald-400 block">
+                                  {salInfo.annualCtc > 0 ? `💰 ${salInfo.formattedCtc} / yr` : '💰 Standard Budget'}
+                                </span>
+                                <span className="text-slate-700 dark:text-slate-200 block font-bold">
+                                  🎯 Exp: {expDetails.totalExp} <span className="text-slate-400 text-[9.5px] font-normal">(Tenure: {expDetails.companyTenure})</span>
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
                   <div className="space-y-1">
                     <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Job Title</Label>
                     <Input
@@ -1057,20 +1511,50 @@ export default function RecruitmentPage() {
                     </Select>
                     {formErrors.departmentId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.departmentId}</span>}
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Headcount Required</Label>
-                    <Input
-                      type="number"
-                      value={newReq.headcount}
-                      onChange={(e) => {
-                        setNewReq({ ...newReq, headcount: Number(e.target.value) });
-                        if (formErrors.headcount) setFormErrors({ ...formErrors, headcount: null });
-                      }}
-                    />
-                    {formErrors.headcount && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.headcount}</span>}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Headcount</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={newReq.headcount}
+                        onChange={(e) => {
+                          setNewReq({ ...newReq, headcount: Number(e.target.value) });
+                          if (formErrors.headcount) setFormErrors({ ...formErrors, headcount: null });
+                        }}
+                      />
+                      {formErrors.headcount && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.headcount}</span>}
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Min Exp (Yrs)</Label>
+                      <Input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        placeholder="e.g. 3"
+                        value={newReq.experienceRequired ?? ""}
+                        onChange={(e) => {
+                          const val = e.target.value === "" ? "" : Number(e.target.value);
+                          setNewReq({ ...newReq, experienceRequired: val });
+                        }}
+                      />
+                    </div>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Justification</Label>
+                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Job Specification / Requirements</Label>
+                    <Textarea
+                      placeholder="e.g. Qualifications, key skills, experience & certifications..."
+                      className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-sm dark:bg-slate-950 h-20"
+                      value={newReq.jobSpecification || ""}
+                      onChange={(e) => {
+                        setNewReq({ ...newReq, jobSpecification: e.target.value });
+                        if (formErrors.jobSpecification) setFormErrors({ ...formErrors, jobSpecification: null });
+                      }}
+                    />
+                    {formErrors.jobSpecification && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.jobSpecification}</span>}
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Job Justification</Label>
                     <Textarea
                       placeholder="Reason for headcount..."
                       className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-sm dark:bg-slate-950 h-20"
@@ -1088,7 +1572,7 @@ export default function RecruitmentPage() {
                         type="button" 
                         variant="outline" 
                         onClick={() => {
-                          setNewReq({ title: "", departmentId: departments[0]?.id || "", headcount: 1, justification: "", raisedBy: "HR Manager" });
+                          setNewReq({ title: "", departmentId: departments[0]?.id || "", headcount: 1, experienceRequired: "", justification: "", jobSpecification: "", requisitionType: "NEW_REQUIREMENT", replacementForEmployeeId: "", raisedBy: "HR Manager" });
                           setFormErrors({});
                         }}
                         className="w-1/3 rounded-xl font-bold"
@@ -1124,13 +1608,60 @@ export default function RecruitmentPage() {
                   columns={[
                     {
                       key: "title",
-                      label: "Job Title",
-                      render: (row) => (
-                        <div>
-                          <span className="text-sm font-bold text-slate-800 dark:text-white block">{row.title}</span>
-                          <span className="text-[10px] text-slate-400 block truncate max-w-[220px]">{row.justification}</span>
-                        </div>
-                      ),
+                      label: "Job Specification",
+                      render: (row) => {
+                        const isReplacement = row.requisitionType === "REPLACEMENT";
+                        const replEmp = row.replacementForEmployee;
+                        const replEmpName = replEmp
+                          ? `${replEmp.firstName} ${replEmp.lastName}`
+                          : dropdownEmployees.find(e => String(e.id) === String(row.replacementForEmployeeId))
+                            ? `${dropdownEmployees.find(e => String(e.id) === String(row.replacementForEmployeeId)).firstName} ${dropdownEmployees.find(e => String(e.id) === String(row.replacementForEmployeeId)).lastName}`
+                            : null;
+                        const replEmpId = replEmp?.employeeId || dropdownEmployees.find(e => String(e.id) === String(row.replacementForEmployeeId))?.employeeId;
+
+                        return (
+                          <div className="space-y-1 max-w-[280px]">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-sm font-bold text-slate-800 dark:text-white block">{row.title}</span>
+                              {isReplacement ? (
+                                <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                                  <RotateCcw className="w-2.5 h-2.5" />
+                                  Replacement
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                                  <Sparkles className="w-2.5 h-2.5" />
+                                  New Req
+                                </span>
+                              )}
+                            </div>
+                            {isReplacement && (replEmpName || row.replacementForEmployeeId) && (() => {
+                              const empObj = replEmp || dropdownEmployees.find(e => String(e.id) === String(row.replacementForEmployeeId));
+                              const sal = getEmployeeSalaryInfo(empObj);
+                              const expDetails = getEmployeeExperienceDetails(empObj);
+                              return (
+                                <div className="text-[10.5px] font-medium text-amber-700 dark:text-amber-300 bg-amber-50/70 dark:bg-amber-950/20 px-2 py-1 rounded border border-amber-200/60 dark:border-amber-800/40 space-y-0.5">
+                                  <div className="truncate">
+                                    <span className="font-bold">Replaces:</span> {replEmpName || 'Employee'} {replEmpId ? `(${replEmpId})` : ''}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[9.5px] text-amber-800 dark:text-amber-300 font-semibold flex-wrap">
+                                    {sal.annualCtc > 0 && <span>💰 Prev CTC: <strong className="text-emerald-700 dark:text-emerald-400">{sal.formattedCtc}</strong></span>}
+                                    <span>🎯 Exp: <strong>{expDetails.totalExp}</strong> <span className="text-slate-400 font-normal">(Tenure: {expDetails.companyTenure})</span></span>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                            {row.jobSpecification && (
+                              <span className="text-[11px] text-sky-600 dark:text-sky-400 font-medium block truncate" title={`Job Specification: ${row.jobSpecification}`}>
+                                <span className="font-semibold text-slate-500 dark:text-slate-400">Spec:</span> {row.jobSpecification}
+                              </span>
+                            )}
+                            <span className="text-[10px] text-slate-400 block truncate" title={`Justification: ${row.justification}`}>
+                              <span className="font-semibold text-slate-500 dark:text-slate-400">Reason:</span> {row.justification}
+                            </span>
+                          </div>
+                        );
+                      },
                     },
                     {
                       key: "department.name",
@@ -1184,7 +1715,11 @@ export default function RecruitmentPage() {
                                 title: row.title,
                                 departmentId: row.departmentId,
                                 headcount: row.headcount,
+                                experienceRequired: row.experienceRequired ?? "",
                                 justification: row.justification,
+                                jobSpecification: row.jobSpecification || "",
+                                requisitionType: row.requisitionType || "NEW_REQUIREMENT",
+                                replacementForEmployeeId: row.replacementForEmployeeId || "",
                                 raisedBy: row.raisedBy
                               });
                             }}
@@ -1201,8 +1736,8 @@ export default function RecruitmentPage() {
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
-                      )
-                    }
+                      ),
+                    },
                   ]}
                 />
               </div>
@@ -1270,28 +1805,46 @@ export default function RecruitmentPage() {
                       </SelectTrigger>
                       <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                         {dropdownRequisitions.map((r) => (
-                          <SelectItem key={r.id} value={String(r.id)}>{r.title} ({r.department?.name || "Unknown"})</SelectItem>
+                          <SelectItem key={r.id} value={String(r.id)}>
+                            {r.title} ({r.department?.name || "Unknown"}) {r.requisitionType === 'REPLACEMENT' ? '• [Replacement]' : '• [New Req]'}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                     {formErrors.requisitionId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.requisitionId}</span>}
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Sourcing Source</Label>
-                    <Select value={newCand.source} onValueChange={(val) => {
-                      setNewCand({ ...newCand, source: val });
-                      if (formErrors.source) setFormErrors({ ...formErrors, source: null });
-                    }}>
-                      <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                        <SelectValue placeholder="Select..." />
-                      </SelectTrigger>
-                      <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                        <SelectItem value="Portal">Portal</SelectItem>
-                        <SelectItem value="Referral">Referral</SelectItem>
-                        <SelectItem value="Agency">Agency</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {formErrors.source && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.source}</span>}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Sourcing Source</Label>
+                      <Select value={newCand.source} onValueChange={(val) => {
+                        setNewCand({ ...newCand, source: val });
+                        if (formErrors.source) setFormErrors({ ...formErrors, source: null });
+                      }}>
+                        <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
+                          <SelectValue placeholder="Select..." />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                          <SelectItem value="Portal">Portal</SelectItem>
+                          <SelectItem value="Referral">Referral</SelectItem>
+                          <SelectItem value="Agency">Agency</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {formErrors.source && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.source}</span>}
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Total Exp (Yrs)</Label>
+                      <Input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        placeholder="e.g. 3.5 (0 for Fresher)"
+                        value={newCand.experienceYears ?? ""}
+                        onChange={(e) => {
+                          const val = e.target.value === "" ? "" : Number(e.target.value);
+                          setNewCand({ ...newCand, experienceYears: val });
+                        }}
+                      />
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Resume / CV (PDF)</Label>
@@ -1326,7 +1879,7 @@ export default function RecruitmentPage() {
                         type="button" 
                         variant="outline" 
                         onClick={() => {
-                          setNewCand({ name: "", email: "", phone: "", source: "Portal", requisitionId: "", resumeUrl: "" });
+                          setNewCand({ name: "", email: "", phone: "", source: "Portal", requisitionId: "", experienceYears: "", resumeUrl: "" });
                           setFormErrors({});
                         }}
                         className="w-1/3 rounded-xl font-bold"
@@ -1375,7 +1928,14 @@ export default function RecruitmentPage() {
                                 </span>
                               )}
                             </span>
-                            <span className="text-[10px] text-slate-400 font-bold block">Source: {row.source}</span>
+                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                              <span className="text-[10px] text-slate-400 font-bold">Source: {row.source}</span>
+                              {row.experienceYears !== undefined && row.experienceYears !== null && row.experienceYears !== "" && Number(row.experienceYears) >= 0 && (
+                                <span className="text-[9.5px] font-extrabold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/40 px-1.5 py-0.2 rounded border border-sky-200 dark:border-sky-800">
+                                  🎯 Exp: {row.experienceYears} Yrs
+                                </span>
+                              )}
+                            </div>
                           </div>
                         );
                       },
@@ -1393,11 +1953,27 @@ export default function RecruitmentPage() {
                     {
                       key: "requisition.title",
                       label: "Applied Role",
-                      render: (row) => (
-                        <span className="text-xs font-extrabold text-sky-600 dark:text-sky-400">
-                          {row.requisition?.title || "Unknown"}
-                        </span>
-                      ),
+                      render: (row) => {
+                        const req = row.requisition;
+                        const isReplacement = req?.requisitionType === "REPLACEMENT";
+                        const replEmp = req?.replacementForEmployee;
+                        return (
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-extrabold text-sky-600 dark:text-sky-400 block">
+                              {req?.title || "Unknown"}
+                            </span>
+                            {isReplacement ? (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+                                <RotateCcw className="w-2.5 h-2.5" /> Replacement {replEmp ? `for ${replEmp.firstName}` : ''}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+                                <Sparkles className="w-2.5 h-2.5" /> New Req
+                              </span>
+                            )}
+                          </div>
+                        );
+                      },
                     },
                     {
                       key: "resumeUrl",
@@ -1472,9 +2048,10 @@ export default function RecruitmentPage() {
                                   id: row.id,
                                   name: row.name,
                                   email: row.email,
-                                  phone: row.phone,
+                                  phone: row.phone || "",
                                   source: row.source,
-                                  requisitionId: row.requisitionId || "",
+                                  requisitionId: String(row.requisitionId || row.requisition?.id || ""),
+                                  experienceYears: row.experienceYears ?? "",
                                   resumeUrl: row.resumeUrl || ""
                                 });
                                 // Scroll to form (optional)
@@ -1607,19 +2184,13 @@ export default function RecruitmentPage() {
                         Panel Members (Multi-Select)
                       </Label>
                       {(() => {
-                        const selectedUserIds = Array.isArray(newSched.panelists)
-                          ? newSched.panelists
-                          : (typeof newSched.panelists === 'string'
-                            ? (newSched.panelists.trim().startsWith('[')
-                              ? ( () => { try { return JSON.parse(newSched.panelists); } catch(e) { return []; } } )()
-                              : newSched.panelists.split(',').map((s) => s.trim()).filter(Boolean))
-                            : []);
+                        const selectedUserIds = parsePanelistList(newSched.panelists);
                         return (
                           <>
                             {selectedUserIds.length > 0 && (
                               <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl">
                                 {selectedUserIds.map((uId) => {
-                                  const userObj = users.find((u) => String(u.id) === String(uId) || u.name === uId);
+                                  const userObj = users.find((u) => String(u.id) === String(uId) || u.name?.toLowerCase() === String(uId).toLowerCase());
                                   const displayName = userObj ? userObj.name : uId;
                                   return (
                                     <span
@@ -1726,16 +2297,8 @@ export default function RecruitmentPage() {
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Select Schedule</Label>
                       <Select value={newFeedback.scheduleId} onValueChange={(val) => {
                         const selSched = schedules.find(s => String(s.id) === String(val));
-                        let assigned = [];
-                        if (selSched?.panelists) {
-                          if (Array.isArray(selSched.panelists)) assigned = selSched.panelists;
-                          else if (typeof selSched.panelists === 'string') {
-                            const trimmed = selSched.panelists.trim();
-                            if (trimmed.startsWith('[')) { try { assigned = JSON.parse(trimmed); } catch(e) {} }
-                            else { assigned = trimmed.split(',').map(s => s.trim()).filter(Boolean); }
-                          }
-                        }
-                        const firstUser = users.find(u => String(u.id) === String(assigned[0]) || u.name === assigned[0]);
+                        const assigned = parsePanelistList(selSched?.panelists);
+                        const firstUser = users.find(u => String(u.id) === String(assigned[0]) || u.name?.toLowerCase() === assigned[0]?.toLowerCase());
                         setNewFeedback({
                           ...newFeedback,
                           scheduleId: val,
@@ -1782,15 +2345,7 @@ export default function RecruitmentPage() {
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Panelist Name</Label>
                       {(() => {
                         const currentSchedule = schedules.find((s) => String(s.id) === String(newFeedback.scheduleId));
-                        let assignedIdsOrNames = [];
-                        if (currentSchedule?.panelists) {
-                          if (Array.isArray(currentSchedule.panelists)) assignedIdsOrNames = currentSchedule.panelists;
-                          else if (typeof currentSchedule.panelists === 'string') {
-                            const trimmed = currentSchedule.panelists.trim();
-                            if (trimmed.startsWith('[')) { try { assignedIdsOrNames = JSON.parse(trimmed); } catch(e) {} }
-                            else { assignedIdsOrNames = trimmed.split(',').map(s => s.trim()).filter(Boolean); }
-                          }
-                        }
+                        const assignedIdsOrNames = parsePanelistList(currentSchedule?.panelists);
 
                         const panelistOptions = assignedIdsOrNames.map((item) => {
                           const userMatch = users.find((u) => String(u.id) === String(item) || u.name?.toLowerCase() === item.toLowerCase());
@@ -1816,7 +2371,6 @@ export default function RecruitmentPage() {
                               name: selectedPanelistValue,
                               role: "PANELIST",
                             });
-                            selectedPanelistValue = selectedPanelistValue;
                           }
                         }
 
@@ -1947,9 +2501,9 @@ export default function RecruitmentPage() {
                         const cand = row.candidate || candidates.find(c => String(c.id) === String(row.candidateId));
                         const reHist = getReInterviewHistory(cand);
                         return (
-                          <div>
+                          <div className="max-w-[180px]">
                             <span className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-1.5 flex-wrap">
-                              {row.candidate?.name}
+                              {row.candidate?.name || cand?.name || "Candidate"}
                               {reHist.isReInterview && cand?.status !== "SELECTED" && cand?.status !== "ACCEPTED" && cand?.status !== "OFFERED" && (
                                 <span className="text-[8px] font-black px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700 flex items-center gap-0.5">
                                   <RotateCcw className="w-2.5 h-2.5" /> Re-Interview
@@ -1961,7 +2515,9 @@ export default function RecruitmentPage() {
                                 </span>
                               )}
                             </span>
-                            <span className="text-[10px] text-sky-500 font-extrabold uppercase block mt-0.5">Round: {row.roundName}</span>
+                            <span className="text-[10px] text-sky-600 dark:text-sky-400 font-extrabold uppercase block mt-0.5 truncate">
+                              Round: {row.roundName}
+                            </span>
                           </div>
                         );
                       },
@@ -1970,32 +2526,16 @@ export default function RecruitmentPage() {
                       key: "panelists",
                       label: "Panelists",
                       render: (row) => {
-                        if (!row.panelists) return <span className="text-xs text-slate-400">—</span>;
-                        let items = [];
-                        if (Array.isArray(row.panelists)) items = row.panelists;
-                        else if (typeof row.panelists === 'string') {
-                          const trimmed = row.panelists.trim();
-                          if (trimmed.startsWith('[')) { try { items = JSON.parse(trimmed); } catch(e) {} }
-                          else { items = trimmed.split(',').map(s => s.trim()).filter(Boolean); }
-                        }
-                        const names = items.map((item) => {
-                          const found = users.find((u) => String(u.id) === String(item) || u.name?.toLowerCase() === item.toLowerCase());
-                          return found ? found.name : item;
-                        }).filter(Boolean);
-
+                        const names = formatPanelistNames(row.panelists, users);
                         if (names.length === 0) return <span className="text-xs text-slate-400">—</span>;
-
-                        const chunkSize = 2;
-                        const chunks = [];
-                        for (let i = 0; i < names.length; i += chunkSize) {
-                          chunks.push(names.slice(i, i + chunkSize).join(', '));
-                        }
-
                         return (
-                          <div className="flex flex-col gap-0.5">
-                            {chunks.map((chunk, idx) => (
-                              <span key={idx} className="text-xs font-semibold text-slate-600 dark:text-slate-300 block leading-tight">
-                                {chunk}
+                          <div className="flex flex-wrap gap-1 max-w-[180px]">
+                            {names.map((name, idx) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+                              >
+                                {name}
                               </span>
                             ))}
                           </div>
@@ -2005,24 +2545,35 @@ export default function RecruitmentPage() {
                     {
                       key: "scheduledAt",
                       label: "Scheduled Time",
-                      render: (row) => (
-                        <span className="text-xs text-slate-600 dark:text-slate-300">{new Date(row.scheduledAt).toLocaleString()}</span>
-                      ),
+                      render: (row) => {
+                        if (!row.scheduledAt) return <span className="text-xs text-slate-400">—</span>;
+                        const d = new Date(row.scheduledAt);
+                        return (
+                          <div className="text-xs whitespace-nowrap">
+                            <span className="font-bold text-slate-700 dark:text-slate-200 block">
+                              {d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </span>
+                            <span className="text-[11px] text-slate-400 font-medium block">
+                              {d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        );
+                      },
                     },
                     {
                       key: "feedbacks",
                       label: "Panel Feedback",
                       sortable: false,
                       render: (row) => row.feedbacks && row.feedbacks.length > 0 ? (
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 max-w-[220px]">
                           {row.feedbacks.map((f, fi) => (
-                            <div key={fi} className="text-xs p-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-800 space-y-0.5">
+                            <div key={fi} className="text-xs p-2 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-100 dark:border-slate-800 space-y-0.5">
                               <div className="flex justify-between items-center gap-2">
-                                <span className="font-extrabold text-slate-700 dark:text-slate-200">{f.panelistName}</span>
-                                <div className="flex items-center gap-1.5">
+                                <span className="font-extrabold text-slate-700 dark:text-slate-200 truncate">{f.panelistName}</span>
+                                <div className="flex items-center gap-1.5 shrink-0">
                                   <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
                                     f.recommendation === "SELECT" ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                                    : f.recommendation === "REJECT" ? "bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400"
+                                    : f.recommendation === "REJECT" ? "bg-rose-100 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400"
                                     : "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400"
                                   }`}>
                                     {f.recommendation} ({f.rating}/10)
@@ -2032,39 +2583,40 @@ export default function RecruitmentPage() {
                                     title="Edit Feedback"
                                     onClick={() => {
                                       setFeedbackCandidateId(row.candidateId || "ALL");
-                                      const matchedUser = users.find(u => u.name?.toLowerCase() === f.panelistName?.toLowerCase());
+                                      const matchedUser = users.find(u => u.name?.toLowerCase() === f.panelistName?.toLowerCase() || String(u.id) === String(f.panelistId));
                                       setNewFeedback({
                                         id: f.id,
                                         scheduleId: row.id,
                                         panelistId: f.panelistId || (matchedUser ? matchedUser.id : ""),
-                                        panelistName: f.panelistName || "",
+                                        panelistName: f.panelistName || (matchedUser ? matchedUser.name : ""),
                                         rating: f.rating !== undefined && f.rating !== null ? String(f.rating) : "",
                                         comments: f.comments || "",
                                         recommendation: f.recommendation || "",
                                       });
                                       setFormErrors({});
                                     }}
-                                    className="p-1 text-slate-400 hover:text-sky-500 rounded-md transition-colors"
+                                    className="p-1 text-slate-400 hover:text-sky-500 rounded-md transition-colors cursor-pointer"
                                   >
                                     <Edit className="w-3 h-3" />
                                   </button>
                                 </div>
                               </div>
                               {f.comments && (
-                                <p className="text-[10.5px] text-slate-500 dark:text-slate-400 italic line-clamp-2 mt-1">{f.comments}</p>
+                                <p className="text-[10.5px] text-slate-500 dark:text-slate-400 italic line-clamp-2 mt-1 break-words">{f.comments}</p>
                               )}
                             </div>
                           ))}
                         </div>
-                      ) : <span className="text-slate-400 text-xs">Pending</span>,
+                      ) : <span className="text-slate-400 text-xs italic">No feedback yet</span>,
                     },
                     {
                       key: "status",
                       label: "Status",
                       render: (row) => (
-                        <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-lg border ${
-                          row.status === "COMPLETED" ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/20 dark:bg-emerald-500 dark:bg-emerald-600/10 dark:text-emerald-400 dark:border-emerald-50 dark:border-emerald-500/200/20"
-                          : "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-500/20 dark:bg-blue-50 dark:bg-blue-500/100/10 dark:text-blue-400 dark:border-blue-50 dark:border-blue-500/200/20"
+                        <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-lg border uppercase whitespace-nowrap ${
+                          row.status === "COMPLETED"
+                            ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/20"
+                            : "bg-sky-50 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-100 dark:border-sky-500/20"
                         }`}>
                           {row.status}
                         </span>
@@ -2075,7 +2627,7 @@ export default function RecruitmentPage() {
                       label: "Actions",
                       sortable: false,
                       render: (row) => (
-                        <div className="flex gap-1 items-center">
+                        <div className="flex gap-1.5 items-center">
                           <button
                             onClick={() => {
                               setNewSched({
@@ -2083,18 +2635,18 @@ export default function RecruitmentPage() {
                                 candidateId: row.candidateId,
                                 roundName: row.roundName,
                                 scheduledAt: row.scheduledAt,
-                                panelists: Array.isArray(row.panelists) ? row.panelists : (typeof row.panelists === 'string' ? (row.panelists.trim().startsWith('[') ? JSON.parse(row.panelists) : row.panelists.split(',').map(s => s.trim()).filter(Boolean)) : [])
+                                panelists: parsePanelistList(row.panelists)
                               });
                               window.scrollTo({ top: 0, behavior: 'smooth' });
                             }}
-                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all cursor-pointer"
                             title="Edit"
                           >
                             <Edit className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => setDeleteTarget({ id: row.id, name: `interview round "${row.roundName}" for ${row.candidate?.name || 'candidate'}`, type: "schedule", label: "Interview Schedule" })}
-                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
+                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all cursor-pointer"
                             title="Delete"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -2154,12 +2706,20 @@ export default function RecruitmentPage() {
                             onValueChange={(val) => {
                               const selectedCandId = val;
                               const cand = allCandidatesList.find(c => String(c.id) === String(selectedCandId));
+                              const req = cand?.requisition;
+                              const replEmp = req?.replacementForEmployee || dropdownEmployees.find(e => String(e.id) === String(req?.replacementForEmployeeId));
+                              const salInfo = getEmployeeSalaryInfo(replEmp);
+
                               setNewOffer({
                                 ...newOffer,
                                 candidateId: selectedCandId,
-                                role: cand ? cand.requisition?.title || newOffer.role : newOffer.role
+                                role: cand ? cand.requisition?.title || newOffer.role : newOffer.role,
+                                salary: (!newOffer.salary || newOffer.salary === 0) && salInfo.annualCtc > 0 ? salInfo.annualCtc : newOffer.salary,
                               });
                               if (formErrors.candidateId) setFormErrors({ ...formErrors, candidateId: null });
+                              if (salInfo.annualCtc > 0 && (!newOffer.salary || newOffer.salary === 0)) {
+                                toast.info(`Pre-filled target salary ₹${salInfo.annualCtc.toLocaleString("en-IN")} based on replaced employee's CTC.`);
+                              }
                             }}
                           >
                             <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
@@ -2174,6 +2734,50 @@ export default function RecruitmentPage() {
                         );
                       })()}
                       {formErrors.candidateId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.candidateId}</span>}
+
+                      {/* Replacement Salary & Experience Benchmark Comparison Card */}
+                      {(() => {
+                        const allCandidatesList = Array.from(new Map(
+                          [...candidates, ...dropdownCandidates, ...(offers.map(o => o.candidate).filter(Boolean))]
+                            .map(c => [String(c.id), c])
+                        ).values());
+                        const selectedCand = allCandidatesList.find(c => String(c.id) === String(newOffer.candidateId));
+                        const req = selectedCand?.requisition;
+                        const replEmp = req?.replacementForEmployee || dropdownEmployees.find(e => String(e.id) === String(req?.replacementForEmployeeId));
+                        if (!replEmp) return null;
+
+                        const salInfo = getEmployeeSalaryInfo(replEmp);
+                        const expDetails = getEmployeeExperienceDetails(replEmp);
+                        const offeredSal = Number(newOffer.salary) || 0;
+                        const variance = (salInfo.annualCtc > 0 && offeredSal > 0)
+                          ? (((offeredSal - salInfo.annualCtc) / salInfo.annualCtc) * 100).toFixed(1)
+                          : null;
+
+                        return (
+                          <div className="p-2.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 space-y-1.5 text-xs text-slate-800 dark:text-slate-200 animate-in fade-in">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                                <Users className="w-3 h-3 text-amber-600" /> Replacing: {replEmp.firstName} {replEmp.lastName}
+                              </span>
+                              <span className="text-[10px] font-semibold text-slate-500">Exp: <strong>{expDetails.totalExp}</strong> <span className="font-normal">(Tenure: {expDetails.companyTenure})</span></span>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] bg-white dark:bg-slate-900 p-2 rounded-lg border border-amber-100 dark:border-amber-900/40">
+                              <div>
+                                <span className="text-[9.5px] text-slate-400 block font-semibold">PREVIOUS CTC BENCHMARK</span>
+                                <span className="font-extrabold text-slate-800 dark:text-white">{salInfo.formattedCtc}</span>
+                              </div>
+                              {variance !== null && (
+                                <div className="text-right">
+                                  <span className="text-[9.5px] text-slate-400 block font-semibold">OFFER VARIANCE</span>
+                                  <span className={`font-bold text-[11px] ${Number(variance) > 15 ? 'text-amber-600' : Number(variance) < -10 ? 'text-rose-500' : 'text-emerald-600'}`}>
+                                    {Number(variance) > 0 ? `+${variance}%` : `${variance}%`} {Number(variance) <= 10 && Number(variance) >= -10 ? '✓ Matched' : ''}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Designation / Role Offered</Label>
@@ -2257,9 +2861,21 @@ export default function RecruitmentPage() {
                       label: "Candidate",
                       render: (row) => {
                         const cand = row.candidate || candidates.find(c => String(c.id) === String(row.candidateId));
+                        const req = cand?.requisition;
+                        const isReplacement = req?.requisitionType === "REPLACEMENT";
+                        const replEmp = req?.replacementForEmployee;
                         return (
-                          <div>
+                          <div className="space-y-1">
                             <span className="text-sm font-bold text-slate-800 dark:text-white block">{cand?.name}</span>
+                            {isReplacement ? (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+                                <RotateCcw className="w-2.5 h-2.5" /> Replacement {replEmp ? `for ${replEmp.firstName}` : ''}
+                              </span>
+                            ) : req?.requisitionType ? (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+                                <Sparkles className="w-2.5 h-2.5" /> New Req
+                              </span>
+                            ) : null}
                             <span className="text-[10px] text-slate-400 font-bold uppercase mt-0.5 block">Status: {row.status}</span>
                           </div>
                         );
@@ -2369,152 +2985,175 @@ export default function RecruitmentPage() {
 
       {/* Offer Letter Preview & Print Modal */}
       {viewOfferModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-white print:static">
-          <style>{`
-            @media print {
-              @page {
-                size: A4 portrait !important;
-                margin: 0.8cm !important;
-              }
-              body * {
-                visibility: hidden !important;
-              }
-              #printable-offer-letter, #printable-offer-letter * {
-                visibility: visible !important;
-              }
-              #printable-offer-letter {
-                position: fixed !important;
-                left: 0 !important;
-                top: 0 !important;
-                width: 100% !important;
-                height: auto !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                background: white !important;
-                color: black !important;
-                border: none !important;
-                box-shadow: none !important;
-              }
-            }
-          `}</style>
-
-          <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-3xl w-full space-y-6 shadow-2xl relative print:border-none print:shadow-none print:p-0 print:w-full print:max-w-none">
+        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto print:p-0 print:bg-white print:static">
+          <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-4 sm:p-6 max-w-3xl w-full space-y-4 shadow-2xl relative my-auto print:border-none print:shadow-none print:p-0 print:w-full print:max-w-none">
             {/* Top Toolbar (Hidden on Print) */}
-            <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800 print:hidden">
-              <h3 className="font-extrabold text-lg text-slate-800 dark:text-white flex items-center gap-2">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-200 dark:border-slate-800 print:hidden">
+              <h3 className="font-extrabold text-base text-slate-800 dark:text-white flex items-center gap-2">
                 <FileText className="w-5 h-5 text-sky-500" />
-                Offer Letter Preview
+                Offer Letter - {viewOfferModal.candidate?.name || 'Preview'}
               </h3>
               <div className="flex items-center gap-2">
                 <Button
                   onClick={() => handlePrintOfferLetter(viewOfferModal)}
-                  className="bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl text-xs h-9 px-4 gap-1.5 cursor-pointer"
+                  className="bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl text-xs h-8 px-3 gap-1.5 cursor-pointer"
                 >
-                  <Printer className="w-4 h-4" /> Print Document
+                  <Printer className="w-3.5 h-3.5" /> Print / Save PDF
                 </Button>
+                {viewOfferModal.id && (
+                  <Button
+                    onClick={() => handleDownloadOfferPdf(viewOfferModal.id)}
+                    variant="outline"
+                    className="border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs h-8 px-3 gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" /> PDF
+                  </Button>
+                )}
                 <button
                   onClick={() => setViewOfferModal(null)}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl transition-all ml-2 cursor-pointer"
+                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl transition-all ml-1 cursor-pointer"
                 >
                   ✕
                 </button>
               </div>
             </div>
 
-            {/* A4 Printable Single-Page Letter Card */}
-            <div id="printable-offer-letter" className="p-8 border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-950 space-y-6 text-slate-800 dark:text-slate-100 font-sans print:border-none print:p-0 print:space-y-4">
-              {/* Header Bar */}
-              <div className="text-center space-y-1 pb-4 border-b border-slate-200 dark:border-slate-800">
-                <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-wide">
-                  ASPINO CHEMICALS CORP
-                </h1>
-                <p className="text-xs font-bold text-sky-600 dark:text-sky-400 tracking-wider uppercase">
-                  GMP Certified Pharmaceutical & Chemical Unit
-                </p>
-                <p className="text-[11px] text-slate-400">
-                  HQ: Industrial Estate, Sector 5, India | Email: hr@aspinochemicals.com
-                </p>
-              </div>
+            {/* A4 Letterhead Preview Container */}
+            <div className="overflow-x-auto">
+              <div
+                id="printable-offer-letter"
+                className="relative bg-white text-slate-900 mx-auto w-full max-w-[650px] min-h-[880px] shadow-sm border border-slate-200 rounded-lg flex flex-col justify-between overflow-hidden font-sans text-[11px] leading-[1.42] select-text"
+              >
+                {/* Center Watermark */}
+                <img
+                  src="/aspino-logo.png"
+                  alt="Watermark"
+                  className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] opacity-[0.06] pointer-events-none select-none z-0"
+                />
 
-              {/* Date & Candidate Details */}
-              <div className="flex justify-between items-start text-xs font-medium pt-2">
-                <div className="space-y-1">
-                  <p className="font-bold text-slate-900 dark:text-white">To,</p>
-                  <p className="font-extrabold text-sm text-slate-900 dark:text-white">
-                    {viewOfferModal.candidate?.name}
-                  </p>
-                  <p className="text-slate-500">Email: {viewOfferModal.candidate?.email}</p>
+                {/* Top Section */}
+                <div className="relative z-10">
+                  {/* Top Header Shapes */}
+                  <div className="relative w-full h-[32px]">
+                    <div className="absolute top-0 left-0 w-[160px] h-[24px] bg-[#1b75bb] rounded-br-[24px]"></div>
+                    <svg className="absolute top-0 right-0 w-[100px] h-[95px]" viewBox="0 0 120 115" fill="none">
+                      <path d="M120 0C100 35 60 25 40 50C25 68 35 90 60 115C75 98 70 78 85 62C105 40 115 20 120 0Z" fill="#38bdf8" fillOpacity="0.85"/>
+                      <path d="M120 10C105 45 70 38 50 62C35 80 45 98 70 115C60 98 55 82 70 70C90 50 110 32 120 10Z" fill="#1b75bb"/>
+                      <path d="M120 22C110 50 78 48 62 70C48 88 58 102 78 115C68 100 64 86 78 76C96 60 112 40 120 22Z" fill="#173660"/>
+                    </svg>
+                  </div>
+
+                  {/* Logo Row */}
+                  <div className="px-7 pt-0">
+                    <div className="flex justify-between items-end pb-3">
+                      <img src="/aspino-logo.png" alt="Aspino Logo" className="w-[125px] h-auto select-none" />
+                      <div className="text-[8.5px] font-bold text-slate-800 tracking-wider pb-0.5">
+                        CIN: U20297GJ2024PTC150782
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Letter Body */}
+                  <div className="px-7 space-y-3">
+                    {/* Recipient & Reference Meta */}
+                    <div className="text-[11px] leading-tight space-y-0.5 text-slate-800">
+                      <div className="font-medium text-slate-900">
+                        Ref.ASCPL/OL-{new Date().getFullYear()}-{String(viewOfferModal.id || '1').slice(-3).padStart(3, '0')}
+                      </div>
+                      <div className="text-slate-700">
+                        Dt. {formatOfferDate(viewOfferModal.createdAt || new Date())}
+                      </div>
+                      <div className="font-medium text-slate-900 pt-1">
+                        Mr. {viewOfferModal.candidate?.name || "Ravi Babariya"},
+                      </div>
+                      <div className="text-slate-700">{viewOfferModal.candidate?.address || "Dadri, Kosamba Tarsadi"}</div>
+                      <div className="text-slate-700">{viewOfferModal.candidate?.city || "Surat"}</div>
+                      <div className="text-slate-700">{viewOfferModal.candidate?.state || "Gujarat- 394 120"}</div>
+                    </div>
+
+                    {/* Centered Document Title */}
+                    <div className="text-center font-black underline text-sm tracking-wider text-[#162a55] py-1.5">
+                      OFFER LETTER
+                    </div>
+
+                    {/* Introductory statement */}
+                    <p className="text-[10.5px] font-bold text-justify leading-relaxed text-[#162a55]">
+                      This has reference to your application and the subsequent interview you had with us, we are pleased to confirm our decision wherein we have mutually agreed upon the following:
+                    </p>
+
+                    {/* Numbered Terms */}
+                    <ol className="space-y-1.5 text-[10.5px] leading-relaxed text-slate-800 list-none pl-0">
+                      <li>
+                        <strong>1.</strong> You shall be designated as &quot;<strong>{(viewOfferModal.role || "PACKING SUPERVISOR").toUpperCase()}</strong>&quot;.
+                      </li>
+                      <li>
+                        <strong>2.</strong> {viewOfferModal.salary ? `Your annual salary package shall be mutually agreed at Rs. ${Number(viewOfferModal.salary).toLocaleString('en-IN')}/- per annum at the time of an Interview.` : "Your annual salary package shall be mutually agreed at the time of an Interview."}
+                      </li>
+                      <li>
+                        <strong>3.</strong> Acceptance of the offer would automatically bind you to agree with all the terms and conditions of the employment as discussed during the interview.
+                      </li>
+                      <li>
+                        <strong>4.</strong> You will come to finish all formalities and collect appointment letter on or before <strong>{formatJoiningDateFull(viewOfferModal.joiningDate || new Date())}</strong>
+                      </li>
+                    </ol>
+
+                    {/* Document Checklist */}
+                    <div className="pt-1">
+                      <div className="font-bold text-[10.5px] text-[#162a55] mb-1">
+                        Kindly bring the following documents on the date of joining:
+                      </div>
+                      <ul className="space-y-0.5 text-[10px] text-slate-700 list-none pl-0">
+                        <li className="relative pl-3 before:content-['-'] before:absolute before:left-0 before:font-bold">
+                          Copies of all education certificates for the purpose of admitting the date of birth and all mark sheets of all academic qualifications and achievements.
+                        </li>
+                        <li className="relative pl-3 before:content-['-'] before:absolute before:left-0 before:font-bold">
+                          Copy Experience Certificates
+                        </li>
+                        <li className="relative pl-3 before:content-['-'] before:absolute before:left-0 before:font-bold">
+                          Proof of past employments.
+                        </li>
+                        <li className="relative pl-3 before:content-['-'] before:absolute before:left-0 before:font-bold">
+                          Relieving letter from your current employer
+                        </li>
+                        <li className="relative pl-3 before:content-['-'] before:absolute before:left-0 before:font-bold">
+                          Photocopy of last salary slip.
+                        </li>
+                        <li className="relative pl-3 before:content-['-'] before:absolute before:left-0 before:font-bold">
+                          Four copies of passport size photographs
+                        </li>
+                        <li className="relative pl-3 before:content-['-'] before:absolute before:left-0 before:font-bold">
+                          Photocopy of driving license and your blood group details
+                        </li>
+                        <li className="relative pl-3 before:content-['-'] before:absolute before:left-0 before:font-bold">
+                          Two References.
+                        </li>
+                      </ul>
+                    </div>
+
+                    {/* Closing statement */}
+                    <p className="text-[10.5px] text-justify leading-relaxed text-slate-800 pt-0.5">
+                      With best wishes for an enjoyable, exciting and prosperous career association with Aspino Specialty Chemicals Private Limited.
+                    </p>
+
+                    {/* Sign-off */}
+                    <div className="pt-1 text-[10.5px] space-y-1 text-slate-800">
+                      <div className="font-bold text-[#162a55]">Thankfully yours,</div>
+                      <div className="font-bold text-[#162a55]">For Aspino Speciality Chemicals Pvt.Ltd.</div>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-slate-500 font-bold">
-                  Date: {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
-                </p>
-              </div>
 
-              {/* Subject */}
-              <div className="p-3 bg-slate-50 dark:bg-slate-900 border-l-4 border-sky-500 rounded-r-xl">
-                <p className="text-xs font-black text-slate-900 dark:text-white">
-                  Subject: Appointment & Offer of Employment
-                </p>
-              </div>
-
-              {/* Body */}
-              <div className="text-xs space-y-3 text-slate-700 dark:text-slate-300 leading-relaxed text-justify">
-                <p>Dear {viewOfferModal.candidate?.name},</p>
-                <p>
-                  We are pleased to extend to you a formal offer of employment for the position of{" "}
-                  <strong className="text-slate-900 dark:text-white">{viewOfferModal.role}</strong> at Aspino Chemicals Corp. Following our comprehensive interview process and review of your professional accomplishments, we are confident that your technical expertise, qualifications, and industry knowledge will make a substantial contribution to the success and strategic objectives of our organization.
-                </p>
-                <p>
-                  Under this appointment, your Annual CTC (Cost to Company) will be{" "}
-                  <strong className="text-slate-900 dark:text-white">Rs. {viewOfferModal.salary?.toLocaleString("en-IN")} per annum</strong>, subject to statutory deductions as applicable. The detailed breakdown and joining requirements are outlined below.
-                </p>
-              </div>
-
-              {/* Position Details Table */}
-              <div className="space-y-2 pt-2">
-                <h4 className="text-xs font-extrabold text-slate-900 dark:text-white">Position Details:</h4>
-                <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden text-xs">
-                  <div className="grid grid-cols-2 p-2.5 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-                    <span className="font-bold text-slate-600 dark:text-slate-400">Offered Designation</span>
-                    <span className="font-extrabold text-slate-900 dark:text-white">{viewOfferModal.role}</span>
+                {/* Footer Section */}
+                <div className="relative z-10 w-full mt-4">
+                  <div className="px-7 pb-2 text-[8.5px] font-bold text-slate-800 flex items-center justify-center gap-1">
+                    <span>Registered office</span>
+                    <span>📍</span>
+                    <span>SRN-271,BLK-314, Nakoda Road, Ta-Mangrol, Hathuran, Surat, 394125, Gujarat - India.</span>
                   </div>
-                  <div className="grid grid-cols-2 p-2.5 bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800">
-                    <span className="font-bold text-slate-600 dark:text-slate-400">Annual CTC (INR)</span>
-                    <span className="font-extrabold text-slate-900 dark:text-white">Rs. {viewOfferModal.salary?.toLocaleString("en-IN")} / annum</span>
-                  </div>
-                  <div className="grid grid-cols-2 p-2.5 bg-slate-50 dark:bg-slate-900">
-                    <span className="font-bold text-slate-600 dark:text-slate-400">Expected Joining Date</span>
-                    <span className="font-extrabold text-slate-900 dark:text-white">
-                      {viewOfferModal.joiningDate ? new Date(viewOfferModal.joiningDate).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "N/A"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Terms & Conditions */}
-              <div className="space-y-2 pt-2 text-xs">
-                <h4 className="font-extrabold text-slate-900 dark:text-white">Terms & Conditions:</h4>
-                <ol className="list-decimal list-inside space-y-1.5 text-slate-600 dark:text-slate-400 text-justify">
-                  <li><strong>Credential Verification:</strong> This offer of employment is contingent upon successful completion of background checks, reference verifications, and submission of academic & professional credentials.</li>
-                  <li><strong>Probationary Period:</strong> Upon commencement, you will undergo a probationary period of six (6) months. Confirmation is subject to satisfactory performance appraisals.</li>
-                  <li><strong>Acceptance of Offer:</strong> Please indicate formal acceptance by signing and returning the duplicate copy of this letter on or before your scheduled joining date.</li>
-                </ol>
-              </div>
-
-              {/* Signatures */}
-              <div className="grid grid-cols-2 gap-8 pt-8 text-xs">
-                <div className="space-y-8">
-                  <p className="font-bold text-slate-900 dark:text-white">Sincerely,</p>
-                  <div className="border-t border-slate-300 dark:border-slate-700 pt-1 space-y-0.5">
-                    <p className="font-extrabold text-slate-900 dark:text-white">Authorized Signatory</p>
-                    <p className="text-slate-500">HR Director, Aspino Chemicals Corp</p>
-                  </div>
-                </div>
-                <div className="space-y-8">
-                  <p className="font-bold text-slate-900 dark:text-white">Accepted & Agreed,</p>
-                  <div className="border-t border-slate-300 dark:border-slate-700 pt-1 space-y-0.5">
-                    <p className="font-extrabold text-slate-900 dark:text-white">Candidate Signature & Date</p>
-                    <p className="text-slate-500">{viewOfferModal.candidate?.name}</p>
+                  <div className="bg-[#173660] text-white px-7 py-2.5 flex justify-between items-center text-[8.5px] font-medium tracking-tight">
+                    <span>📞 +91 98259 57173</span>
+                    <span>✉ info@aspinochemicals.com</span>
+                    <span>🌐 www.aspinochemicals.com</span>
                   </div>
                 </div>
               </div>
