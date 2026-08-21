@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataTable } from "@/components/ui/data-table";
@@ -661,20 +662,21 @@ export default function LoansTab() {
                 <form onSubmit={handleCreateLoan} className="p-6 space-y-5">
                   <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border space-y-4">
                     <div>
-                      <Label className="text-xs font-semibold">Employee</Label>
-                      <Select
-                        value={loanForm.employeeId}
-                        onValueChange={(val) => setLoanForm({ ...loanForm, employeeId: val })}
-                      >
-                        <SelectTrigger className={`rounded-xl mt-1.5 h-11 ${loanErrors.employeeId ? 'border-red-500 border-2' : ''}`}><SelectValue placeholder="Select Employee" /></SelectTrigger>
-                        <SelectContent>
-                          {(employees || []).map((emp) => (
-                            <SelectItem key={emp.id} value={emp.id}>
-                              {emp.firstName} {emp.lastName} ({emp.employeeId})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Label className="text-xs font-semibold">Employee *</Label>
+                      <div className="mt-1.5">
+                        <SearchableSelect
+                          options={(employees || []).map((emp) => ({
+                            value: emp.id,
+                            label: `${emp.firstName} ${emp.lastName} (${emp.employeeId})`,
+                            subLabel: `${emp.designation || "Staff"} • ${emp.department || "General"}`
+                          }))}
+                          value={loanForm.employeeId}
+                          onValueChange={(val) => setLoanForm({ ...loanForm, employeeId: val })}
+                          placeholder="Search & choose employee..."
+                          searchPlaceholder="Type employee name or ID..."
+                          className={loanErrors.employeeId ? 'border-red-500 border-2' : ''}
+                        />
+                      </div>
                       {loanErrors.employeeId && (
                         <div className="text-red-500 text-[11px] font-bold mt-1 pl-1">
                           {loanErrors.employeeId}

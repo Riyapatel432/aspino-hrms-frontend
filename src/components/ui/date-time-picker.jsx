@@ -109,7 +109,7 @@ export function DateTimePicker({ date, setDate, type = "datetime", placeholder =
                   !parsedDate && "text-muted-foreground"
                 )}
               >
-                {parsedDate ? format(parsedDate, "PPP") : placeholder}
+                {parsedDate ? format(parsedDate, "dd/MM/yyyy") : placeholder}
                 <CalendarIcon className="h-4 w-4 opacity-50" />
               </Button>
             </PopoverTrigger>

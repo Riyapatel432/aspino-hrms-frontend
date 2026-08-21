@@ -30,6 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataTable } from "@/components/ui/data-table";
@@ -525,10 +526,11 @@ export default function MonthlyRunTab() {
     },
     {
       key: "days",
-      label: "Payable Days / LWP",
+      label: "Payable / OT / LWP",
       render: (row) => (
-        <div className="text-xs">
+        <div className="text-xs space-y-0.5">
           <span className="font-bold text-slate-900 dark:text-slate-100">{row.payableDays} days</span>
+          {row.otHours > 0 && <span className="text-amber-600 font-bold block">+{row.otHours}h Extra/OT</span>}
           {row.lwpDays > 0 && <span className="text-rose-600 dark:text-rose-400 block">({row.lwpDays} LWP)</span>}
         </div>
       )
@@ -538,7 +540,7 @@ export default function MonthlyRunTab() {
       label: "Basic + HRA + DA",
       render: (row) => <span className="text-xs text-slate-600 dark:text-slate-400">₹{row.basicSalary.toLocaleString()} + ₹{row.hra.toLocaleString()} + ₹{row.da.toLocaleString()}</span>
     },
-    { key: "grossEarnings", label: "Gross Pay", render: (row) => <span className="font-bold text-sky-600 dark:text-sky-400">₹{row.grossEarnings.toLocaleString()}</span> },
+    { key: "grossEarnings", label: "Gross Pay (Inc. OT)", render: (row) => <span className="font-bold text-sky-600 dark:text-sky-400">₹{row.grossEarnings.toLocaleString()}</span> },
     { key: "deductions", label: "PF / ESI / PT", render: (row) => <span className="text-xs text-slate-600 dark:text-slate-400">₹{row.pfDeduction} / ₹{row.esiDeduction} / ₹{row.ptDeduction}</span> },
     { key: "taxes", label: "TDS / Loan", render: (row) => <span className="text-xs text-amber-700 dark:text-amber-500">₹{row.tdsDeduction} / ₹{row.loanRecovery}</span> },
     { key: "netSalary", label: "Net Pay", render: (row) => <span className="font-extrabold text-emerald-600 dark:text-emerald-400">₹{row.netSalary.toLocaleString()}</span> }
@@ -570,18 +572,21 @@ export default function MonthlyRunTab() {
           <Card className="border rounded-2xl shadow-sm bg-white dark:bg-slate-900 p-6">
             <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b pb-6">
               <div className="flex items-center gap-4">
-                <div>
+                <div className="w-44">
                   <Label className="text-xs text-slate-500 dark:text-slate-400">Select Month</Label>
-                  <Select value={String(selectedMonth)} onValueChange={(val) => setSelectedMonth(Number(val))}>
-                    <SelectTrigger className="w-36 rounded-xl h-10"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {Array.from({ length: 12 }, (_, i) => (
-                        <SelectItem key={i + 1} value={String(i + 1)}>
-                          {new Date(2026, i, 1).toLocaleString("default", { month: "long" })}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="mt-1">
+                    <SearchableSelect
+                      options={Array.from({ length: 12 }, (_, i) => ({
+                        value: String(i + 1),
+                        label: new Date(2026, i, 1).toLocaleString("default", { month: "long" }),
+                      }))}
+                      value={String(selectedMonth)}
+                      onValueChange={(val) => setSelectedMonth(Number(val))}
+                      placeholder="Select Month..."
+                      searchPlaceholder="Search month..."
+                      className="h-10 text-xs rounded-xl"
+                    />
+                  </div>
                 </div>
                 <div>
                   <Label className="text-xs text-slate-500 dark:text-slate-400">Year</Label>

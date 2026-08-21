@@ -34,6 +34,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataTable } from "@/components/ui/data-table";
@@ -956,24 +957,21 @@ export default function SalaryStructuresTab() {
                           <UserCheck className="size-4 text-sky-500" /> Employee Selection
                         </h4>
                         <div className="space-y-1">
-                          <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Select Direct Employee</Label>
-                          <Select
-                            value={structForm.employeeId}
-                            onValueChange={(val) => setStructForm({ ...structForm, employeeId: val })}
-                          >
-                            <SelectTrigger className={`rounded-xl mt-1.5 h-11 ${structErrors.employeeId ? 'border-red-500 border-2' : ''}`}><SelectValue placeholder="Choose an employee" /></SelectTrigger>
-                            <SelectContent>
-                              {(!employees || employees.length === 0) ? (
-                                <SelectItem value="none" disabled>No employees available</SelectItem>
-                              ) : (
-                                (employees || []).map((emp) => (
-                                  <SelectItem key={emp.id} value={emp.id}>
-                                    {emp.firstName} {emp.lastName} ({emp.employeeId}) - {emp.designation}
-                                  </SelectItem>
-                                ))
-                              )}
-                            </SelectContent>
-                          </Select>
+                          <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Select Direct Employee *</Label>
+                          <div className="mt-1.5">
+                            <SearchableSelect
+                              options={(employees || []).map((emp) => ({
+                                value: emp.id,
+                                label: `${emp.firstName} ${emp.lastName} (${emp.employeeId})`,
+                                subLabel: `${emp.designation || "Staff"} • ${emp.department || "General"}`
+                              }))}
+                              value={structForm.employeeId}
+                              onValueChange={(val) => setStructForm({ ...structForm, employeeId: val })}
+                              placeholder="Search and select employee..."
+                              searchPlaceholder="Type employee name, ID, designation, or department..."
+                              className={structErrors.employeeId ? 'border-red-500 border-2' : ''}
+                            />
+                          </div>
                           {structErrors.employeeId && (
                             <div className="text-red-500 text-[11px] font-bold mt-1 pl-1">
                               {structErrors.employeeId}
@@ -1174,21 +1172,19 @@ export default function SalaryStructuresTab() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Bank Name</Label>
-                            <Select
-                              value={structForm.bankId ? String(structForm.bankId) : ""}
-                              onValueChange={(val) => setStructForm({ ...structForm, bankId: val ? Number(val) : "" })}
-                            >
-                              <SelectTrigger className={`rounded-xl mt-1.5 h-11 bg-white dark:bg-slate-950 ${structErrors.bankId ? 'border-red-500 border-2' : ''}`}>
-                                <SelectValue placeholder="Select Bank" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {(banks && banks.length > 0 ? banks : DEFAULT_INDIAN_BANKS).map((b, idx) => (
-                                  <SelectItem key={b.id || idx} value={String(b.id)}>
-                                    {b.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <div className="mt-1.5">
+                              <SearchableSelect
+                                options={(banks && banks.length > 0 ? banks : DEFAULT_INDIAN_BANKS).map((b, idx) => ({
+                                  value: String(b.id || idx),
+                                  label: b.name
+                                }))}
+                                value={structForm.bankId ? String(structForm.bankId) : ""}
+                                onValueChange={(val) => setStructForm({ ...structForm, bankId: val ? Number(val) : "" })}
+                                placeholder="Search & select Bank..."
+                                searchPlaceholder="Type bank name (e.g. HDFC, SBI, ICICI)..."
+                                className={structErrors.bankId ? 'border-red-500 border-2' : ''}
+                              />
+                            </div>
                             {structErrors.bankId && (
                               <div className="text-red-500 text-[11px] font-bold mt-1 pl-1">
                                 {structErrors.bankId}

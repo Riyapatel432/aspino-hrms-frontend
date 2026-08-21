@@ -30,6 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataTable } from "@/components/ui/data-table";
@@ -557,15 +558,16 @@ export default function PayslipsTab() {
     },
     {
       key: "days",
-      label: "Payable Days / LWP",
+      label: "Payable / OT / LWP",
       render: (row) => (
-        <div className="text-xs">
+        <div className="text-xs space-y-0.5">
           <span className="font-bold text-slate-900 dark:text-slate-100">{row.payableDays} days</span>
+          {row.otHours > 0 && <span className="text-amber-600 font-bold block">+{row.otHours}h Extra/OT</span>}
           {row.lwpDays > 0 && <span className="text-rose-600 block">({row.lwpDays} LWP)</span>}
         </div>
       )
     },
-    { key: "grossEarnings", label: "Gross Pay", render: (row) => <span className="font-bold text-sky-600">₹{row.grossEarnings.toLocaleString()}</span> },
+    { key: "grossEarnings", label: "Gross Pay (Inc. OT)", render: (row) => <span className="font-bold text-sky-600">₹{row.grossEarnings.toLocaleString()}</span> },
     { key: "totalDeductions", label: "Deductions", render: (row) => <span className="font-bold text-rose-600">-₹{row.totalDeductions.toLocaleString()}</span> },
     { key: "netSalary", label: "Net Pay", render: (row) => <span className="font-extrabold text-emerald-600 dark:text-emerald-400">₹{row.netSalary.toLocaleString()}</span> },
     {
@@ -616,31 +618,39 @@ export default function PayslipsTab() {
                 <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Disbursed Digital Payslips</h3>
               </div>
               <div className="flex flex-wrap items-center gap-3">
-                <Select value={selectedMonth} onValueChange={(val) => { setSelectedMonth(val); setPayslipPage(1); }}>
-                  <SelectTrigger className="h-9 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 w-36">
-                    <SelectValue placeholder="Month" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                    <SelectItem value="ALL">All Months</SelectItem>
-                    {Array.from({ length: 12 }, (_, i) => (
-                      <SelectItem key={i + 1} value={String(i + 1)}>
-                        {new Date(2026, i, 1).toLocaleString("default", { month: "long" })}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="w-40">
+                  <SearchableSelect
+                    options={[
+                      { value: "ALL", label: "All Months" },
+                      ...Array.from({ length: 12 }, (_, i) => ({
+                        value: String(i + 1),
+                        label: new Date(2026, i, 1).toLocaleString("default", { month: "long" }),
+                      })),
+                    ]}
+                    value={selectedMonth}
+                    onValueChange={(val) => { setSelectedMonth(val); setPayslipPage(1); }}
+                    placeholder="Month"
+                    searchPlaceholder="Search month..."
+                    className="h-9 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                  />
+                </div>
 
-                <Select value={selectedYear} onValueChange={(val) => { setSelectedYear(val); setPayslipPage(1); }}>
-                  <SelectTrigger className="h-9 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 w-28">
-                    <SelectValue placeholder="Year" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                    <SelectItem value="ALL">All Years</SelectItem>
-                    {[2024, 2025, 2026, 2027, 2028].map((y) => (
-                      <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="w-32">
+                  <SearchableSelect
+                    options={[
+                      { value: "ALL", label: "All Years" },
+                      ...[2024, 2025, 2026, 2027, 2028].map((y) => ({
+                        value: String(y),
+                        label: String(y),
+                      })),
+                    ]}
+                    value={selectedYear}
+                    onValueChange={(val) => { setSelectedYear(val); setPayslipPage(1); }}
+                    placeholder="Year"
+                    searchPlaceholder="Search year..."
+                    className="h-9 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                  />
+                </div>
 
                 <Button
                   variant="outline"
@@ -706,6 +716,7 @@ export default function PayslipsTab() {
                     </div>
                     <div className="space-y-1">
                       <p><span className="text-slate-500">Payable Days:</span> <strong>{selectedPayslip.payableDays} / {selectedPayslip.totalDays}</strong></p>
+                      <p><span className="text-slate-500">OT / Extra Shifts:</span> <strong className="text-amber-600 font-bold">{selectedPayslip.otHours || 0} Hours (Double Rate 2×)</strong></p>
                       {selectedPayslip.lwpDays > 0 && (
                         <p>
                           <span className="text-slate-500">LWP Days (Unpaid):</span>{" "}

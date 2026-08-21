@@ -31,7 +31,10 @@ import {
   Eye,
   Sparkles,
   UserPlus,
-  Users
+  Users,
+  Landmark,
+  ShieldCheck,
+  Info
 } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -163,7 +166,13 @@ export default function RecruitmentPage() {
     jobSpecification: "",
     requisitionType: "NEW_REQUIREMENT",
     replacementForEmployeeId: "",
-    raisedBy: ""
+    raisedBy: "",
+    isCnvApplicable: false,
+    cnvExchangeOffice: "",
+    cnvRefNumber: "",
+    cnvNotificationDate: "",
+    cnvStatus: "NOT_REQUIRED",
+    cnvExemptionReason: ""
   });
   // Candidate Form State
   const [newCand, setNewCand] = useState({ name: "", email: "", phone: "", source: "", requisitionId: "", experienceYears: "", resumeUrl: "" });
@@ -492,11 +501,17 @@ export default function RecruitmentPage() {
             jobSpecification: newReq.jobSpecification,
             requisitionType: newReq.requisitionType || "NEW_REQUIREMENT",
             replacementForEmployeeId: newReq.requisitionType === "REPLACEMENT" ? newReq.replacementForEmployeeId : null,
+            isCnvApplicable: Boolean(newReq.isCnvApplicable),
+            cnvExchangeOffice: newReq.isCnvApplicable ? (newReq.cnvExchangeOffice || "") : null,
+            cnvRefNumber: newReq.isCnvApplicable ? (newReq.cnvRefNumber || "") : null,
+            cnvNotificationDate: newReq.isCnvApplicable && newReq.cnvNotificationDate ? newReq.cnvNotificationDate : null,
+            cnvStatus: newReq.isCnvApplicable ? (newReq.cnvStatus || "PENDING_NOTIFICATION") : "NOT_REQUIRED",
+            cnvExemptionReason: !newReq.isCnvApplicable ? (newReq.cnvExemptionReason || "") : null,
           })
         });
         if (res.ok) {
           dispatch(fetchRequisitions({ page: reqPage, limit: reqRows, search: reqSearch, sortBy: reqSortBy, sortOrder: reqSortOrder }));
-          setNewReq({ title: "", departmentId: "", headcount: 1, experienceRequired: "", justification: "", jobSpecification: "", requisitionType: "NEW_REQUIREMENT", replacementForEmployeeId: "", raisedBy: "" });
+          setNewReq({ title: "", departmentId: "", headcount: 1, experienceRequired: "", justification: "", jobSpecification: "", requisitionType: "NEW_REQUIREMENT", replacementForEmployeeId: "", raisedBy: "", isCnvApplicable: false, cnvExchangeOffice: "", cnvRefNumber: "", cnvNotificationDate: "", cnvStatus: "NOT_REQUIRED", cnvExemptionReason: "" });
           toast.success("Requisition updated successfully");
         } else {
           const msg = await getErrorMessage(res, "Failed to update requisition");
@@ -512,9 +527,15 @@ export default function RecruitmentPage() {
           jobSpecification: newReq.jobSpecification?.trim() || "",
           requisitionType: newReq.requisitionType || "NEW_REQUIREMENT",
           replacementForEmployeeId: newReq.requisitionType === "REPLACEMENT" ? newReq.replacementForEmployeeId : null,
+          isCnvApplicable: Boolean(newReq.isCnvApplicable),
+          cnvExchangeOffice: newReq.isCnvApplicable ? (newReq.cnvExchangeOffice || "") : null,
+          cnvRefNumber: newReq.isCnvApplicable ? (newReq.cnvRefNumber || "") : null,
+          cnvNotificationDate: newReq.isCnvApplicable && newReq.cnvNotificationDate ? newReq.cnvNotificationDate : null,
+          cnvStatus: newReq.isCnvApplicable ? (newReq.cnvStatus || "PENDING_NOTIFICATION") : "NOT_REQUIRED",
+          cnvExemptionReason: !newReq.isCnvApplicable ? (newReq.cnvExemptionReason || "") : null,
         })).unwrap();
         dispatch(fetchRequisitions({ page: reqPage, limit: reqRows, search: reqSearch, sortBy: reqSortBy, sortOrder: reqSortOrder }));
-        setNewReq({ title: "", departmentId: "", headcount: 1, experienceRequired: "", justification: "", jobSpecification: "", requisitionType: "NEW_REQUIREMENT", replacementForEmployeeId: "", raisedBy: "" });
+        setNewReq({ title: "", departmentId: "", headcount: 1, experienceRequired: "", justification: "", jobSpecification: "", requisitionType: "NEW_REQUIREMENT", replacementForEmployeeId: "", raisedBy: "", isCnvApplicable: false, cnvExchangeOffice: "", cnvRefNumber: "", cnvNotificationDate: "", cnvStatus: "NOT_REQUIRED", cnvExemptionReason: "" });
         toast.success("Requisition created successfully");
       }
     } catch (err) {
@@ -530,7 +551,7 @@ export default function RecruitmentPage() {
       });
       if (res.ok) {
         if (newReq.id === reqId) {
-          setNewReq({ title: "", departmentId: "", headcount: 1, justification: "", jobSpecification: "", requisitionType: "NEW_REQUIREMENT", replacementForEmployeeId: "", raisedBy: "" });
+          setNewReq({ title: "", departmentId: "", headcount: 1, justification: "", jobSpecification: "", requisitionType: "NEW_REQUIREMENT", replacementForEmployeeId: "", raisedBy: "", isCnvApplicable: false, cnvExchangeOffice: "", cnvRefNumber: "", cnvNotificationDate: "", cnvStatus: "NOT_REQUIRED", cnvExemptionReason: "" });
           setFormErrors({});
         }
         dispatch(fetchRequisitions({ page: reqPage, limit: reqRows, search: reqSearch, sortBy: reqSortBy, sortOrder: reqSortOrder }));
@@ -1566,13 +1587,110 @@ export default function RecruitmentPage() {
                     />
                     {formErrors.justification && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.justification}</span>}
                   </div>
+
+                  {/* CNV Act, 1959 Statutory Compliance Card */}
+                  <div className="p-3.5 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200/80 dark:border-indigo-900/50 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Landmark className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                        <div>
+                          <Label className="text-xs font-extrabold text-indigo-950 dark:text-indigo-200 flex items-center gap-1">
+                            CNV Compliance (Act, 1959)
+                          </Label>
+                          <span className="text-[10px] text-indigo-600 dark:text-indigo-400 block font-medium">
+                            Compulsory Notification of Vacancies
+                          </span>
+                        </div>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="sr-only peer"
+                          checked={Boolean(newReq.isCnvApplicable)}
+                          onChange={(e) => {
+                            setNewReq({
+                              ...newReq,
+                              isCnvApplicable: e.target.checked,
+                              cnvStatus: e.target.checked ? (newReq.cnvStatus === "NOT_REQUIRED" ? "PENDING_NOTIFICATION" : newReq.cnvStatus) : "NOT_REQUIRED"
+                            });
+                          }}
+                        />
+                        <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600"></div>
+                      </label>
+                    </div>
+
+                    {newReq.isCnvApplicable ? (
+                      <div className="space-y-2.5 pt-2 border-t border-indigo-200/60 dark:border-indigo-900/40 text-xs">
+                        <div className="space-y-1">
+                          <Label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Employment Exchange Office</Label>
+                          <Input
+                            placeholder="e.g. District Employment Exchange, Industrial Area"
+                            className="h-8 text-xs bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-900"
+                            value={newReq.cnvExchangeOffice || ""}
+                            onChange={(e) => setNewReq({ ...newReq, cnvExchangeOffice: e.target.value })}
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Ack / Ref No.</Label>
+                            <Input
+                              placeholder="e.g. CNV-EE-2026/09"
+                              className="h-8 text-xs bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-900"
+                              value={newReq.cnvRefNumber || ""}
+                              onChange={(e) => setNewReq({ ...newReq, cnvRefNumber: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Notification Date</Label>
+                            <DateTimePicker
+                              type="date"
+                              date={newReq.cnvNotificationDate}
+                              setDate={(val) => setNewReq({ ...newReq, cnvNotificationDate: val })}
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Compliance Status</Label>
+                          <Select
+                            value={newReq.cnvStatus || "PENDING_NOTIFICATION"}
+                            onValueChange={(val) => setNewReq({ ...newReq, cnvStatus: val })}
+                          >
+                            <SelectTrigger className="h-8 text-xs rounded-lg bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-900 w-full">
+                              <SelectValue placeholder="Select Status..." />
+                            </SelectTrigger>
+                            <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                              <SelectItem value="PENDING_NOTIFICATION">Pending Notification</SelectItem>
+                              <SelectItem value="NOTIFIED">Notified to Exchange</SelectItem>
+                              <SelectItem value="ACKNOWLEDGED">Acknowledged by Exchange</SelectItem>
+                              <SelectItem value="EXEMPTED">Exempted</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <p className="text-[10px] text-indigo-700 dark:text-indigo-300 flex items-start gap-1">
+                          <Info className="w-3 h-3 shrink-0 mt-0.5 text-indigo-500" />
+                          <span>Under the CNV Act 1959, report vacancies to the designated Employment Exchange before filling.</span>
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5 pt-1 text-[11px] text-slate-500">
+                        <Label className="text-[10.5px] font-semibold text-slate-600 dark:text-slate-400">Exemption Reason (If applicable)</Label>
+                        <Input
+                          placeholder="e.g. Vacancy tenure < 3 months, internal promotion, or exempt cadre"
+                          className="h-8 text-xs bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
+                          value={newReq.cnvExemptionReason || ""}
+                          onChange={(e) => setNewReq({ ...newReq, cnvExemptionReason: e.target.value })}
+                        />
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex gap-2 mt-2">
                     {newReq.id && (
                       <Button 
                         type="button" 
                         variant="outline" 
                         onClick={() => {
-                          setNewReq({ title: "", departmentId: departments[0]?.id || "", headcount: 1, experienceRequired: "", justification: "", jobSpecification: "", requisitionType: "NEW_REQUIREMENT", replacementForEmployeeId: "", raisedBy: "HR Manager" });
+                          setNewReq({ title: "", departmentId: departments[0]?.id || "", headcount: 1, experienceRequired: "", justification: "", jobSpecification: "", requisitionType: "NEW_REQUIREMENT", replacementForEmployeeId: "", raisedBy: "HR Manager", isCnvApplicable: false, cnvExchangeOffice: "", cnvRefNumber: "", cnvNotificationDate: "", cnvStatus: "NOT_REQUIRED", cnvExemptionReason: "" });
                           setFormErrors({});
                         }}
                         className="w-1/3 rounded-xl font-bold"
@@ -1683,6 +1801,39 @@ export default function RecruitmentPage() {
                       ),
                     },
                     {
+                      key: "cnvStatus",
+                      label: "CNV (Act 1959)",
+                      render: (row) => {
+                        const isCnv = row.isCnvApplicable;
+                        const status = row.cnvStatus;
+                        if (!isCnv) {
+                          return (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400" title={row.cnvExemptionReason ? `Exempted: ${row.cnvExemptionReason}` : "CNV Not Applicable"}>
+                              {row.cnvExemptionReason ? "Exempted" : "N/A"}
+                            </span>
+                          );
+                        }
+                        const isNotified = status === "NOTIFIED" || status === "ACKNOWLEDGED";
+                        return (
+                          <div className="space-y-0.5">
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                              isNotified
+                                ? "bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800"
+                                : "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800"
+                            }`}>
+                              <Landmark className="w-2.5 h-2.5" />
+                              {status === "ACKNOWLEDGED" ? "CNV Ack" : status === "NOTIFIED" ? "CNV Notified" : "CNV Pending"}
+                            </span>
+                            {row.cnvRefNumber && (
+                              <span className="block text-[9.5px] font-mono text-slate-500 dark:text-slate-400 truncate max-w-[110px]" title={`Ref: ${row.cnvRefNumber}`}>
+                                #{row.cnvRefNumber}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      },
+                    },
+                    {
                       key: "raisedBy",
                       label: "Raised By",
                       render: (row) => (
@@ -1720,7 +1871,13 @@ export default function RecruitmentPage() {
                                 jobSpecification: row.jobSpecification || "",
                                 requisitionType: row.requisitionType || "NEW_REQUIREMENT",
                                 replacementForEmployeeId: row.replacementForEmployeeId || "",
-                                raisedBy: row.raisedBy
+                                raisedBy: row.raisedBy,
+                                isCnvApplicable: Boolean(row.isCnvApplicable),
+                                cnvExchangeOffice: row.cnvExchangeOffice || "",
+                                cnvRefNumber: row.cnvRefNumber || "",
+                                cnvNotificationDate: row.cnvNotificationDate ? String(row.cnvNotificationDate).split("T")[0] : "",
+                                cnvStatus: row.cnvStatus || (row.isCnvApplicable ? "PENDING_NOTIFICATION" : "NOT_REQUIRED"),
+                                cnvExemptionReason: row.cnvExemptionReason || ""
                               });
                             }}
                             className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
