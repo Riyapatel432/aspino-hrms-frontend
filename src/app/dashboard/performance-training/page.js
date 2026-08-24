@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch, getErrorMessage } from "@/lib/api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
@@ -769,19 +770,21 @@ export default function PerformanceTrainingPage() {
                   <form onSubmit={handleSubmitGoal} className="space-y-3" noValidate>
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Employee</Label>
-                      <Select value={newGoal.employeeId} onValueChange={(val) => {
-                        setNewGoal({ ...newGoal, employeeId: val });
-                        if (formErrors.employeeId) setFormErrors({ ...formErrors, employeeId: null });
-                      }}>
-                        <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                          <SelectValue placeholder="Select..." />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                          {employees.map((e) => (
-                            <SelectItem key={e.id} value={String(e.id)}>{e.firstName} {e.lastName}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <SearchableSelect
+                        options={employees.map((e) => ({
+                          value: String(e.id),
+                          label: `${e.firstName} ${e.lastName} (${e.employeeId || e.id})`,
+                          subLabel: `${e.designation || "Staff"} • ${e.department?.name || e.department || "General"}`
+                        }))}
+                        value={newGoal.employeeId}
+                        onValueChange={(val) => {
+                          setNewGoal({ ...newGoal, employeeId: val });
+                          if (formErrors.employeeId) setFormErrors({ ...formErrors, employeeId: null });
+                        }}
+                        placeholder="Search & choose employee..."
+                        searchPlaceholder="Type employee name, ID, or department..."
+                        className={formErrors.employeeId ? "border-rose-500 border-2" : ""}
+                      />
                       {formErrors.employeeId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.employeeId}</span>}
                     </div>
                     <div className="space-y-1">
@@ -868,19 +871,21 @@ export default function PerformanceTrainingPage() {
                   <form onSubmit={handleSubmitReview} className="space-y-3" noValidate>
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Employee</Label>
-                      <Select value={newReview.employeeId} onValueChange={(val) => {
-                        setNewReview({ ...newReview, employeeId: val });
-                        if (formErrors.employeeId) setFormErrors({ ...formErrors, employeeId: null });
-                      }}>
-                        <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                          <SelectValue placeholder="Select..." />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                          {employees.map((e) => (
-                            <SelectItem key={e.id} value={String(e.id)}>{e.firstName} {e.lastName}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <SearchableSelect
+                        options={employees.map((e) => ({
+                          value: String(e.id),
+                          label: `${e.firstName} ${e.lastName} (${e.employeeId || e.id})`,
+                          subLabel: `${e.designation || "Staff"} • ${e.department?.name || e.department || "General"}`
+                        }))}
+                        value={newReview.employeeId}
+                        onValueChange={(val) => {
+                          setNewReview({ ...newReview, employeeId: val });
+                          if (formErrors.employeeId) setFormErrors({ ...formErrors, employeeId: null });
+                        }}
+                        placeholder="Search & choose employee..."
+                        searchPlaceholder="Type employee name, ID, or department..."
+                        className={formErrors.employeeId ? "border-rose-500 border-2" : ""}
+                      />
                       {formErrors.employeeId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.employeeId}</span>}
                     </div>
                     <div className="space-y-1">
@@ -1036,19 +1041,21 @@ export default function PerformanceTrainingPage() {
                 <form onSubmit={handleSubmitTraining} className="space-y-3" noValidate>
                   <div className="space-y-1">
                     <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Employee</Label>
-                    <Select value={newTraining.employeeId} onValueChange={(val) => {
-                      setNewTraining({ ...newTraining, employeeId: val });
-                      if (formErrors.employeeId) setFormErrors({ ...formErrors, employeeId: null });
-                    }}>
-                      <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                        <SelectValue placeholder="Select..." />
-                      </SelectTrigger>
-                      <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                        {employees.map((e) => (
-                          <SelectItem key={e.id} value={String(e.id)}>{e.firstName} {e.lastName}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      options={employees.map((e) => ({
+                        value: String(e.id),
+                        label: `${e.firstName} ${e.lastName} (${e.employeeId || e.id})`,
+                        subLabel: `${e.designation || "Staff"} • ${e.department?.name || e.department || "General"}`
+                      }))}
+                      value={newTraining.employeeId}
+                      onValueChange={(val) => {
+                        setNewTraining({ ...newTraining, employeeId: val });
+                        if (formErrors.employeeId) setFormErrors({ ...formErrors, employeeId: null });
+                      }}
+                      placeholder="Search & choose employee..."
+                      searchPlaceholder="Type employee name, ID, or department..."
+                      className={formErrors.employeeId ? "border-rose-500 border-2" : ""}
+                    />
                     {formErrors.employeeId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.employeeId}</span>}
                   </div>
                   <div className="space-y-1">
@@ -1073,16 +1080,12 @@ export default function PerformanceTrainingPage() {
                         <SelectValue placeholder="Select..." />
                       </SelectTrigger>
                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                        {trainingTypes.length > 0 ? (
+                        {trainingTypes && trainingTypes.length > 0 ? (
                           trainingTypes.filter(t => t.isActive !== false).map((t) => (
                             <SelectItem key={t.id} value={t.name}>{t.name.toUpperCase()}</SelectItem>
                           ))
                         ) : (
-                          <>
-                            <SelectItem value="COMPLIANCE">COMPLIANCE (FDA/GMP)</SelectItem>
-                            <SelectItem value="TECHNICAL">TECHNICAL SKILLS</SelectItem>
-                            <SelectItem value="SOFT_SKILLS">SOFT SKILLS</SelectItem>
-                          </>
+                          <SelectItem value="none" disabled>No training types found</SelectItem>
                         )}
                       </SelectContent>
                     </Select>

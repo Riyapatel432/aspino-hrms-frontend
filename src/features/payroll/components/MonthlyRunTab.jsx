@@ -140,7 +140,7 @@ export default function MonthlyRunTab() {
         console.error("Error fetching fiscal years:", e);
       }
     }
-    if (activeTab === "hra") fetchFiscalYears();
+    fetchFiscalYears();
   }, []);
 
   const [taxForm, setTaxForm] = useState({

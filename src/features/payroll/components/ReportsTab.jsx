@@ -130,7 +130,7 @@ export default function ReportsTab() {
   useEffect(() => {
     async function fetchFiscalYears() {
       try {
-        const res = await apiFetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/staff-hrms/recruitment/fiscal-years?limit=100`);
+        const res = await apiFetch("/staff-hrms/recruitment/fiscal-years?limit=100");
         const data = await res.json();
         if (data && data.data) {
           setFiscalYears(data.data.filter(fy => fy.isActive !== false));
@@ -139,7 +139,7 @@ export default function ReportsTab() {
         console.error("Error fetching fiscal years:", e);
       }
     }
-    if (activeTab === "hra") fetchFiscalYears();
+    fetchFiscalYears();
   }, []);
 
   const [taxForm, setTaxForm] = useState({
@@ -641,10 +641,11 @@ export default function ReportsTab() {
                     <SelectValue placeholder="Select Year" />
                   </SelectTrigger>
                   <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                    <SelectItem value="2024-2025">2024-2025</SelectItem>
-                    <SelectItem value="2025-2026">2025-2026</SelectItem>
-                    <SelectItem value="2026-2027">2026-2027</SelectItem>
-                    <SelectItem value="2027-2028">2027-2028</SelectItem>
+                    {(fiscalYears || []).map((fy) => (
+                      <SelectItem key={fy.id} value={fy.name}>
+                        {fy.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

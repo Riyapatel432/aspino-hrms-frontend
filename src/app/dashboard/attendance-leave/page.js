@@ -162,6 +162,7 @@ export default function AttendanceLeavePage() {
   const [attViewMode, setAttViewMode] = useState("matrix"); // "matrix" | "list"
   const [showManualAttModal, setShowManualAttModal] = useState(false);
   const [matrixSearch, setMatrixSearch] = useState("");
+  const [selectedMatrixRecord, setSelectedMatrixRecord] = useState(null);
 
   // HOD Roster Management State
   const [rosterDeptFilter, setRosterDeptFilter] = useState("ALL");
@@ -322,82 +323,254 @@ export default function AttendanceLeavePage() {
       setParsedAttRecords([]);
       return;
     }
-    const lines = text.trim().split(/\r?\n/);
-    if (lines.length < 2) {
+    const lines = text.trim().split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) {
       setParsedAttRecords([]);
       return;
     }
-    
-    // Dynamically inspect header line to detect column positions
-    const headerCols = lines[0].split(",").map(c => c.trim().toLowerCase().replace(/^"(.*)"$/, "$1"));
-    
-    let codeIdx = headerCols.findIndex(h => h.includes("code") || h.includes("employee id") || h.includes("card") || h === "id");
-    let dateIdx = headerCols.findIndex(h => h.includes("date"));
-    let shiftIdx = headerCols.findIndex(h => h.includes("shift") || h === "shiftname");
-    let inIdx = headerCols.findIndex(h => h.includes("check in") || h.includes("in time") || h === "checkin" || h === "in");
-    let outIdx = headerCols.findIndex(h => h.includes("check out") || h.includes("out time") || h === "checkout" || h === "out");
-    let statusIdx = headerCols.findIndex(h => h.includes("status"));
-    let otIdx = headerCols.findIndex(h => h.includes("ot"));
-    let lateIdx = headerCols.findIndex(h => h.includes("late"));
-    let earlyIdx = headerCols.findIndex(h => h.includes("early"));
-    let presentDayIdx = headerCols.findIndex(h => h.includes("present day"));
 
-    // Fallbacks if header matching didn't trigger
-    if (codeIdx === -1) codeIdx = 0;
-    if (dateIdx === -1) dateIdx = 1;
-    if (inIdx === -1) inIdx = 2;
-    if (outIdx === -1) outIdx = 3;
-    if (statusIdx === -1) statusIdx = 4;
+    const parseTimeHHMM = (val) => {
+      if (!val) return "";
+      const str = String(val).trim().replace(/^"(.*)"$/, "$1");
+      if (str.includes("T")) {
+        const timePart = str.split("T")[1];
+        return timePart ? timePart.substring(0, 5) : str;
+      }
+      return str.substring(0, 5);
+    };
 
-    // Special handling for exported CSVs where Column 1 is "Employee Name"
-    if (dateIdx === 1 && (headerCols[1]?.includes("name") || headerCols[1]?.includes("employee name"))) {
-      dateIdx = 2;
-      inIdx = 3;
-      outIdx = 4;
-      statusIdx = 5;
+    const parseMinutes = (timeStr) => {
+      if (!timeStr) return null;
+      const parts = timeStr.split(":");
+      if (parts.length >= 2) {
+        const h = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        if (!isNaN(h) && !isNaN(m)) return h * 60 + m;
+      }
+      return null;
+    };
+
+    // Detect delimiter: tab (Excel copy-paste), comma, semicolon, or pipe
+    const firstLine = lines[0];
+    let delimiter = ",";
+    if (firstLine.includes("\t")) delimiter = "\t";
+    else if (firstLine.includes(";") && !firstLine.includes(",")) delimiter = ";";
+    else if (firstLine.includes("|")) delimiter = "|";
+
+    const splitCols = (line) => line.split(delimiter).map(c => c.trim().replace(/^"(.*)"$/, "$1"));
+
+    const firstLineCols = splitCols(firstLine);
+    const isFirstRowHeader = firstLineCols.some(c => {
+      const lc = c.toLowerCase();
+      return lc.includes("code") || lc.includes("emp") || lc.includes("date") || lc.includes("shift") || lc.includes("status") || lc.includes("check") || lc.includes("punch") || lc.includes("in 1") || lc.includes("out 1");
+    });
+
+    let codeIdx = 0;
+    let dateIdx = 1;
+    let shiftIdx = -1;
+    let statusIdx = -1;
+    let otIdx = -1;
+    let lateIdx = -1;
+    let earlyIdx = -1;
+    let presentDayIdx = -1;
+    const punchColIndices = [];
+
+    const startLineIdx = isFirstRowHeader ? 1 : 0;
+
+    if (isFirstRowHeader) {
+      const headerCols = firstLineCols.map(c => c.toLowerCase());
+      codeIdx = headerCols.findIndex(h => h.includes("code") || h.includes("employee id") || h.includes("card") || h === "id" || h.includes("user id"));
+      dateIdx = headerCols.findIndex(h => h.includes("date"));
+      shiftIdx = headerCols.findIndex(h => h.includes("shift") || h === "shiftname");
+      statusIdx = headerCols.findIndex(h => h.includes("status"));
+      otIdx = headerCols.findIndex(h => h.includes("ot"));
+      lateIdx = headerCols.findIndex(h => h.includes("late"));
+      earlyIdx = headerCols.findIndex(h => h.includes("early"));
+      presentDayIdx = headerCols.findIndex(h => h.includes("present day"));
+
+      headerCols.forEach((col, idx) => {
+        if (
+          col.match(/^(in|out)\s*\d+/) ||
+          col.match(/^punch\s*\d+/) ||
+          col.includes("check in") ||
+          col.includes("check out") ||
+          col.includes("in time") ||
+          col.includes("out time") ||
+          col === "checkin" ||
+          col === "checkout" ||
+          col === "punches" ||
+          col === "punch" ||
+          col === "in" ||
+          col === "out"
+        ) {
+          punchColIndices.push(idx);
+        }
+      });
+
+      if (codeIdx === -1) codeIdx = 0;
+      if (dateIdx === -1) dateIdx = 1;
+      if (dateIdx === 1 && (headerCols[1]?.includes("name") || headerCols[1]?.includes("employee name"))) {
+        dateIdx = 2;
+      }
     }
 
-    const records = [];
-    for (let i = 1; i < lines.length; i++) {
+    // Grouping by employee and date to support multiple log rows
+    const groupedMap = new Map();
+
+    for (let i = startLineIdx; i < lines.length; i++) {
       const rawLine = lines[i].trim();
       if (!rawLine) continue;
-      const cols = rawLine.split(",").map(c => c.trim().replace(/^"(.*)"$/, "$1"));
+      const cols = splitCols(rawLine);
       if (cols.length === 0) continue;
-      
-      const formatTimeHHMM = (val) => {
-        if (!val) return "";
-        const str = String(val).trim();
-        if (str.includes("T")) {
-          const timePart = str.split("T")[1];
-          return timePart ? timePart.substring(0, 5) : str;
-        }
-        return str.substring(0, 5);
-      };
 
-      const code = cols[codeIdx] || "";
-      const date = cols[dateIdx] || "";
+      let code = cols[codeIdx] || cols[0] || "";
+      let date = cols[dateIdx] || cols[1] || "";
+      if (!code && !date) continue;
+
+      const key = `${code.toLowerCase()}_${date}`;
+
+      // Extract all punches in this row
+      let rowPunches = [];
+      if (punchColIndices.length > 0) {
+        punchColIndices.forEach(idx => {
+          if (cols[idx]) {
+            const cellVal = cols[idx].trim();
+            if (cellVal.includes(",") || cellVal.includes(";") || cellVal.includes(" ")) {
+              const subPunches = cellVal.split(/[,;\s]+/).map(parseTimeHHMM).filter(Boolean);
+              rowPunches.push(...subPunches);
+            } else {
+              const formatted = parseTimeHHMM(cellVal);
+              if (formatted) rowPunches.push(formatted);
+            }
+          }
+        });
+      } else {
+        // Look for any columns that match time pattern HH:mm
+        cols.forEach((colVal, colI) => {
+          if (colI !== codeIdx && colI !== dateIdx) {
+            const trimmed = colVal.trim();
+            if (/^\d{1,2}:\d{2}/.test(trimmed)) {
+              rowPunches.push(parseTimeHHMM(trimmed));
+            }
+          }
+        });
+        if (rowPunches.length === 0) {
+          const inVal = parseTimeHHMM(cols[2]);
+          const outVal = parseTimeHHMM(cols[3]);
+          if (inVal) rowPunches.push(inVal);
+          if (outVal) rowPunches.push(outVal);
+        }
+      }
+
       const shiftName = shiftIdx !== -1 && cols[shiftIdx] ? cols[shiftIdx] : "";
-      const checkIn = formatTimeHHMM(cols[inIdx]);
-      const checkOut = formatTimeHHMM(cols[outIdx]);
-      const status = cols[statusIdx] || "PRESENT";
+      const status = statusIdx !== -1 && cols[statusIdx] ? cols[statusIdx] : "PRESENT";
       const otHours = otIdx !== -1 && cols[otIdx] ? parseFloat(cols[otIdx]) : 0;
       const lateHours = lateIdx !== -1 && cols[lateIdx] ? parseFloat(cols[lateIdx]) : 0;
       const earlyGoingHours = earlyIdx !== -1 && cols[earlyIdx] ? parseFloat(cols[earlyIdx]) : 0;
       const presentDay = presentDayIdx !== -1 && cols[presentDayIdx] ? parseFloat(cols[presentDayIdx]) : 1.0;
-      
+
+      if (!groupedMap.has(key)) {
+        groupedMap.set(key, {
+          employeeCodeOrId: code,
+          date,
+          shiftName,
+          status,
+          otHours: isNaN(otHours) ? 0 : otHours,
+          lateHours: isNaN(lateHours) ? 0 : lateHours,
+          earlyGoingHours: isNaN(earlyGoingHours) ? 0 : earlyGoingHours,
+          presentDay: isNaN(presentDay) ? 1.0 : presentDay,
+          punches: [...rowPunches],
+        });
+      } else {
+        const existing = groupedMap.get(key);
+        existing.punches.push(...rowPunches);
+        if (shiftName && !existing.shiftName) existing.shiftName = shiftName;
+        if (otHours > 0) existing.otHours = otHours;
+      }
+    }
+
+    // Now calculate breaks and net work hours for each grouped record
+    const records = [];
+    groupedMap.forEach((entry) => {
+      const uniquePunches = entry.punches.filter((v, idx, arr) => v && arr.indexOf(v) === idx);
+      uniquePunches.sort((a, b) => {
+        const ma = parseMinutes(a) || 0;
+        const mb = parseMinutes(b) || 0;
+        return ma - mb;
+      });
+
+      let checkIn = uniquePunches[0] || "";
+      let checkOut = uniquePunches[uniquePunches.length - 1] || "";
+      let totalBreakMinutes = 0;
+      let totalWorkMinutes = 0;
+      const breakIntervals = [];
+
+      if (uniquePunches.length >= 4 && uniquePunches.length % 2 === 0) {
+        // Paired sessions: (P0->P1 work, P1->P2 break, P2->P3 work...)
+        for (let p = 0; p < uniquePunches.length; p += 2) {
+          const inM = parseMinutes(uniquePunches[p]);
+          const outM = parseMinutes(uniquePunches[p + 1]);
+          if (inM !== null && outM !== null) {
+            let session = outM - inM;
+            if (session < 0) session += 24 * 60;
+            totalWorkMinutes += session;
+          }
+
+          if (p + 2 < uniquePunches.length) {
+            const prevOutM = parseMinutes(uniquePunches[p + 1]);
+            const nextInM = parseMinutes(uniquePunches[p + 2]);
+            if (prevOutM !== null && nextInM !== null) {
+              let gap = nextInM - prevOutM;
+              if (gap < 0) gap += 24 * 60;
+              if (gap > 0) {
+                totalBreakMinutes += gap;
+                breakIntervals.push({
+                  start: uniquePunches[p + 1],
+                  end: uniquePunches[p + 2],
+                  durationMins: gap
+                });
+              }
+            }
+          }
+        }
+      } else if (uniquePunches.length === 2) {
+        const inM = parseMinutes(uniquePunches[0]);
+        const outM = parseMinutes(uniquePunches[1]);
+        if (inM !== null && outM !== null) {
+          let span = outM - inM;
+          if (span < 0) span += 24 * 60;
+          totalWorkMinutes = span;
+        }
+      } else if (uniquePunches.length > 2) {
+        const inM = parseMinutes(uniquePunches[0]);
+        const outM = parseMinutes(uniquePunches[uniquePunches.length - 1]);
+        if (inM !== null && outM !== null) {
+          let span = outM - inM;
+          if (span < 0) span += 24 * 60;
+          totalWorkMinutes = span;
+        }
+      }
+
+      const totalWorkHours = totalWorkMinutes > 0 ? parseFloat((totalWorkMinutes / 60).toFixed(2)) : 8.0;
+
       records.push({
-        employeeCodeOrId: code,
-        date,
-        shiftName,
+        employeeCodeOrId: entry.employeeCodeOrId,
+        date: entry.date,
+        shiftName: entry.shiftName,
         checkIn,
         checkOut,
-        status,
-        otHours: isNaN(otHours) ? 0 : otHours,
-        lateHours: isNaN(lateHours) ? 0 : lateHours,
-        earlyGoingHours: isNaN(earlyGoingHours) ? 0 : earlyGoingHours,
-        presentDay: isNaN(presentDay) ? 1.0 : presentDay
+        punches: uniquePunches,
+        breakDurationMinutes: totalBreakMinutes,
+        breakIntervals,
+        totalWorkHours,
+        status: entry.status,
+        otHours: entry.otHours,
+        lateHours: entry.lateHours,
+        earlyGoingHours: entry.earlyGoingHours,
+        presentDay: entry.presentDay,
       });
-    }
+    });
+
     setParsedAttRecords(records);
   };
 
@@ -1034,20 +1207,29 @@ export default function AttendanceLeavePage() {
     }
   };
 
-  const calculateWorkHours = (inTime, outTime) => {
+  const calculateWorkHours = (inTime, outTime, breakMins = 0, onDutyMins = 0) => {
     if (!inTime || !outTime) return 0;
     const [inH, inM] = inTime.split(":").map(Number);
     const [outH, outM] = outTime.split(":").map(Number);
     let totalMin = (outH * 60 + outM) - (inH * 60 + inM);
     if (totalMin < 0) totalMin += 24 * 60;
-    return (totalMin / 60).toFixed(1);
+    const effectiveBreak = Math.max(0, Number(breakMins || 0) - Number(onDutyMins || 0));
+    const netMin = Math.max(0, totalMin - effectiveBreak);
+    return (netMin / 60).toFixed(2);
   };
 
   const handleSubmitAttendance = async (e) => {
     e.preventDefault();
     if (!validateAttendance()) return;
     try {
-      const workHours = calculateWorkHours(newAtt.checkIn, newAtt.checkOut);
+      const rawBreakMins = Number(newAtt.breakMinutes ?? 60);
+      const onDutyMins = Number(newAtt.onDutyMinutes ?? 0);
+      const workHours = calculateWorkHours(newAtt.checkIn, newAtt.checkOut, rawBreakMins, onDutyMins);
+      const effectiveBreakMins = Math.max(0, rawBreakMins - onDutyMins);
+      const excessBreakMins = Math.max(0, effectiveBreakMins - 60);
+      const breakDeductionHours = excessBreakMins > 0 ? parseFloat((excessBreakMins / 60).toFixed(2)) : 0;
+      const hasBreakComplaint = excessBreakMins > 0;
+
       // Find shift from all available shifts (dropdownShifts or Redux shifts)
       const allShifts = dropdownShifts.length > 0 ? dropdownShifts : (Array.isArray(shifts) ? shifts : []);
       const selectedShift = allShifts.find(s => String(s.id) === String(newAtt.shiftId));
@@ -1070,6 +1252,9 @@ export default function AttendanceLeavePage() {
         captureMethod: newAtt.captureMethod || "MANUAL_ADMIN",
         checkIn: newAtt.checkIn ? `${newAtt.date}T${newAtt.checkIn}:00.000Z` : null,
         checkOut: newAtt.checkOut ? `${newAtt.date}T${newAtt.checkOut}:00.000Z` : null,
+        breakMisuseMinutes: excessBreakMins,
+        breakDeductionHours,
+        hasBreakComplaint,
       };
 
       if (newAtt.date) {
@@ -1413,14 +1598,39 @@ export default function AttendanceLeavePage() {
               +{row.otHours} hrs OT
             </span>
           )}
-          {(row.hasBreakComplaint || row.breakMisuseMinutes > 0) && (
-            <span className="inline-flex items-center gap-1 text-[9.5px] font-extrabold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-800 block w-fit" title={`HOD Break Misuse Complaint: -${row.breakMisuseMinutes} min (-${row.breakDeductionHours || 0} hrs penalty)`}>
-              <Coffee className="w-2.5 h-2.5 text-rose-600" />
-              Break -{row.breakMisuseMinutes}m
-            </span>
-          )}
         </div>
       ),
+    },
+    {
+      key: "breakTime",
+      label: "Break Time (1h Limit)",
+      render: (row) => {
+        const hasMisuse = row.hasBreakComplaint || (row.breakMisuseMinutes && row.breakMisuseMinutes > 0);
+        if (hasMisuse) {
+          return (
+            <div className="space-y-0.5">
+              <span className="inline-flex items-center gap-1 text-[10px] font-black text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/60 px-2 py-0.5 rounded-md border border-rose-300 dark:border-rose-800" title={`Exceeded 1-hour limit by ${row.breakMisuseMinutes} minutes (-${row.breakDeductionHours || 0} hrs penalty)`}>
+                <AlertTriangle className="w-3 h-3 text-rose-600" />
+                {row.breakMisuseMinutes}m Excess (Not Allowed!)
+              </span>
+              {row.breakDeductionHours > 0 && (
+                <span className="text-[9.5px] text-rose-600 dark:text-rose-400 block font-semibold">
+                  Penalty: -{row.breakDeductionHours} hrs
+                </span>
+              )}
+            </div>
+          );
+        }
+        if (row.captureMethod?.includes("MULTI_PUNCH") || row.captureMethod === "BIOMETRIC") {
+          return (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800">
+              <Coffee className="w-3 h-3 text-amber-600" />
+              60m (Allowed ≤1h)
+            </span>
+          );
+        }
+        return <span className="text-slate-400 text-[11px]">— No break</span>;
+      },
     },
     {
       key: "lateHours",
@@ -1520,6 +1730,8 @@ export default function AttendanceLeavePage() {
                 isFullNightPresent: !!row.isFullNightPresent,
                 isHolidayPresent: !!row.isHolidayPresent,
                 captureMethod: row.captureMethod || "BIOMETRIC",
+                breakMinutes: row.breakMisuseMinutes > 0 ? String(60 + Number(row.breakMisuseMinutes)) : "60",
+                onDutyMinutes: "0",
                 status: row.status || "PRESENT"
               });
               setShowManualAttModal(true);
@@ -2058,6 +2270,8 @@ export default function AttendanceLeavePage() {
                           isFullNightPresent: false,
                           isHolidayPresent: false,
                           captureMethod: "MANUAL_ADMIN",
+                          breakMinutes: "60",
+                          onDutyMinutes: "0",
                           status: "PRESENT",
                         });
                         setFormErrors({});
@@ -2206,14 +2420,16 @@ export default function AttendanceLeavePage() {
 
                         return (
                           <div className="relative flex items-center justify-center">
-                            <span
-                              title={`${rec.date ? rec.date.split('T')[0] : ''} | Status: ${st} ${rec.checkIn ? '| In: ' + rec.checkIn : ''}${hasMisuse ? ` | ⚠️ Break Misuse Logged: -${rec.breakMisuseMinutes}m (-${rec.breakDeductionHours || 0}h)` : ''}`}
-                              className={`size-6 rounded-md font-bold text-[10px] flex items-center justify-center mx-auto shadow-sm cursor-pointer ${badgeColor} ${hasMisuse ? 'ring-2 ring-rose-500 ring-offset-1' : ''}`}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedMatrixRecord({ emp: row.employee, rec, day: d, dateStr: `${attYear}-${String(attMonth === 'ALL' ? (new Date().getMonth() + 1) : attMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}` })}
+                              title={`Click to view breakdown: ${rec.date ? rec.date.split('T')[0] : ''} | Status: ${st} ${rec.checkIn ? '| In: ' + rec.checkIn : ''}${hasMisuse ? ` | ⚠️ Break Misuse Logged: -${rec.breakMisuseMinutes}m (-${rec.breakDeductionHours || 0}h)` : ''}`}
+                              className={`size-6 rounded-md font-bold text-[10px] flex items-center justify-center mx-auto shadow-sm cursor-pointer hover:scale-110 transition-transform ${badgeColor} ${hasMisuse ? 'ring-2 ring-rose-500 ring-offset-1' : ''}`}
                             >
                               {label}
-                            </span>
+                            </button>
                             {hasMisuse && (
-                              <span className="absolute -top-1 -right-1 size-2 rounded-full bg-rose-600 border border-white" title={`HOD Break Misuse Complaint: -${rec.breakMisuseMinutes}m`} />
+                              <span className="absolute -top-1 -right-1 size-2 rounded-full bg-rose-600 border border-white pointer-events-none" title={`HOD Break Misuse Complaint: -${rec.breakMisuseMinutes}m`} />
                             )}
                           </div>
                         );
@@ -2267,21 +2483,24 @@ export default function AttendanceLeavePage() {
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Label className="text-xs font-bold text-slate-500">Filter Employee Balance:</Label>
-                  <Select value={balanceEmpId} onValueChange={(val) => setBalanceEmpId(val)}>
-<SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-<SelectValue placeholder="Select..." />
-</SelectTrigger>
-<SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-
-                    <SelectItem value="ALL">All Employees Aggregate</SelectItem>
-                    {employees.map((e) => (
-                      <SelectItem key={e.id} value={String(e.id)}>
-                        {e.firstName} {e.lastName} ({e.employeeId})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-</Select>
+                  <Label className="text-xs font-bold text-slate-500 whitespace-nowrap">Filter Employee Balance:</Label>
+                  <div className="w-64">
+                    <SearchableSelect
+                      options={[
+                        { value: "ALL", label: "All Employees Aggregate" },
+                        ...employees.map((e) => ({
+                          value: String(e.id),
+                          label: `${e.firstName} ${e.lastName} (${e.employeeId || e.id})`,
+                          subLabel: `${e.designation || "Staff"} • ${e.department?.name || e.department || "General"}`
+                        }))
+                      ]}
+                      value={balanceEmpId}
+                      onValueChange={(val) => setBalanceEmpId(val)}
+                      placeholder="Select Employee..."
+                      searchPlaceholder="Search employee name or ID..."
+                      className="h-10 text-xs"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -2538,12 +2757,23 @@ export default function AttendanceLeavePage() {
               </Button>
             </div>
 
+            {/* Biometric Auto Break Detection Banner */}
+            <div className="flex items-start gap-2.5 p-3.5 bg-sky-50/70 dark:bg-sky-950/40 rounded-2xl border border-sky-200/70 dark:border-sky-800/60 text-xs text-sky-900 dark:text-sky-200">
+              <Sparkles className="w-4 h-4 text-sky-600 dark:text-sky-400 mt-0.5 shrink-0" />
+              <div>
+                <span className="font-bold">Biometric Punching Machine & Auto Break Detection Enabled:</span>
+                <span className="text-slate-600 dark:text-slate-300 block mt-0.5 text-[11px]">
+                  Supports multi-column punches (<code className="bg-white dark:bg-slate-800 px-1 py-0.2 rounded font-mono text-[10px]">In 1, Out 1, In 2, Out 2...</code>), punch sequence strings (<code className="bg-white dark:bg-slate-800 px-1 py-0.2 rounded font-mono text-[10px]">09:00, 13:00, 14:00, 18:00</code>), or multi-row machine logs. All gaps between intermediate check-out and check-in are automatically calculated as break time and deducted from total work hours!
+                </span>
+              </div>
+            </div>
+
             {/* Input Options: File Upload or Raw Paste */}
             <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                   <Upload className="w-3.5 h-3.5 text-emerald-500" />
-                  Option A: Choose CSV File
+                  Option A: Choose CSV / Biometric File
                 </Label>
                 <input
                   type="file"
@@ -2555,10 +2785,10 @@ export default function AttendanceLeavePage() {
 
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  Option B: Paste CSV Data
+                  Option B: Paste Biometric / CSV Data
                 </Label>
                 <Textarea
-                  placeholder="Employee Code,Date (YYYY-MM-DD),Check In,Check Out,Status,OT Hours..."
+                  placeholder="Employee Code,Date (YYYY-MM-DD),In 1,Out 1,In 2,Out 2,Status..."
                   rows={3}
                   value={bulkCsvText}
                   onChange={(e) => handleParseCsv(e.target.value)}
@@ -2567,28 +2797,28 @@ export default function AttendanceLeavePage() {
               </div>
             </div>
 
-            {/* Preview Table */}
             {/* Parsed Records Table Preview */}
             {parsedAttRecords.length > 0 && (
               <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                    Parsed Records Preview ({parsedAttRecords.length} rows ready)
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                    Parsed Records Preview ({parsedAttRecords.length} employees / days)
                   </span>
                   <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-                    Header row excluded automatically
+                    Header row excluded & punches paired automatically
                   </span>
                 </div>
-                <div className="max-h-60 overflow-y-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                <div className="max-h-64 overflow-y-auto rounded-2xl border border-slate-200 dark:border-slate-800">
                   <Table className="text-xs">
                     <TableHeader className="bg-slate-50 dark:bg-slate-800 sticky top-0">
                       <TableRow>
                         <TableHead className="font-bold text-slate-700 dark:text-slate-300">#</TableHead>
                         <TableHead className="font-bold text-slate-700 dark:text-slate-300">Employee ID / Code</TableHead>
                         <TableHead className="font-bold text-slate-700 dark:text-slate-300">Date</TableHead>
-                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Shift Name</TableHead>
-                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Check In</TableHead>
-                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Check Out</TableHead>
+                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">First In</TableHead>
+                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Last Out</TableHead>
+                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Auto Break Detected</TableHead>
+                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Net Work Hrs</TableHead>
                         <TableHead className="font-bold text-slate-700 dark:text-slate-300">Status</TableHead>
                         <TableHead className="font-bold text-slate-700 dark:text-slate-300">OT Hrs</TableHead>
                       </TableRow>
@@ -2599,13 +2829,37 @@ export default function AttendanceLeavePage() {
                           <TableCell className="font-mono text-slate-400">{idx + 1}</TableCell>
                           <TableCell className="font-bold text-slate-800 dark:text-slate-200">{row.employeeCodeOrId || "—"}</TableCell>
                           <TableCell>{row.date || "—"}</TableCell>
+                          <TableCell className="font-mono font-medium text-emerald-600 dark:text-emerald-400">{row.checkIn || "—"}</TableCell>
+                          <TableCell className="font-mono font-medium text-sky-600 dark:text-sky-400">{row.checkOut || "—"}</TableCell>
                           <TableCell>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 border border-sky-200/50 dark:border-sky-800">
-                              {row.shiftName || "Auto Match"}
+                            {row.breakDurationMinutes > 0 ? (
+                              <div className="space-y-0.5">
+                                {row.breakDurationMinutes > 60 ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200/80 dark:border-rose-800">
+                                    <AlertTriangle className="w-3 h-3 text-rose-600" />
+                                    {row.breakDurationMinutes}m ({row.breakDurationMinutes - 60}m Excess Not Allowed!)
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800">
+                                    <Coffee className="w-3 h-3 text-amber-600" />
+                                    {row.breakDurationMinutes}m (Allowed ≤1h)
+                                  </span>
+                                )}
+                                {row.breakIntervals && row.breakIntervals.length > 0 && (
+                                  <div className="text-[9.5px] text-slate-400 font-mono">
+                                    {row.breakIntervals.map(b => `${b.start}→${b.end}`).join(", ")}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 text-[10px]">No break</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <span className="font-extrabold text-slate-800 dark:text-slate-100">
+                              {row.totalWorkHours} hrs
                             </span>
                           </TableCell>
-                          <TableCell>{row.checkIn || "—"}</TableCell>
-                          <TableCell>{row.checkOut || "—"}</TableCell>
                           <TableCell>
                             <Badge className="text-[10px] uppercase font-bold" variant={row.status === "PRESENT" ? "outline" : "secondary"}>
                               {row.status}
@@ -2854,7 +3108,7 @@ export default function AttendanceLeavePage() {
             {/* Card 2: Logged Hours & Timings */}
             <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
               <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                <Clock className="size-4 text-emerald-500" /> 2. Punch Timings & Logged Hours
+                <Clock className="size-4 text-emerald-500" /> 2. Punch Timings, Break & Logged Hours
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -2880,12 +3134,79 @@ export default function AttendanceLeavePage() {
                 </div>
               </div>
 
+              {/* Break & On-Duty Management Inputs */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <Coffee className="w-3.5 h-3.5 text-amber-500" />
+                      Break Taken (Minutes)
+                    </Label>
+                    <span className="text-[10.5px] text-slate-400">1-Hour Standard</span>
+                  </div>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="5"
+                    placeholder="e.g. 60"
+                    className="rounded-xl mt-1.5 h-10 font-mono"
+                    value={newAtt.breakMinutes ?? 60}
+                    onChange={(e) => setNewAtt({ ...newAtt, breakMinutes: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <Building className="w-3.5 h-3.5 text-sky-500" />
+                      On-Duty / Field Work (Minutes)
+                    </Label>
+                    <span className="text-[10.5px] text-slate-400">Not Counted as Break</span>
+                  </div>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="5"
+                    placeholder="e.g. 0"
+                    className="rounded-xl mt-1.5 h-10 font-mono"
+                    value={newAtt.onDutyMinutes ?? 0}
+                    onChange={(e) => setNewAtt({ ...newAtt, onDutyMinutes: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              {/* Real-time Break Compliance Alert Badge */}
+              {(() => {
+                const rawBreak = Number(newAtt.breakMinutes ?? 60);
+                const onDuty = Number(newAtt.onDutyMinutes ?? 0);
+                const effectiveBreak = Math.max(0, rawBreak - onDuty);
+                if (effectiveBreak > 60) {
+                  return (
+                    <div className="p-3 bg-rose-50 dark:bg-rose-950/40 rounded-xl border border-rose-200 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-300 flex items-center justify-between font-semibold">
+                      <span className="flex items-center gap-1.5 font-bold">
+                        <AlertTriangle className="w-4 h-4 text-rose-600" />
+                        Break Misuse: {effectiveBreak} mins ({effectiveBreak - 60} mins Excess Exceeding 1-Hour Limit!)
+                      </span>
+                      <span className="text-rose-600 font-extrabold text-[11px]">
+                        Penalty Deduction: -{((effectiveBreak - 60) / 60).toFixed(2)} hrs
+                      </span>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5 font-medium">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Break Duration: {effectiveBreak} mins (Compliant within 1-Hour Allowed Limit)</span>
+                  </div>
+                );
+              })()}
+
               {/* Work Hours Breakdown Grid */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
                 <div className="space-y-1">
-                  <Label className="text-[11px] font-bold text-slate-500 uppercase block">Total Work Hours</Label>
-                  <span className="text-lg font-black text-sky-600 dark:text-sky-400 block">
-                    {calculateWorkHours(newAtt.checkIn, newAtt.checkOut)} hrs
+                  <Label className="text-[11px] font-bold text-slate-500 uppercase block">Net Work Hours</Label>
+                  <span className="text-lg font-black text-sky-600 dark:text-sky-400 block font-mono">
+                    {calculateWorkHours(newAtt.checkIn, newAtt.checkOut, newAtt.breakMinutes ?? 60, newAtt.onDutyMinutes ?? 0)} hrs
                   </span>
                 </div>
                 <div>
@@ -3064,64 +3385,69 @@ export default function AttendanceLeavePage() {
 
           <form onSubmit={handleSubmitBreakIncident} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto" noValidate>
             <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Row 1: Employee & Incident Date */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Employee *</Label>
                   {breakIncidentForm.isRowTargeted ? (
-                    <div className="mt-1.5 flex items-center justify-between p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                    <div className="mt-1.5 flex items-center justify-between p-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 h-11">
                       <div className="flex items-center gap-2.5 truncate">
-                        <div className="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 flex items-center justify-center font-extrabold text-xs shrink-0">
+                        <div className="w-7 h-7 rounded-lg bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 flex items-center justify-center font-extrabold text-xs shrink-0">
                           {(breakIncidentForm.targetEmployeeName || "E")[0]}
                         </div>
                         <div className="truncate">
                           <span className="block font-bold text-slate-900 dark:text-white text-xs truncate">
                             {breakIncidentForm.targetEmployeeName || "Selected Employee"}
                           </span>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block leading-none">
                             {breakIncidentForm.targetEmployeeCode} {breakIncidentForm.targetDepartment ? `• ${breakIncidentForm.targetDepartment}` : ""}
                           </span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-200/80 dark:bg-slate-700/80 text-[10px] font-bold text-slate-600 dark:text-slate-300 shrink-0 select-none">
+                      <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-200/80 dark:bg-slate-700/80 text-[10px] font-bold text-slate-600 dark:text-slate-300 shrink-0 select-none">
                         <Lock className="w-3 h-3 text-slate-500" />
                         Locked
                       </div>
                     </div>
                   ) : (
-                    <Select
-                      value={breakIncidentForm.employeeId}
-                      onValueChange={(val) => setBreakIncidentForm({ ...breakIncidentForm, employeeId: val })}
-                    >
-                      <SelectTrigger className="rounded-xl mt-1.5 h-11"><SelectValue placeholder="Choose employee..." /></SelectTrigger>
-                      <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 max-h-56">
-                        {employees.map((e) => (
-                          <SelectItem key={e.id} value={String(e.id)}>
-                            {e.firstName} {e.lastName} ({e.employeeId}) {e.department?.name ? `[${e.department.name}]` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="mt-1.5">
+                      <SearchableSelect
+                        value={breakIncidentForm.employeeId}
+                        onValueChange={(val) => setBreakIncidentForm({ ...breakIncidentForm, employeeId: val })}
+                        placeholder="Search & choose employee..."
+                        searchPlaceholder="Type name, EMP code, or department..."
+                        options={employees.map((e) => ({
+                          value: String(e.id),
+                          label: `${e.firstName} ${e.lastName} (${e.employeeId}) ${e.department?.name ? `[${e.department.name}]` : ""}`,
+                          subLabel: `${e.employeeId} • ${e.department?.name || "General"}`,
+                        }))}
+                        className="h-11 rounded-xl"
+                      />
+                    </div>
                   )}
                 </div>
 
                 <div>
                   <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Incident Date *</Label>
-                  <DateTimePicker
-                    type="date"
-                    date={breakIncidentForm.incidentDate}
-                    setDate={(val) => setBreakIncidentForm({ ...breakIncidentForm, incidentDate: val })}
-                  />
+                  <div className="mt-1.5">
+                    <DateTimePicker
+                      type="date"
+                      date={breakIncidentForm.incidentDate}
+                      setDate={(val) => setBreakIncidentForm({ ...breakIncidentForm, incidentDate: val })}
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Row 2: Break Type & Disciplinary Severity */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Break Type</Label>
                   <Select
                     value={breakIncidentForm.breakType}
                     onValueChange={(val) => setBreakIncidentForm({ ...breakIncidentForm, breakType: val })}
                   >
-                    <SelectTrigger className="rounded-xl mt-1.5 h-10"><SelectValue placeholder="Select type..." /></SelectTrigger>
+                    <SelectTrigger className="rounded-xl mt-1.5 h-11"><SelectValue placeholder="Select type..." /></SelectTrigger>
                     <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                       <SelectItem value="LUNCH_BREAK">Lunch Break Exceeded</SelectItem>
                       <SelectItem value="TEA_BREAK">Tea / Refreshment Overstay</SelectItem>
@@ -3133,11 +3459,31 @@ export default function AttendanceLeavePage() {
                 </div>
 
                 <div>
-                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Excess Time (Mins)</Label>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Disciplinary Severity</Label>
+                  <Select
+                    value={breakIncidentForm.severity}
+                    onValueChange={(val) => setBreakIncidentForm({ ...breakIncidentForm, severity: val })}
+                  >
+                    <SelectTrigger className="rounded-xl mt-1.5 h-11"><SelectValue placeholder="Select severity..." /></SelectTrigger>
+                    <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                      <SelectItem value="WARNING">Verbal / Formal Warning</SelectItem>
+                      <SelectItem value="HALF_DAY_DEDUCTION">Convert Attendance to Half Day</SelectItem>
+                      <SelectItem value="SALARY_DEDUCTION">Direct Work Hours Penalty</SelectItem>
+                      <SelectItem value="VERBAL_ALERT">Subjective Observation Log</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Row 3: Excess Time & Penalty Hours */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Excess Time (Minutes)</Label>
                   <Input
                     type="number"
                     min="1"
-                    className="rounded-xl mt-1.5 h-10"
+                    className="rounded-xl mt-1.5 h-11"
+                    placeholder="e.g. 30"
                     value={breakIncidentForm.excessMinutes}
                     onChange={(e) => {
                       const mins = Number(e.target.value) || 0;
@@ -3151,50 +3497,36 @@ export default function AttendanceLeavePage() {
                 </div>
 
                 <div>
-                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Penalty Deduction (Hrs)</Label>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Penalty Deduction (Hours)</Label>
                   <Input
                     type="number"
                     step="0.25"
                     min="0"
-                    className="rounded-xl mt-1.5 h-10"
+                    className="rounded-xl mt-1.5 h-11"
+                    placeholder="e.g. 0.5"
                     value={breakIncidentForm.deductionHours}
                     onChange={(e) => setBreakIncidentForm({ ...breakIncidentForm, deductionHours: Number(e.target.value) })}
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Disciplinary Severity</Label>
-                  <Select
-                    value={breakIncidentForm.severity}
-                    onValueChange={(val) => setBreakIncidentForm({ ...breakIncidentForm, severity: val })}
-                  >
-                    <SelectTrigger className="rounded-xl mt-1.5 h-10"><SelectValue placeholder="Select severity..." /></SelectTrigger>
-                    <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                      <SelectItem value="WARNING">Verbal / Formal Warning</SelectItem>
-                      <SelectItem value="HALF_DAY_DEDUCTION">Convert Attendance to Half Day</SelectItem>
-                      <SelectItem value="SALARY_DEDUCTION">Direct Work Hours Penalty</SelectItem>
-                      <SelectItem value="VERBAL_ALERT">Subjective Observation Log</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Reported By (HOD Name)</Label>
-                  <Input
-                    className="rounded-xl mt-1.5 h-10"
-                    value={breakIncidentForm.reportedByName}
-                    onChange={(e) => setBreakIncidentForm({ ...breakIncidentForm, reportedByName: e.target.value })}
-                  />
-                </div>
+              {/* Row 4: Reported By */}
+              <div>
+                <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Reported By (HOD Name)</Label>
+                <Input
+                  className="rounded-xl mt-1.5 h-11"
+                  placeholder="Department HOD"
+                  value={breakIncidentForm.reportedByName}
+                  onChange={(e) => setBreakIncidentForm({ ...breakIncidentForm, reportedByName: e.target.value })}
+                />
               </div>
 
+              {/* Row 5: Complaint Details */}
               <div>
                 <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">HOD Complaint Details / Remarks *</Label>
                 <Textarea
                   placeholder="Describe the incidence context, observations, and reason for applying break deduction penalty..."
-                  className="rounded-xl mt-1.5 text-xs bg-slate-50 dark:bg-slate-950 h-24"
+                  className="rounded-xl mt-1.5 text-xs bg-slate-50 dark:bg-slate-950 min-h-24"
                   value={breakIncidentForm.complaintDetails}
                   onChange={(e) => setBreakIncidentForm({ ...breakIncidentForm, complaintDetails: e.target.value })}
                 />
@@ -3308,14 +3640,19 @@ export default function AttendanceLeavePage() {
             <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
               <div>
                 <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">Select Department *</Label>
-                <Select value={bulkRosterDeptId} onValueChange={(val) => setBulkRosterDeptId(val)}>
-                  <SelectTrigger className="rounded-xl mt-1.5 h-10"><SelectValue placeholder="Choose Department..." /></SelectTrigger>
-                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                    {departments.map((d) => (
-                      <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="mt-1.5">
+                  <SearchableSelect
+                    options={departments.map((d) => ({
+                      value: String(d.id),
+                      label: d.name
+                    }))}
+                    value={bulkRosterDeptId}
+                    onValueChange={(val) => setBulkRosterDeptId(val)}
+                    placeholder="Choose Department..."
+                    searchPlaceholder="Search department..."
+                    className="h-10 text-xs"
+                  />
+                </div>
               </div>
 
               <div>
@@ -3349,6 +3686,86 @@ export default function AttendanceLeavePage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Matrix Day Breakdown Modal */}
+      <Dialog open={!!selectedMatrixRecord} onOpenChange={(open) => { if (!open) setSelectedMatrixRecord(null); }}>
+        <DialogContent className="max-w-md border-0 shadow-2xl rounded-3xl p-0 overflow-hidden bg-slate-50 dark:bg-slate-950">
+          <div className="bg-gradient-to-r from-slate-900 via-sky-950 to-slate-900 p-6 text-white">
+            <div className="flex items-center gap-2.5">
+              <span className="p-2 bg-sky-500/20 rounded-xl text-sky-400">
+                <Clock className="size-5" />
+              </span>
+              <div>
+                <DialogTitle className="text-lg font-extrabold tracking-tight">Day Attendance & Break Breakdown</DialogTitle>
+                <DialogDescription className="text-slate-300 text-xs mt-0.5">
+                  {selectedMatrixRecord ? `${selectedMatrixRecord.emp?.firstName || ''} ${selectedMatrixRecord.emp?.lastName || ''} • ${selectedMatrixRecord.dateStr}` : ''}
+                </DialogDescription>
+              </div>
+            </div>
+          </div>
+
+          {selectedMatrixRecord && (
+            <div className="p-6 space-y-4">
+              <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+                <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-100 dark:border-slate-800">
+                  <span className="text-slate-500">Employee</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-100">
+                    {selectedMatrixRecord.emp?.firstName} {selectedMatrixRecord.emp?.lastName} ({selectedMatrixRecord.emp?.employeeId || "—"})
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-100 dark:border-slate-800">
+                  <span className="text-slate-500">Scheduled Shift</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">
+                    {selectedMatrixRecord.rec?.shiftName || selectedMatrixRecord.rec?.shift?.name || "General Shift"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-100 dark:border-slate-800">
+                  <span className="text-slate-500">Check In / Out</span>
+                  <span className="font-mono text-slate-700 dark:text-slate-300 font-medium">
+                    {selectedMatrixRecord.rec?.checkIn ? new Date(selectedMatrixRecord.rec.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "—"} ➔ {selectedMatrixRecord.rec?.checkOut ? new Date(selectedMatrixRecord.rec.checkOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-100 dark:border-slate-800">
+                  <span className="text-slate-500">Break Duration (1h Limit)</span>
+                  <div>
+                    {selectedMatrixRecord.rec?.hasBreakComplaint || selectedMatrixRecord.rec?.breakMisuseMinutes > 0 ? (
+                      <span className="inline-flex items-center gap-1 text-[10.5px] font-black text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/60 px-2 py-0.5 rounded-md border border-rose-300 dark:border-rose-800">
+                        <AlertTriangle className="w-3 h-3 text-rose-600" />
+                        {selectedMatrixRecord.rec.breakMisuseMinutes}m Excess (Not Allowed!)
+                      </span>
+                    ) : selectedMatrixRecord.rec?.captureMethod?.includes("MULTI_PUNCH") ? (
+                      <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800">
+                        <Coffee className="w-3 h-3 text-amber-600" />
+                        60m Break (Allowed ≤1h)
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 text-xs">Standard</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-100 dark:border-slate-800">
+                  <span className="text-slate-500">Net Active Work Hours</span>
+                  <span className="font-extrabold text-sky-600 dark:text-sky-400 text-sm">
+                    {selectedMatrixRecord.rec?.totalWorkHours || 8.0} hrs
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500">Status</span>
+                  <Badge variant={selectedMatrixRecord.rec?.status === "PRESENT" ? "outline" : "secondary"} className="font-bold uppercase text-[10px]">
+                    {selectedMatrixRecord.rec?.status || "PRESENT"}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button type="button" variant="outline" onClick={() => setSelectedMatrixRecord(null)} className="rounded-xl text-xs font-semibold h-9 px-4">
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

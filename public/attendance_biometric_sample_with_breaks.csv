@@ -1,0 +1,4 @@
+Employee Code / ID,Date (YYYY-MM-DD),Shift Name,In 1 (Check In),Out 1 (Lunch Out),In 2 (Lunch In),Out 2 (Day Out),In 3,Out 3,Status,OT Hours
+ASP-2026-0001,2026-08-01,General Shift,09:00,13:00,14:00,18:00,,,PRESENT,0
+ASP-2026-0002,2026-08-01,General Shift,09:00,13:00,14:45,18:30,,,PRESENT,0
+ASP-2024-0099,2026-08-01,General Shift,09:00,11:00,11:15,13:30,14:15,18:00,PRESENT,0

@@ -174,39 +174,28 @@ export default function SalaryStructuresTab() {
   });
   const [rentErrors, setRentErrors] = useState({});
   const [fiscalYears, setFiscalYears] = useState([]);
-  const DEFAULT_INDIAN_BANKS = [
-    { id: 1, name: "HDFC Bank" },
-    { id: 2, name: "ICICI Bank" },
-    { id: 3, name: "State Bank of India" },
-    { id: 4, name: "Axis Bank" },
-    { id: 5, name: "Kotak Mahindra Bank" },
-    { id: 6, name: "Punjab National Bank" },
-    { id: 7, name: "Bank of Baroda" },
-    { id: 8, name: "IndusInd Bank" },
-    { id: 9, name: "Canara Bank" },
-    { id: 10, name: "Union Bank of India" },
-    { id: 11, name: "IDFC FIRST Bank" },
-    { id: 12, name: "Yes Bank" },
-  ];
-  const [banks, setBanks] = useState(DEFAULT_INDIAN_BANKS);
+  const [banks, setBanks] = useState([]);
+  const [banksLoading, setBanksLoading] = useState(false);
 
   useEffect(() => {
     async function fetchBanks() {
+      setBanksLoading(true);
       try {
-        const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-        let res = await apiFetch(`${backendUrl}/staff-hrms/payroll/banks`);
+        let res = await apiFetch("/staff-hrms/payroll/banks");
         if (!res.ok) {
-          res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/banks`);
+          res = await apiFetch("/staff-hrms/onboarding/banks");
         }
         if (res.ok) {
           const data = await res.json();
           const list = Array.isArray(data) ? data : data.data || [];
-          if (list && list.length > 0) {
+          if (Array.isArray(list) && list.length > 0) {
             setBanks(list);
           }
         }
       } catch (err) {
-        console.error("Error fetching banks:", err);
+        console.error("Error fetching banks from Bank table:", err);
+      } finally {
+        setBanksLoading(false);
       }
     }
     fetchBanks();
@@ -224,7 +213,7 @@ export default function SalaryStructuresTab() {
         console.error("Error fetching fiscal years:", e);
       }
     }
-    if (activeTab === "hra") fetchFiscalYears();
+    fetchFiscalYears();
   }, []);
 
   const [taxForm, setTaxForm] = useState({
@@ -966,7 +955,17 @@ export default function SalaryStructuresTab() {
                                 subLabel: `${emp.designation || "Staff"} • ${emp.department || "General"}`
                               }))}
                               value={structForm.employeeId}
-                              onValueChange={(val) => setStructForm({ ...structForm, employeeId: val })}
+                              onValueChange={(val) => {
+                                const selectedEmp = (employees || []).find((emp) => emp.id === val);
+                                setStructForm((prev) => ({
+                                  ...prev,
+                                  employeeId: val,
+                                  bankId: selectedEmp?.bankId ? Number(selectedEmp.bankId) : (selectedEmp?.bank?.id ? Number(selectedEmp.bank.id) : prev.bankId),
+                                  accountNumber: selectedEmp?.accountNumber !== undefined && selectedEmp.accountNumber !== null ? selectedEmp.accountNumber : prev.accountNumber,
+                                  ifscCode: selectedEmp?.ifscCode !== undefined && selectedEmp.ifscCode !== null ? selectedEmp.ifscCode : prev.ifscCode,
+                                  panNumber: selectedEmp?.panNumber !== undefined && selectedEmp.panNumber !== null ? selectedEmp.panNumber : prev.panNumber,
+                                }));
+                              }}
                               placeholder="Search and select employee..."
                               searchPlaceholder="Type employee name, ID, designation, or department..."
                               className={structErrors.employeeId ? 'border-red-500 border-2' : ''}
@@ -1174,13 +1173,13 @@ export default function SalaryStructuresTab() {
                             <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Bank Name</Label>
                             <div className="mt-1.5">
                               <SearchableSelect
-                                options={(banks && banks.length > 0 ? banks : DEFAULT_INDIAN_BANKS).map((b, idx) => ({
-                                  value: String(b.id || idx),
+                                options={(banks || []).map((b) => ({
+                                  value: String(b.id),
                                   label: b.name
                                 }))}
                                 value={structForm.bankId ? String(structForm.bankId) : ""}
                                 onValueChange={(val) => setStructForm({ ...structForm, bankId: val ? Number(val) : "" })}
-                                placeholder="Search & select Bank..."
+                                placeholder={banksLoading ? "Loading banks..." : "Search & select Bank..."}
                                 searchPlaceholder="Type bank name (e.g. HDFC, SBI, ICICI)..."
                                 className={structErrors.bankId ? 'border-red-500 border-2' : ''}
                               />

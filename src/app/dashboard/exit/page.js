@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
@@ -256,27 +257,19 @@ export default function ExitPage() {
                           })()}
                         </div>
                       ) : (
-                        <Select
+                        <SearchableSelect
+                          id="exit-employee"
+                          options={activeEmployees.map((emp) => ({
+                            value: String(emp.id),
+                            label: `${emp.firstName} ${emp.lastName} (${emp.employeeId || ''})`,
+                            subLabel: `${emp.designation || 'Staff'} • ${emp.department?.name || emp.department || 'General'}`
+                          }))}
                           value={exitForm.employeeId}
                           onValueChange={(val) => updateExitField("employeeId", val)}
-                        >
-                          <SelectTrigger id="exit-employee" className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                            <SelectValue placeholder="Select employee..." />
-                          </SelectTrigger>
-                          <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                            {activeEmployees.length > 0 ? (
-                              activeEmployees.map((emp) => (
-                                <SelectItem key={emp.id} value={String(emp.id)}>
-                                  {emp.firstName} {emp.lastName} ({emp.employeeId || ''})
-                                </SelectItem>
-                              ))
-                            ) : (
-                              <div className="p-3 text-xs text-slate-400 italic text-center">
-                                No active employees found.
-                              </div>
-                            )}
-                          </SelectContent>
-                        </Select>
+                          placeholder="Select employee..."
+                          searchPlaceholder="Type employee name or ID..."
+                          className={exitFormErrors.employeeId ? "border-rose-500 border-2" : ""}
+                        />
                       )}
                       <FieldError message={exitFormErrors.employeeId} />
                     </div>

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Badge } from "@/components/ui/badge";
 import {
   Sparkles,
@@ -38,6 +39,36 @@ export default function BulkSalaryMatrixModal({ open, onOpenChange, banks = [] }
   const [matrixData, setMatrixData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [banksList, setBanksList] = useState(banks || []);
+  const [departments, setDepartments] = useState([]);
+
+  useEffect(() => {
+    if (open) {
+      apiFetch("/staff-hrms/recruitment/departments?limit=100")
+        .then((r) => (r.ok ? r.json() : []))
+        .then((data) => {
+          const list = Array.isArray(data.data) ? data.data : (Array.isArray(data) ? data : []);
+          setDepartments(list.filter((d) => d.isActive !== false));
+        })
+        .catch((err) => console.error("Error fetching departments in BulkSalaryMatrixModal:", err));
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (banks && banks.length > 0) {
+      setBanksList(banks);
+    } else if (open) {
+      apiFetch("/staff-hrms/payroll/banks")
+        .then((r) => (r.ok ? r.json() : []))
+        .then((data) => {
+          const list = Array.isArray(data) ? data : data.data || [];
+          if (Array.isArray(list) && list.length > 0) {
+            setBanksList(list);
+          }
+        })
+        .catch((err) => console.error("Error fetching banks in BulkSalaryMatrixModal:", err));
+    }
+  }, [open, banks]);
 
   // Fetch Matrix Data
   const fetchMatrix = async () => {
@@ -198,18 +229,22 @@ export default function BulkSalaryMatrixModal({ open, onOpenChange, banks = [] }
             {/* Department Filter */}
             <div className="flex items-center gap-2 bg-slate-900 p-1.5 rounded-xl border border-slate-800">
               <Filter className="size-3.5 text-slate-400 ml-2" />
-              <Select value={department} onValueChange={setDepartment}>
-                <SelectTrigger className="h-8 w-[160px] border-0 bg-transparent text-xs text-white focus:ring-0">
-                  <SelectValue placeholder="All Departments" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All Departments</SelectItem>
-                  <SelectItem value="Engineering">Engineering</SelectItem>
-                  <SelectItem value="Human Resources">Human Resources</SelectItem>
-                  <SelectItem value="Sales & Marketing">Sales & Marketing</SelectItem>
-                  <SelectItem value="Finance">Finance</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="w-[180px]">
+                <SearchableSelect
+                  options={[
+                    { value: "ALL", label: "All Departments" },
+                    ...(departments || []).map((dept) => ({
+                      value: dept.name,
+                      label: dept.name
+                    }))
+                  ]}
+                  value={department}
+                  onValueChange={setDepartment}
+                  placeholder="All Departments"
+                  searchPlaceholder="Search dept..."
+                  className="h-8 text-xs bg-transparent border-0 text-white"
+                />
+              </div>
             </div>
           </div>
 
@@ -354,7 +389,7 @@ export default function BulkSalaryMatrixModal({ open, onOpenChange, banks = [] }
                             className="h-9 w-full rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-200 px-2 cursor-pointer focus:outline-none focus:ring-1 focus:ring-sky-500"
                           >
                             <option value="">Select Bank</option>
-                            {(banks || []).map((b) => (
+                            {(banksList || []).map((b) => (
                               <option key={b.id} value={String(b.id)}>
                                 {b.name}
                               </option>

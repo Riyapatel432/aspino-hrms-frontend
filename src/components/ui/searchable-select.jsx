@@ -23,6 +23,9 @@ export function SearchableSelect({
 }) {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
+  const [highlightedIndex, setHighlightedIndex] = React.useState(0);
+  const scrollRef = React.useRef(null);
+  const inputRef = React.useRef(null);
 
   const handleSelect = (val) => {
     if (onValueChange) onValueChange(val);
@@ -56,9 +59,48 @@ export function SearchableSelect({
     });
   }, [normalizedOptions, search]);
 
+  React.useEffect(() => {
+    setHighlightedIndex(0);
+  }, [search, open]);
+
   const selectedOption = React.useMemo(() => {
     return normalizedOptions.find((opt) => String(opt.value) === String(value));
   }, [normalizedOptions, value]);
+
+  // Robust wheel scrolling that works seamlessly inside Radix Dialogs/Modals
+  const handleWheel = (e) => {
+    e.stopPropagation();
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop += e.deltaY;
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightedIndex((prev) => {
+        const next = Math.min(prev + 1, Math.max(0, filteredOptions.length - 1));
+        const el = scrollRef.current?.children[next];
+        if (el) el.scrollIntoView({ block: "nearest" });
+        return next;
+      });
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightedIndex((prev) => {
+        const next = Math.max(prev - 1, 0);
+        const el = scrollRef.current?.children[next];
+        if (el) el.scrollIntoView({ block: "nearest" });
+        return next;
+      });
+    } else if (e.key === "Enter") {
+      if (filteredOptions[highlightedIndex]) {
+        e.preventDefault();
+        handleSelect(filteredOptions[highlightedIndex].value);
+      }
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -84,8 +126,10 @@ export function SearchableSelect({
       </PopoverTrigger>
       <PopoverContent
         align="start"
+        onWheel={handleWheel}
+        onTouchMove={(e) => e.stopPropagation()}
         className={cn(
-          "w-[var(--radix-popover-trigger-width)] min-w-[240px] p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-2xl z-50",
+          "w-[var(--radix-popover-trigger-width)] min-w-[260px] p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl z-50 pointer-events-auto",
           contentClassName
         )}
       >
@@ -93,8 +137,10 @@ export function SearchableSelect({
         <div className="relative mb-2 flex items-center">
           <Search className="absolute left-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
           <Input
+            ref={inputRef}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder={searchPlaceholder}
             className="h-9 pl-8 pr-8 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 focus-visible:ring-1"
             autoFocus
@@ -102,31 +148,43 @@ export function SearchableSelect({
           {search && (
             <button
               type="button"
-              onClick={() => setSearch("")}
-              className="absolute right-2.5 p-0.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              onClick={() => {
+                setSearch("");
+                inputRef.current?.focus();
+              }}
+              className="absolute right-2.5 p-0.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
             >
               <X className="h-3 w-3" />
             </button>
           )}
         </div>
 
-        {/* Options List */}
-        <div className="max-h-56 overflow-y-auto space-y-0.5 pr-1">
+        {/* Options List with direct wheel handler & touch support */}
+        <div
+          ref={scrollRef}
+          onWheel={handleWheel}
+          onTouchMove={(e) => e.stopPropagation()}
+          className="max-h-60 overflow-y-auto space-y-0.5 pr-1 overscroll-contain select-none"
+        >
           {filteredOptions.length === 0 ? (
             <div className="py-6 text-center text-xs text-slate-400 dark:text-slate-500">
               {emptyMessage}
             </div>
           ) : (
-            filteredOptions.map((option) => {
+            filteredOptions.map((option, idx) => {
               const isSelected = String(option.value) === String(value);
+              const isHighlighted = idx === highlightedIndex;
               return (
                 <div
-                  key={option.value}
+                  key={option.value || idx}
                   onClick={() => handleSelect(option.value)}
+                  onMouseEnter={() => setHighlightedIndex(idx)}
                   className={cn(
                     "flex items-center justify-between px-3 py-2 text-xs rounded-xl cursor-pointer transition-colors select-none",
                     isSelected
                       ? "bg-sky-50 dark:bg-sky-950/60 text-sky-900 dark:text-sky-200 font-semibold"
+                      : isHighlighted
+                      ? "bg-slate-100 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100"
                       : "hover:bg-slate-100 dark:hover:bg-slate-800/70 text-slate-700 dark:text-slate-300"
                   )}
                 >

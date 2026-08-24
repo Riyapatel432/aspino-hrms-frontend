@@ -164,6 +164,7 @@ export default function HodShiftScheduleHub({
   const [calDate, setCalDate] = useState(new Date());
   const [calDeptFilter, setCalDeptFilter] = useState("ALL");
   const [calEmpFilter, setCalEmpFilter] = useState("ALL");
+  const [selectedDayRosters, setSelectedDayRosters] = useState(null);
 
   // ----------------------------------------------------
   // 4. MATRIX VIEW STATE
@@ -1577,37 +1578,44 @@ export default function HodShiftScheduleHub({
             {/* Department & Employee Filters */}
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-2">
-                <Label className="text-xs font-bold text-slate-500">Dept:</Label>
-                <Select value={calDeptFilter} onValueChange={setCalDeptFilter}>
-                  <SelectTrigger className="h-8 text-xs rounded-xl w-44 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-                    <SelectValue placeholder="All Departments" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                    <SelectItem value="ALL">All Departments</SelectItem>
-                    {departments.map((d) => (
-                      <SelectItem key={d.id} value={String(d.id)}>
-                        {d.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label className="text-xs font-bold text-slate-500 whitespace-nowrap">Dept:</Label>
+                <div className="w-48">
+                  <SearchableSelect
+                    options={[
+                      { value: "ALL", label: "All Departments" },
+                      ...departments.map((d) => ({
+                        value: String(d.id),
+                        label: d.name
+                      }))
+                    ]}
+                    value={calDeptFilter}
+                    onValueChange={setCalDeptFilter}
+                    placeholder="All Departments"
+                    searchPlaceholder="Search departments..."
+                    className="h-8 text-xs"
+                  />
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <Label className="text-xs font-bold text-slate-500">Employee:</Label>
-                <Select value={calEmpFilter} onValueChange={setCalEmpFilter}>
-                  <SelectTrigger className="h-8 text-xs rounded-xl w-48 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-                    <SelectValue placeholder="All Employees" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 max-h-56">
-                    <SelectItem value="ALL">All Employees</SelectItem>
-                    {employees.map((e) => (
-                      <SelectItem key={e.id} value={String(e.id)}>
-                        {e.firstName} {e.lastName} ({e.employeeId})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label className="text-xs font-bold text-slate-500 whitespace-nowrap">Employee:</Label>
+                <div className="w-56">
+                  <SearchableSelect
+                    options={[
+                      { value: "ALL", label: "All Employees" },
+                      ...employees.map((e) => ({
+                        value: String(e.id),
+                        label: `${e.firstName} ${e.lastName} (${e.employeeId})`,
+                        subLabel: `${e.designation || "Staff"} • ${e.department?.name || e.department || "General"}`
+                      }))
+                    ]}
+                    value={calEmpFilter}
+                    onValueChange={setCalEmpFilter}
+                    placeholder="All Employees"
+                    searchPlaceholder="Search employee name or ID..."
+                    className="h-8 text-xs"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -1633,16 +1641,16 @@ export default function HodShiftScheduleHub({
                 return (
                   <div
                     key={index}
-                    className={`min-h-[120px] rounded-2xl p-2 border transition-all flex flex-col justify-between ${
+                    className={`min-h-[160px] rounded-2xl p-2.5 border transition-all flex flex-col justify-between ${
                       item.isCurrentMonth
                         ? isToday
-                          ? "bg-sky-50/50 dark:bg-sky-950/30 border-sky-400 dark:border-sky-600 shadow-sm"
-                          : "bg-slate-50/50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800"
+                          ? "bg-sky-50/50 dark:bg-sky-950/30 border-sky-400 dark:border-sky-600 shadow-sm ring-1 ring-sky-400/30"
+                          : "bg-slate-50/50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
                         : "bg-slate-100/30 dark:bg-slate-950/20 border-slate-100 dark:border-slate-800/40 opacity-40"
                     }`}
                   >
                     {/* Day Number Header */}
-                    <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center justify-between mb-1.5 pb-1 border-b border-slate-100 dark:border-slate-800/60">
                       <span
                         className={`text-xs font-black w-6 h-6 rounded-full flex items-center justify-center ${
                           isToday
@@ -1652,24 +1660,36 @@ export default function HodShiftScheduleHub({
                       >
                         {item.date.getDate()}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDirectAssignDate(dateKey);
-                          setDirectAssignShiftId(shifts[0]?.id || "");
-                          setDirectAssignEmpId(employees[0]?.id || "");
-                          setShowDirectAssignModal(true);
-                        }}
-                        className="text-slate-300 hover:text-sky-500 p-0.5 rounded transition-colors"
-                        title="Add Shift"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        {dayRosters.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDayRosters({ date: dateKey, rosters: dayRosters })}
+                            className="text-[10px] font-extrabold text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 px-1.5 py-0.5 rounded-md hover:bg-sky-50 dark:hover:bg-sky-950/60 transition-colors"
+                            title="View all shifts for this day"
+                          >
+                            {dayRosters.length} Shifts
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDirectAssignDate(dateKey);
+                            setDirectAssignShiftId(shifts[0]?.id || "");
+                            setDirectAssignEmpId(employees[0]?.id || "");
+                            setShowDirectAssignModal(true);
+                          }}
+                          className="text-slate-300 hover:text-sky-500 p-0.5 rounded transition-colors cursor-pointer"
+                          title="Add Shift"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Assigned Shifts Badges */}
-                    <div className="space-y-1 flex-1 overflow-y-auto max-h-24 pr-1">
-                      {dayRosters.slice(0, 4).map((r) => {
+                    <div className="space-y-1 flex-1 overflow-y-auto max-h-[110px] pr-0.5">
+                      {dayRosters.slice(0, 3).map((r) => {
                         const shiftObj = r.shift || shifts.find((s) => String(s.id) === String(r.shiftId));
                         const emp = r.employee || employees.find((e) => String(e.id) === String(r.employeeId));
                         const shiftColor = shiftObj?.color || "#0284c7";
@@ -1678,7 +1698,7 @@ export default function HodShiftScheduleHub({
                           <div
                             key={r.id}
                             onClick={() => handleOpenChangeModal(r)}
-                            className="p-1 rounded-lg text-[10px] font-bold flex items-center justify-between gap-1 cursor-pointer transition-transform hover:scale-[1.02] border"
+                            className="px-1.5 py-1 rounded-lg text-[10.5px] font-bold flex items-center justify-between gap-1 cursor-pointer transition-transform hover:scale-[1.02] border shadow-2xs"
                             style={{
                               backgroundColor: `${shiftColor}15`,
                               color: shiftColor,
@@ -1686,19 +1706,26 @@ export default function HodShiftScheduleHub({
                             }}
                             title={`Click to Change Shift: ${emp?.firstName} ${emp?.lastName} -> ${shiftObj?.name || 'General'}`}
                           >
-                            <span className="truncate flex-1">
+                            <span className="truncate flex-1 font-semibold">
                               {emp?.firstName?.[0]}. {emp?.lastName}
                             </span>
-                            <span className="text-[9px] opacity-80 shrink-0 font-mono">
+                            <span className="text-[9px] opacity-90 shrink-0 font-mono px-1 py-0.2 bg-white/60 dark:bg-black/40 rounded">
                               {shiftObj?.name?.substring(0, 3) || "GEN"}
                             </span>
                           </div>
                         );
                       })}
-                      {dayRosters.length > 4 && (
-                        <span className="text-[9px] text-slate-400 font-bold block text-center">
-                          +{dayRosters.length - 4} more
-                        </span>
+                      {dayRosters.length > 3 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedDayRosters({ date: dateKey, rosters: dayRosters });
+                          }}
+                          className="text-[10px] text-sky-600 dark:text-sky-400 font-bold hover:underline w-full py-1 text-center bg-sky-50 dark:bg-sky-950/60 rounded-lg border border-sky-200 dark:border-sky-800/60 transition-all hover:bg-sky-100 dark:hover:bg-sky-900/60 cursor-pointer block mt-1"
+                        >
+                          +{dayRosters.length - 3} more
+                        </button>
                       )}
                     </div>
                   </div>
@@ -1722,20 +1749,23 @@ export default function HodShiftScheduleHub({
 
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-2">
-                <Label className="text-xs font-bold text-slate-500">Dept:</Label>
-                <Select value={matrixDeptFilter} onValueChange={setMatrixDeptFilter}>
-                  <SelectTrigger className="h-8 text-xs rounded-xl w-44 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-                    <SelectValue placeholder="All Departments" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                    <SelectItem value="ALL">All Departments</SelectItem>
-                    {departments.map((d) => (
-                      <SelectItem key={d.id} value={String(d.id)}>
-                        {d.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label className="text-xs font-bold text-slate-500 whitespace-nowrap">Dept:</Label>
+                <div className="w-48">
+                  <SearchableSelect
+                    options={[
+                      { value: "ALL", label: "All Departments" },
+                      ...departments.map((d) => ({
+                        value: String(d.id),
+                        label: d.name
+                      }))
+                    ]}
+                    value={matrixDeptFilter}
+                    onValueChange={setMatrixDeptFilter}
+                    placeholder="All Departments"
+                    searchPlaceholder="Search departments..."
+                    className="h-8 text-xs"
+                  />
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -2757,18 +2787,18 @@ export default function HodShiftScheduleHub({
           <form onSubmit={handleExecuteDirectAssign} className="space-y-4 mt-2">
             <div className="space-y-1">
               <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Employee</Label>
-              <Select value={directAssignEmpId} onValueChange={setDirectAssignEmpId}>
-                <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-                  <SelectValue placeholder="Select Employee" />
-                </SelectTrigger>
-                <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 max-h-56">
-                  {employees.map((e) => (
-                    <SelectItem key={e.id} value={String(e.id)}>
-                      {e.firstName} {e.lastName} ({e.employeeId})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={employees.map((e) => ({
+                  value: String(e.id),
+                  label: `${e.firstName} ${e.lastName} (${e.employeeId})`,
+                  subLabel: `${e.designation || "Staff"} • ${e.department?.name || e.department || "General"}`
+                }))}
+                value={directAssignEmpId}
+                onValueChange={setDirectAssignEmpId}
+                placeholder="Select Employee..."
+                searchPlaceholder="Search employee name or ID..."
+                className="h-10 text-xs"
+              />
             </div>
 
             <div className="space-y-1">
@@ -2811,6 +2841,95 @@ export default function HodShiftScheduleHub({
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ALL DAY SHIFT ROSTER DETAILS MODAL */}
+      <Dialog open={!!selectedDayRosters} onOpenChange={(open) => !open && setSelectedDayRosters(null)}>
+        <DialogContent className="max-w-lg sm:max-w-xl rounded-3xl p-0 overflow-hidden bg-white dark:bg-slate-900 border dark:border-slate-800 shadow-2xl">
+          <DialogHeader className="p-5 pb-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/70">
+            <DialogTitle className="text-sm font-extrabold flex items-center justify-between text-slate-800 dark:text-white pr-6">
+              <span>Shift Roster for {selectedDayRosters?.date}</span>
+              <Badge variant="outline" className="text-xs bg-sky-50 dark:bg-sky-950 text-sky-600 dark:text-sky-400 border-sky-200 dark:border-sky-800 font-bold">
+                {selectedDayRosters?.rosters?.length || 0} Employees
+              </Badge>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              All assigned employee shift schedules for this date.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-5 max-h-96 overflow-y-auto space-y-2.5">
+            {selectedDayRosters?.rosters?.map((r) => {
+              const shiftObj = r.shift || shifts.find((s) => String(s.id) === String(r.shiftId));
+              const emp = r.employee || employees.find((e) => String(e.id) === String(r.employeeId));
+              const shiftColor = shiftObj?.color || "#0284c7";
+
+              return (
+                <div
+                  key={r.id}
+                  className="p-3 rounded-2xl border flex items-center justify-between gap-3 bg-slate-50/60 dark:bg-slate-950/50 border-slate-200/80 dark:border-slate-800 hover:border-sky-300 dark:hover:border-sky-700 transition-all shadow-2xs"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                      {emp?.firstName} {emp?.lastName}
+                    </p>
+                    <p className="text-[11px] text-slate-400 truncate">
+                      {emp?.employeeId ? `ID: ${emp.employeeId}` : ""} {emp?.department?.name ? `• ${emp.department.name}` : ""} {emp?.designation ? `• ${emp.designation}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="text-[11px] font-bold px-2.5 py-1 rounded-xl border shrink-0"
+                      style={{
+                        backgroundColor: `${shiftColor}15`,
+                        color: shiftColor,
+                        borderColor: `${shiftColor}40`,
+                      }}
+                    >
+                      {shiftObj?.name || "General"}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setSelectedDayRosters(null);
+                        handleOpenChangeModal(r);
+                      }}
+                      className="h-8 px-2.5 text-xs text-slate-500 hover:text-sky-500 cursor-pointer font-semibold rounded-lg"
+                    >
+                      Change
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="p-4 px-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/80 flex items-center justify-between gap-3 w-full">
+            <Button
+              type="button"
+              onClick={() => {
+                const d = selectedDayRosters?.date;
+                setSelectedDayRosters(null);
+                setDirectAssignDate(d);
+                setDirectAssignShiftId(shifts[0]?.id || "");
+                setDirectAssignEmpId(employees[0]?.id || "");
+                setShowDirectAssignModal(true);
+              }}
+              className="bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold rounded-xl h-10 px-5 gap-1.5 shadow-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4" /> Add Shift
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setSelectedDayRosters(null)}
+              className="rounded-xl text-xs font-bold h-10 px-5 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+            >
+              Close
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

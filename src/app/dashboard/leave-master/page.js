@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DataTable } from "@/components/ui/data-table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import {
   Plus,
@@ -342,19 +343,20 @@ export default function LeaveMasterPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Department</Label>
-                <Select value={newLeaveMaster.department} onValueChange={(val) => {
-                  setNewLeaveMaster({ ...newLeaveMaster, department: val });
-                  if (formErrors.department) setFormErrors({ ...formErrors, department: null });
-                }}>
-                  <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                    <SelectValue placeholder="Select..." />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                    {deptOptions.filter(d => d.isActive !== false).map(d => (
-                      <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  options={deptOptions.filter(d => d.isActive !== false).map(d => ({
+                    value: String(d.id),
+                    label: d.name
+                  }))}
+                  value={newLeaveMaster.department}
+                  onValueChange={(val) => {
+                    setNewLeaveMaster({ ...newLeaveMaster, department: val });
+                    if (formErrors.department) setFormErrors({ ...formErrors, department: null });
+                  }}
+                  placeholder="Select department..."
+                  searchPlaceholder="Search departments..."
+                  className={formErrors.department ? "border-rose-500 border-2" : ""}
+                />
                 {formErrors.department && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.department}</span>}
               </div>
               <div className="space-y-1">

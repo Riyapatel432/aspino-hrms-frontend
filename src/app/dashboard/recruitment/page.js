@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch, getErrorMessage } from "@/lib/api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
@@ -34,7 +35,13 @@ import {
   Users,
   Landmark,
   ShieldCheck,
-  Info
+  Info,
+  ClipboardCheck,
+  History,
+  FileUp,
+  AlertCircle,
+  ChevronRight,
+  X
 } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -55,8 +62,31 @@ import { toast } from "sonner";
 export default function RecruitmentPage() {
   const [activeTab, setActiveTab] = useState("requisitions");
   const [viewOfferModal, setViewOfferModal] = useState(null);
+  // CNV Compliance Modal State
+  const [cnvModal, setCnvModal] = useState(null); // { requisition } or null
+  const [cnvData, setCnvData] = useState(null);   // CnvRecord from API
+  const [cnvLoading, setCnvLoading] = useState(false);
+  const [cnvSection, setCnvSection] = useState("overview"); // "overview" | "submit" | "acknowledge"
+  const [cnvFormErrors, setCnvFormErrors] = useState({});
+  const [cnvSubmitForm, setCnvSubmitForm] = useState({
+    employmentExchangeOffice: "",
+    notificationDate: "",
+    submissionMode: "",
+    referenceNumber: "",
+    cnvRemarks: "",
+    submittedBy: "",
+  });
+  const [cnvAckForm, setCnvAckForm] = useState({
+    acknowledgementNumber: "",
+    acknowledgementDate: "",
+    cnvRemarks: "",
+    acknowledgedBy: "",
+  });
+  const [cnvSubmitFile, setCnvSubmitFile] = useState(null);
+  const [cnvAckFile, setCnvAckFile] = useState(null);
+  const [cnvSubmitting, setCnvSubmitting] = useState(false);
   const dispatch = useDispatch();
-  const [users, setUsers] = useState([]); // Might need a RTK hook for users if we care
+  const [users, setUsers] = useState([]);
 
   const {
     requisitions,
@@ -897,6 +927,483 @@ export default function RecruitmentPage() {
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // CNV Compliance Modal Handlers
+  // ---------------------------------------------------------------------------
+
+  const openCnvModal = async (row) => {
+    setCnvModal(row);
+    setCnvSection("overview");
+    setCnvFormErrors({});
+    setCnvSubmitForm({ employmentExchangeOffice: "", notificationDate: "", submissionMode: "", referenceNumber: "", cnvRemarks: "", submittedBy: "" });
+    setCnvAckForm({ acknowledgementNumber: "", acknowledgementDate: "", cnvRemarks: "", acknowledgedBy: "" });
+    setCnvSubmitFile(null);
+    setCnvAckFile(null);
+    setCnvData(null);
+    setCnvLoading(true);
+    try {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/requisitions/${row.id}/cnv`);
+      if (res.ok) {
+        const data = await res.json();
+        setCnvData(data?.cnvRecord || null);
+        // Pre-fill submit form with existing exchange office if known
+        if (data?.cnvRecord?.employmentExchangeOffice) {
+          setCnvSubmitForm(prev => ({ ...prev, employmentExchangeOffice: data.cnvRecord.employmentExchangeOffice }));
+        } else if (row.cnvExchangeOffice) {
+          setCnvSubmitForm(prev => ({ ...prev, employmentExchangeOffice: row.cnvExchangeOffice }));
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load CNV details:", err);
+    } finally {
+      setCnvLoading(false);
+    }
+  };
+
+  const closeCnvModal = () => {
+    setCnvModal(null);
+    setCnvData(null);
+    setCnvLoading(false);
+    setCnvSection("overview");
+    setCnvFormErrors({});
+  };
+
+  const generateCnvNotificationHandler = async () => {
+    if (!cnvModal) return;
+    setCnvSubmitting(true);
+    try {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/requisitions/${cnvModal.id}/cnv/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ performedBy: "HR Manager" }),
+      });
+      if (res.ok) {
+        const genData = await res.json();
+        // Refresh CNV data
+        const detailRes = await apiFetch(`${backendUrl}/staff-hrms/recruitment/requisitions/${cnvModal.id}/cnv`);
+        if (detailRes.ok) {
+          const data = await detailRes.json();
+          setCnvData(data?.cnvRecord || null);
+        }
+        window.open(`/dashboard/recruitment/cnv-print/${cnvModal.id}`, "_blank");
+        toast.success("CNV Notification generated successfully.");
+      } else {
+        const msg = await getErrorMessage(res, "Failed to generate CNV notification");
+        toast.error(msg);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate CNV notification");
+    } finally {
+      setCnvSubmitting(false);
+    }
+  };
+
+  const printCnvNotification = (req) => {
+    if (!req) return;
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      toast.error("Please allow popups to print/download CNV Notification");
+      return;
+    }
+    const now = new Date();
+    const fmtDate = (d) => {
+      const dt = d ? new Date(d) : now;
+      return `${dt.getDate().toString().padStart(2, "0")}/${(dt.getMonth() + 1).toString().padStart(2, "0")}/${dt.getFullYear()}`;
+    };
+    const refNo = `REF/CNV/${now.getFullYear()}/${String(req.id || "1").slice(-4).padStart(4, "0")}`;
+    const exchangeOffice = req.cnvExchangeOffice || req.cnvRecord?.employmentExchangeOffice || "District Employment Exchange";
+
+    printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>CNV Notification - ${req.title}</title>
+  <meta charset="utf-8" />
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 12mm 15mm;
+    }
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      background: #ffffff;
+      color: #0f172a;
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+    }
+    .page-wrapper {
+      width: 100%;
+      min-height: 96vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: #ffffff;
+      box-sizing: border-box;
+      border: 1.5px solid #0f3d70;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #0f3d70 0%, #1e5ba3 100%);
+      color: #ffffff;
+      padding: 22px 30px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3.5px solid #f59e0b;
+    }
+    .header-title {
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: #ffffff;
+    }
+    .header-sub {
+      font-size: 10px;
+      color: #cbd5e1;
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+    .header-right {
+      font-size: 10.5px;
+      text-align: right;
+      line-height: 1.6;
+      color: #e2e8f0;
+    }
+    .dept-badge {
+      font-weight: 800;
+      color: #f59e0b;
+      letter-spacing: 0.5px;
+      font-size: 11px;
+    }
+    .body {
+      padding: 24px 30px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .ref-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12.5px;
+      font-weight: 700;
+      color: #334155;
+      border-bottom: 1.5px dashed #cbd5e1;
+      padding-bottom: 10px;
+      margin-bottom: 14px;
+    }
+    .to-block {
+      font-size: 12.5px;
+      color: #1e293b;
+      line-height: 1.6;
+      margin-bottom: 14px;
+    }
+    .subject {
+      font-size: 14px;
+      font-weight: 900;
+      text-align: center;
+      margin: 10px 0 14px;
+      color: #0f3d70;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      padding: 8px 14px;
+      background: #eff6ff;
+      border-radius: 6px;
+      border: 1px solid #bfdbfe;
+    }
+    .legal-clause {
+      font-size: 12px;
+      line-height: 1.7;
+      background: #f8fafc;
+      border-left: 4px solid #0f3d70;
+      padding: 10px 16px;
+      border-radius: 4px;
+      margin-bottom: 16px;
+      color: #334155;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+      margin: 10px 0 16px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    th {
+      background: #0f3d70;
+      color: #ffffff;
+      padding: 10px 14px;
+      text-align: left;
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+    td {
+      padding: 9px 14px;
+      border-bottom: 1px solid #e2e8f0;
+      vertical-align: middle;
+      color: #1e293b;
+    }
+    tr:nth-child(even) td {
+      background: #f8fafc;
+    }
+    .td-label {
+      font-weight: 700;
+      color: #475569;
+      width: 38%;
+      background: #f1f5f9;
+      border-right: 1px solid #e2e8f0;
+    }
+    .closing-text {
+      font-size: 12px;
+      line-height: 1.7;
+      color: #334155;
+      margin: 10px 0 18px;
+      padding: 8px 12px;
+      background: #f8fafc;
+      border-radius: 4px;
+      border: 1px solid #e2e8f0;
+    }
+    .seal-row {
+      margin-top: 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding: 14px 0 6px;
+      border-top: 1px solid #e2e8f0;
+    }
+    .seal-block {
+      text-align: center;
+    }
+    .seal-line {
+      border-top: 1.5px solid #64748b;
+      width: 180px;
+      margin: 0 auto 6px;
+    }
+    .signatory-title {
+      font-size: 12px;
+      font-weight: 800;
+      color: #0f3d70;
+    }
+    .signatory-sub {
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    .seal-circle {
+      height: 75px;
+      width: 110px;
+      border: 1.5px dashed #94a3b8;
+      border-radius: 50%;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .footer {
+      background: #0f3d70;
+      color: #ffffff;
+      padding: 10px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 9.5px;
+      letter-spacing: 0.3px;
+      border-top: 2.5px solid #f59e0b;
+    }
+    @media print {
+      @page {
+        size: A4 portrait;
+        margin: 10mm;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        background: #fff;
+      }
+      .page-wrapper {
+        min-height: 98vh;
+        height: auto;
+        border: 1.5px solid #0f3d70 !important;
+        page-break-after: avoid;
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="page-wrapper">
+  <div class="header">
+    <div>
+      <div class="header-title">ASPINO SPECIALTY CHEMICALS PVT. LTD.</div>
+      <div class="header-sub">CIN: U20297GJ2024PTC150782 &nbsp;|&nbsp; SRN-271, BLK-314, Nakoda Road, Ta-Mangrol, Hathuran, Surat - 394125</div>
+    </div>
+    <div class="header-right">
+      <div class="dept-badge">HUMAN RESOURCES DEPARTMENT</div>
+      <div>info@aspinochemicals.com</div>
+      <div>+91 98259 57173</div>
+    </div>
+  </div>
+
+  <div class="body">
+    <div>
+      <div class="ref-row">
+        <div><strong>Ref. No.:</strong> ${refNo}</div>
+        <div><strong>Date:</strong> ${fmtDate(now)}</div>
+      </div>
+      <div class="to-block">
+        <strong>To,</strong><br/>
+        The Employment Officer / Competent Authority,<br/>
+        <strong>${exchangeOffice}</strong>
+      </div>
+      <div class="subject">Statutory Notification of Vacancy (Act, 1959)</div>
+      <div class="legal-clause">
+        This notification is issued in strict compliance with the statutory provisions of the <strong>Employment Exchanges (Compulsory Notification of Vacancies) Act, 1959</strong> and relevant state rules. The vacancy particulars are submitted below for registration and referral.
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 38%;">Compliance Field</th>
+            <th>Particulars / Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="td-label">Name of Employer / Organization</td><td><strong>Aspino Specialty Chemicals Pvt. Ltd.</strong></td></tr>
+          <tr><td class="td-label">Vacancy / Job Title</td><td><strong style="color: #0f3d70; font-size: 13px;">${req.title || "—"}</strong></td></tr>
+          <tr><td class="td-label">Department / Unit</td><td>${req.department?.name || "—"}</td></tr>
+          <tr><td class="td-label">Number of Vacancies (Headcount)</td><td><strong>${req.headcount || 1} Position(s)</strong></td></tr>
+          <tr><td class="td-label">Minimum Experience Required</td><td>${req.experienceRequired ? `${req.experienceRequired} Year(s)` : "Freshers / Entry Level eligible"}</td></tr>
+          <tr><td class="td-label">Nature of Employment</td><td>Full-Time / Regular & Permanent</td></tr>
+          <tr><td class="td-label">Type of Vacancy</td><td>${req.requisitionType === "REPLACEMENT" ? "Replacement Requirement" : "New Requirement / Expansion"}</td></tr>
+          <tr><td class="td-label">Job Specification / Requirements</td><td>${req.jobSpecification || "As per organizational standard specification"}</td></tr>
+          <tr><td class="td-label">Statutory Reference Number</td><td><span style="font-family: monospace; font-weight: 700;">${refNo}</span></td></tr>
+          <tr><td class="td-label">Official Notification Date</td><td>${fmtDate(now)}</td></tr>
+        </tbody>
+      </table>
+      <div class="closing-text">
+        We request your office to kindly register this notification on record and sponsor / refer eligible candidates conforming to the above specifications. Aspino Specialty Chemicals Pvt. Ltd. practices equal employment opportunity across all categories including persons with benchmark disabilities.
+      </div>
+    </div>
+
+    <div class="seal-row">
+      <div class="seal-block" style="text-align: left;">
+        <div style="height: 50px;"></div>
+        <div class="seal-line" style="margin-left: 0;"></div>
+        <div class="signatory-title">Authorized Signatory</div>
+        <div class="signatory-sub">Aspino Specialty Chemicals Pvt. Ltd.</div>
+      </div>
+      <div class="seal-block">
+        <div class="seal-circle">Official<br/>Company Seal</div>
+      </div>
+      <div class="seal-block" style="text-align: right;">
+        <div style="height: 50px;"></div>
+        <div class="seal-line" style="margin-right: 0;"></div>
+        <div class="signatory-title">Employment Exchange Receipt</div>
+        <div class="signatory-sub">Receiving Officer Signature & Seal</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div>Ref: ${refNo} &nbsp;|&nbsp; Generated on ${fmtDate(now)}</div>
+    <div>System Generated Statutory Record &nbsp;|&nbsp; Aspino HRMS Portal</div>
+  </div>
+</div>
+<script>
+  window.onload = function() {
+    window.focus();
+    window.print();
+  };
+</script>
+</body>
+</html>`);
+    printWindow.document.close();
+  };
+
+  const handleCnvSubmit = async (e) => {
+    e.preventDefault();
+    const errs = {};
+    if (!cnvSubmitForm.employmentExchangeOffice?.trim()) errs.employmentExchangeOffice = "Employment Exchange / Authority name is required.";
+    if (!cnvSubmitForm.notificationDate) errs.notificationDate = "Notification date is required.";
+    if (!cnvSubmitForm.submissionMode) errs.submissionMode = "Please select a submission mode.";
+    if (Object.keys(errs).length > 0) { setCnvFormErrors(errs); return; }
+    setCnvFormErrors({});
+    setCnvSubmitting(true);
+    try {
+      const formData = new FormData();
+      Object.entries(cnvSubmitForm).forEach(([k, v]) => { if (v) formData.append(k, v); });
+      if (cnvSubmitFile) formData.append("document", cnvSubmitFile);
+      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/requisitions/${cnvModal.id}/cnv/submit`, {
+        method: "POST",
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCnvData(data);
+        setCnvSection("overview");
+        dispatch(fetchRequisitions({ page: reqPage, limit: reqRows, search: reqSearch, sortBy: reqSortBy, sortOrder: reqSortOrder }));
+        toast.success("CNV Submission recorded. Status updated to Notified.");
+      } else {
+        const msg = await getErrorMessage(res, "Failed to record CNV submission");
+        toast.error(msg);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to record CNV submission");
+    } finally {
+      setCnvSubmitting(false);
+    }
+  };
+
+  const handleCnvAcknowledge = async (e) => {
+    e.preventDefault();
+    const errs = {};
+    if (!cnvAckForm.acknowledgementNumber?.trim()) errs.acknowledgementNumber = "Acknowledgement number is required.";
+    if (!cnvAckForm.acknowledgementDate) errs.acknowledgementDate = "Acknowledgement date is required.";
+    if (Object.keys(errs).length > 0) { setCnvFormErrors(errs); return; }
+    setCnvFormErrors({});
+    setCnvSubmitting(true);
+    try {
+      const formData = new FormData();
+      Object.entries(cnvAckForm).forEach(([k, v]) => { if (v) formData.append(k, v); });
+      if (cnvAckFile) formData.append("document", cnvAckFile);
+      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/requisitions/${cnvModal.id}/cnv/acknowledge`, {
+        method: "POST",
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCnvData(data);
+        setCnvSection("overview");
+        dispatch(fetchRequisitions({ page: reqPage, limit: reqRows, search: reqSearch, sortBy: reqSortBy, sortOrder: reqSortOrder }));
+        toast.success("CNV Acknowledgement recorded. Status updated to Acknowledged.");
+      } else {
+        const msg = await getErrorMessage(res, "Failed to record CNV acknowledgement");
+        toast.error(msg);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to record CNV acknowledgement");
+    } finally {
+      setCnvSubmitting(false);
+    }
+  };
+
   const getOrdinal = (n) => {
     const s = ["th", "st", "nd", "rd"];
     const v = n % 100;
@@ -1383,7 +1890,26 @@ export default function RecruitmentPage() {
                           Auto-fills Role & Dept
                         </span>
                       </div>
-                      <Select
+                      <SearchableSelect
+                        options={dropdownEmployees.map((emp) => {
+                          const exitType = emp.exitProcess?.type;
+                          const exitTag = exitType === 'RESIGNATION'
+                            ? 'Resigned'
+                            : exitType === 'TERMINATION'
+                              ? 'Terminated'
+                              : emp.status === 'EXITING'
+                                ? 'Exiting'
+                                : emp.status === 'RELIEVED'
+                                  ? 'Relieved'
+                                  : 'Resigned';
+                          const sal = getEmployeeSalaryInfo(emp);
+                          const expDetails = getEmployeeExperienceDetails(emp);
+                          return {
+                            value: String(emp.id),
+                            label: `${emp.firstName} ${emp.lastName} (${emp.employeeId || "No ID"})`,
+                            subLabel: `${emp.designation || "Staff"} ${emp.department?.name ? `• ${emp.department.name}` : ""} • [${exitTag}] • [Exp: ${expDetails.totalExp}] ${sal.annualCtc > 0 ? `• [CTC: ${sal.formattedCtc}]` : ""}`
+                          };
+                        })}
                         value={newReq.replacementForEmployeeId || ""}
                         onValueChange={(val) => {
                           const emp = dropdownEmployees.find(e => String(e.id) === String(val));
@@ -1427,36 +1953,10 @@ export default function RecruitmentPage() {
                             toast.info(`Matched & Auto-fetched "${emp.designation || 'Role'}" (${detailsStr})`);
                           }
                         }}
-                      >
-                        <SelectTrigger className="h-10 text-xs rounded-xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800/60 w-full">
-                          <SelectValue placeholder="Select resigned or terminated employee..." />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 max-h-60">
-                          {dropdownEmployees.length === 0 ? (
-                            <SelectItem value="none" disabled>No resigned or terminated employees found</SelectItem>
-                          ) : (
-                            dropdownEmployees.map((emp) => {
-                              const exitType = emp.exitProcess?.type;
-                              const exitTag = exitType === 'RESIGNATION'
-                                ? 'Resigned'
-                                : exitType === 'TERMINATION'
-                                  ? 'Terminated'
-                                  : emp.status === 'EXITING'
-                                    ? 'Exiting'
-                                    : emp.status === 'RELIEVED'
-                                      ? 'Relieved'
-                                      : 'Resigned';
-                              const sal = getEmployeeSalaryInfo(emp);
-                              const expDetails = getEmployeeExperienceDetails(emp);
-                              return (
-                                <SelectItem key={emp.id} value={String(emp.id)}>
-                                  {emp.firstName} {emp.lastName} ({emp.employeeId || "No ID"}) — {emp.designation || "Staff"} {emp.department?.name ? `[${emp.department.name}]` : ""} • [{exitTag}] • [Exp: {expDetails.totalExp} | Tenure: {expDetails.companyTenure}] {sal.annualCtc > 0 ? `• [CTC: ${sal.formattedCtc}]` : ""}
-                                </SelectItem>
-                              );
-                            })
-                          )}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Select resigned or terminated employee..."
+                        searchPlaceholder="Type employee name, ID, or department..."
+                        className="h-10 text-xs bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800/60"
+                      />
                       {formErrors.replacementForEmployeeId && (
                         <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.replacementForEmployeeId}</span>
                       )}
@@ -1514,24 +2014,23 @@ export default function RecruitmentPage() {
                     {formErrors.title && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.title}</span>}
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Department</Label>
-                    <Select value={newReq.departmentId} onValueChange={(val) => {
-                      setNewReq({ ...newReq, departmentId: val });
-                      if (formErrors.departmentId) setFormErrors({ ...formErrors, departmentId: null });
-                    }}>
-                      <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                        <SelectValue placeholder="Select..." />
-                      </SelectTrigger>
-                      <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                        {departments.filter(dept => dept.isActive !== false || (newReq.id && String(dept.id) === String(newReq.departmentId))).map((dept) => (
-                          <SelectItem key={dept.id} value={String(dept.id)}>
-                            {dept.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {formErrors.departmentId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.departmentId}</span>}
-                  </div>
+                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Department</Label>
+                      <SearchableSelect
+                        options={departments.filter(dept => dept.isActive !== false || (newReq.id && String(dept.id) === String(newReq.departmentId))).map((dept) => ({
+                          value: String(dept.id),
+                          label: dept.name
+                        }))}
+                        value={newReq.departmentId}
+                        onValueChange={(val) => {
+                          setNewReq({ ...newReq, departmentId: val });
+                          if (formErrors.departmentId) setFormErrors({ ...formErrors, departmentId: null });
+                        }}
+                        placeholder="Search & select department..."
+                        searchPlaceholder="Type department name..."
+                        className={formErrors.departmentId ? "border-rose-500 border-2" : ""}
+                      />
+                      {formErrors.departmentId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.departmentId}</span>}
+                    </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Headcount</Label>
@@ -1802,34 +2301,58 @@ export default function RecruitmentPage() {
                     },
                     {
                       key: "cnvStatus",
-                      label: "CNV (Act 1959)",
+                      label: "CNV",
                       render: (row) => {
                         const isCnv = row.isCnvApplicable;
-                        const status = row.cnvStatus;
+                        // Determine effective status — prefer CnvRecord status, fall back to JobRequisition cnvStatus string
+                        const cnvRecordStatus = row.cnvRecord?.cnvStatus;
+                        const legacyStatus = row.cnvStatus;
+                        const status = cnvRecordStatus || legacyStatus;
+
                         if (!isCnv) {
                           return (
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400" title={row.cnvExemptionReason ? `Exempted: ${row.cnvExemptionReason}` : "CNV Not Applicable"}>
-                              {row.cnvExemptionReason ? "Exempted" : "N/A"}
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700" title={row.cnvExemptionReason ? `Exemption: ${row.cnvExemptionReason}` : "CNV Not Applicable"}>
+                              N/A
                             </span>
                           );
                         }
-                        const isNotified = status === "NOTIFIED" || status === "ACKNOWLEDGED";
-                        return (
-                          <div className="space-y-0.5">
-                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md border ${
-                              isNotified
-                                ? "bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800"
-                                : "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800"
-                            }`}>
-                              <Landmark className="w-2.5 h-2.5" />
-                              {status === "ACKNOWLEDGED" ? "CNV Ack" : status === "NOTIFIED" ? "CNV Notified" : "CNV Pending"}
-                            </span>
-                            {row.cnvRefNumber && (
-                              <span className="block text-[9.5px] font-mono text-slate-500 dark:text-slate-400 truncate max-w-[110px]" title={`Ref: ${row.cnvRefNumber}`}>
-                                #{row.cnvRefNumber}
+
+                        if (status === "ACKNOWLEDGED") {
+                          return (
+                            <div className="space-y-0.5">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md border bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800">
+                                <CheckCircle className="w-2.5 h-2.5" />
+                                CNV Ack ✓
                               </span>
-                            )}
-                          </div>
+                              {(row.cnvRecord?.acknowledgementNumber || row.cnvRefNumber) && (
+                                <span className="block text-[9.5px] font-mono text-slate-500 dark:text-slate-400 truncate max-w-[110px]" title={`Ack: ${row.cnvRecord?.acknowledgementNumber || row.cnvRefNumber}`}>
+                                  #{row.cnvRecord?.acknowledgementNumber || row.cnvRefNumber}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        }
+                        if (status === "NOTIFIED") {
+                          return (
+                            <div className="space-y-0.5">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md border bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800">
+                                <Send className="w-2.5 h-2.5" />
+                                CNV Notified
+                              </span>
+                              {(row.cnvRecord?.referenceNumber || row.cnvRefNumber) && (
+                                <span className="block text-[9.5px] font-mono text-slate-500 dark:text-slate-400 truncate max-w-[110px]" title={`Ref: ${row.cnvRecord?.referenceNumber || row.cnvRefNumber}`}>
+                                  #{row.cnvRecord?.referenceNumber || row.cnvRefNumber}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        }
+                        // Default: PENDING_NOTIFICATION or any other
+                        return (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md border bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800">
+                            <Landmark className="w-2.5 h-2.5" />
+                            Pending CNV
+                          </span>
                         );
                       },
                     },
@@ -1858,7 +2381,17 @@ export default function RecruitmentPage() {
                       label: "Actions",
                       sortable: false,
                       render: (row) => (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {/* CNV Compliance Action — only when CNV is applicable */}
+                          {row.isCnvApplicable && (
+                            <button
+                              onClick={() => openCnvModal(row)}
+                              className="p-1.5 bg-white dark:bg-slate-800 text-indigo-500 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-500 hover:text-white hover:border-indigo-500 dark:hover:bg-indigo-500 rounded-lg transition-all"
+                              title="CNV Compliance"
+                            >
+                              <ClipboardCheck className="w-4 h-4" />
+                            </button>
+                          )}
                           <button
                             onClick={() => {
                               setNewReq({
@@ -1873,10 +2406,10 @@ export default function RecruitmentPage() {
                                 replacementForEmployeeId: row.replacementForEmployeeId || "",
                                 raisedBy: row.raisedBy,
                                 isCnvApplicable: Boolean(row.isCnvApplicable),
-                                cnvExchangeOffice: row.cnvExchangeOffice || "",
+                                cnvExchangeOffice: row.cnvExchangeOffice || row.cnvRecord?.employmentExchangeOffice || "",
                                 cnvRefNumber: row.cnvRefNumber || "",
                                 cnvNotificationDate: row.cnvNotificationDate ? String(row.cnvNotificationDate).split("T")[0] : "",
-                                cnvStatus: row.cnvStatus || (row.isCnvApplicable ? "PENDING_NOTIFICATION" : "NOT_REQUIRED"),
+                                cnvStatus: row.cnvRecord?.cnvStatus || row.cnvStatus || (row.isCnvApplicable ? "PENDING_NOTIFICATION" : "NOT_REQUIRED"),
                                 cnvExemptionReason: row.cnvExemptionReason || ""
                               });
                             }}
@@ -3139,6 +3672,340 @@ export default function RecruitmentPage() {
             : ""
         }
       />
+
+      {/* CNV Compliance Modal */}
+      {cnvModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl w-full max-w-2xl shadow-2xl relative my-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-100 dark:bg-indigo-950/50 rounded-xl">
+                  <ClipboardCheck className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <div>
+                  <h2 className="font-extrabold text-slate-900 dark:text-white text-base leading-tight">CNV Compliance</h2>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">Vacancy Notification Workflow</p>
+                </div>
+              </div>
+              <button onClick={closeCnvModal} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 transition-all">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+              {/* Vacancy Info Panel */}
+              <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 space-y-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <Briefcase className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  <span className="text-xs font-extrabold text-slate-600 dark:text-slate-300 uppercase tracking-wider">Vacancy Details</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div><span className="font-semibold text-slate-500">Job Title:</span> <span className="font-bold text-slate-800 dark:text-white">{cnvModal.title}</span></div>
+                  <div><span className="font-semibold text-slate-500">Department:</span> <span className="font-bold text-slate-800 dark:text-white">{cnvModal.department?.name || "—"}</span></div>
+                  <div><span className="font-semibold text-slate-500">Headcount:</span> <span className="font-bold text-slate-800 dark:text-white">{cnvModal.headcount}</span></div>
+                  <div><span className="font-semibold text-slate-500">Type:</span> <span className="font-bold text-slate-800 dark:text-white">{cnvModal.requisitionType === "REPLACEMENT" ? "Replacement" : "New Requirement"}</span></div>
+                  {cnvModal.experienceRequired > 0 && <div><span className="font-semibold text-slate-500">Min. Exp:</span> <span className="font-bold text-slate-800 dark:text-white">{cnvModal.experienceRequired} yr(s)</span></div>}
+                  <div><span className="font-semibold text-slate-500">Raised By:</span> <span className="font-bold text-slate-800 dark:text-white">{cnvModal.raisedBy}</span></div>
+                </div>
+                {cnvModal.cnvExchangeOffice && (
+                  <div className="text-xs mt-1"><span className="font-semibold text-slate-500">Exchange / Authority:</span> <span className="font-medium text-indigo-700 dark:text-indigo-300">{cnvModal.cnvExchangeOffice}</span></div>
+                )}
+              </div>
+
+              {/* Workflow Stepper */}
+              {(() => {
+                const status = cnvData?.cnvStatus || cnvModal.cnvStatus || "PENDING_NOTIFICATION";
+                const steps = [
+                  { key: "PENDING_NOTIFICATION", label: "Pending", icon: Landmark, color: "amber" },
+                  { key: "NOTIFIED", label: "Notified", icon: Send, color: "indigo" },
+                  { key: "ACKNOWLEDGED", label: "Acknowledged", icon: CheckCircle, color: "emerald" },
+                ];
+                const currentIdx = steps.findIndex(s => s.key === status);
+                return (
+                  <div className="flex items-center justify-between px-2">
+                    {steps.map((step, i) => {
+                      const isCompleted = i < currentIdx;
+                      const isCurrent = i === currentIdx;
+                      const StepIcon = step.icon;
+                      const colorMap = {
+                        amber: { active: "bg-amber-500 text-white border-amber-500", done: "bg-amber-100 dark:bg-amber-950/40 text-amber-600 border-amber-300", inactive: "bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700" },
+                        indigo: { active: "bg-indigo-500 text-white border-indigo-500", done: "bg-indigo-100 dark:bg-indigo-950/40 text-indigo-600 border-indigo-300", inactive: "bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700" },
+                        emerald: { active: "bg-emerald-500 text-white border-emerald-500", done: "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 border-emerald-300", inactive: "bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700" },
+                      };
+                      const cls = isCompleted ? colorMap[step.color].done : isCurrent ? colorMap[step.color].active : colorMap.amber.inactive;
+                      return (
+                        <div key={step.key} className="flex items-center flex-1">
+                          <div className="flex flex-col items-center gap-1">
+                            <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${cls}`}>
+                              <StepIcon className="w-3.5 h-3.5" />
+                            </div>
+                            <span className={`text-[10px] font-bold ${isCurrent ? "text-slate-800 dark:text-white" : isCompleted ? "text-slate-600 dark:text-slate-300" : "text-slate-400"}`}>{step.label}</span>
+                          </div>
+                          {i < steps.length - 1 && (
+                            <div className={`flex-1 h-0.5 mx-2 mb-4 rounded-full ${isCompleted ? "bg-indigo-400" : "bg-slate-200 dark:bg-slate-700"}`} />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
+              {cnvLoading ? (
+                <div className="flex items-center justify-center py-8 gap-3 text-slate-400">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span className="text-sm font-medium">Loading CNV details…</span>
+                </div>
+              ) : (
+                <>
+                  {/* Action Section */}
+                  {cnvSection === "overview" && (() => {
+                    const status = cnvData?.cnvStatus || cnvModal.cnvStatus || "PENDING_NOTIFICATION";
+                    return (
+                      <div className="space-y-3">
+                        {/* Current Status Info */}
+                        {status === "PENDING_NOTIFICATION" && (
+                          <div className="rounded-2xl border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-950/20 p-4 space-y-3">
+                            <div className="flex items-start gap-2">
+                              <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                              <p className="text-xs text-amber-800 dark:text-amber-300 font-medium">Vacancy notification has not been submitted to the Employment Exchange / Designated Authority yet.</p>
+                            </div>
+                            <div className="flex flex-col sm:flex-row gap-2">
+                              <Button
+                                type="button"
+                                onClick={generateCnvNotificationHandler}
+                                disabled={cnvSubmitting}
+                                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold h-9 flex items-center gap-2"
+                              >
+                                {cnvSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                                Generate & Print CNV Notification
+                              </Button>
+                              <Button
+                                type="button"
+                                onClick={() => setCnvSection("submit")}
+                                className="flex-1 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold h-9 flex items-center gap-2"
+                              >
+                                <Send className="w-3.5 h-3.5" />
+                                Record Submission
+                              </Button>
+                            </div>
+                            {cnvData?.notificationGeneratedAt && (
+                              <p className="text-[10px] text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                                <CheckCircle className="w-3 h-3" />
+                                Notification generated on {new Date(cnvData.notificationGeneratedAt).toLocaleDateString("en-IN")}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {status === "NOTIFIED" && (
+                          <div className="rounded-2xl border border-indigo-200 dark:border-indigo-800/50 bg-indigo-50 dark:bg-indigo-950/20 p-4 space-y-3">
+                            <div className="text-xs font-bold text-indigo-800 dark:text-indigo-300 flex items-center gap-2">
+                              <Send className="w-4 h-4" />
+                              CNV Submitted — Awaiting Acknowledgement
+                            </div>
+                            {cnvData && (
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                {cnvData.employmentExchangeOffice && <div><span className="font-semibold text-slate-500">Authority:</span> <span className="font-medium text-indigo-700 dark:text-indigo-300">{cnvData.employmentExchangeOffice}</span></div>}
+                                {cnvData.notificationDate && <div><span className="font-semibold text-slate-500">Notified On:</span> <span className="font-medium">{new Date(cnvData.notificationDate).toLocaleDateString("en-IN")}</span></div>}
+                                {cnvData.submissionMode && <div><span className="font-semibold text-slate-500">Mode:</span> <span className="font-medium">{cnvData.submissionMode.replace("_", " ")}</span></div>}
+                                {cnvData.referenceNumber && <div><span className="font-semibold text-slate-500">Ref No.:</span> <span className="font-mono font-bold text-indigo-700 dark:text-indigo-300">#{cnvData.referenceNumber}</span></div>}
+                              </div>
+                            )}
+                            <Button
+                              type="button"
+                              onClick={() => setCnvSection("acknowledge")}
+                              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold h-9 flex items-center gap-2"
+                            >
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              Record Acknowledgement from Authority
+                            </Button>
+                          </div>
+                        )}
+
+                        {status === "ACKNOWLEDGED" && (
+                          <div className="rounded-2xl border border-emerald-200 dark:border-emerald-800/50 bg-emerald-50 dark:bg-emerald-950/20 p-4 space-y-2">
+                            <div className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                              <CheckCircle className="w-4 h-4" />
+                              CNV Compliance Complete — Acknowledged ✓
+                            </div>
+                            {cnvData && (
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                {cnvData.employmentExchangeOffice && <div><span className="font-semibold text-slate-500">Authority:</span> <span className="font-medium">{cnvData.employmentExchangeOffice}</span></div>}
+                                {cnvData.notificationDate && <div><span className="font-semibold text-slate-500">Submitted On:</span> <span className="font-medium">{new Date(cnvData.notificationDate).toLocaleDateString("en-IN")}</span></div>}
+                                {cnvData.submissionMode && <div><span className="font-semibold text-slate-500">Mode:</span> <span className="font-medium">{cnvData.submissionMode.replace("_", " ")}</span></div>}
+                                {cnvData.referenceNumber && <div><span className="font-semibold text-slate-500">Ref No.:</span> <span className="font-mono font-bold">#{cnvData.referenceNumber}</span></div>}
+                                {cnvData.acknowledgementNumber && <div><span className="font-semibold text-slate-500">Ack. No.:</span> <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300">#{cnvData.acknowledgementNumber}</span></div>}
+                                {cnvData.acknowledgementDate && <div><span className="font-semibold text-slate-500">Ack. Date:</span> <span className="font-medium">{new Date(cnvData.acknowledgementDate).toLocaleDateString("en-IN")}</span></div>}
+                                {cnvData.acknowledgedBy && <div className="col-span-2"><span className="font-semibold text-slate-500">Acknowledged By:</span> <span className="font-medium">{cnvData.acknowledgedBy}</span></div>}
+                                {cnvData.cnvRemarks && <div className="col-span-2"><span className="font-semibold text-slate-500">Remarks:</span> <span className="font-medium italic text-slate-600 dark:text-slate-400">{cnvData.cnvRemarks}</span></div>}
+                              </div>
+                            )}
+                            {cnvData?.acknowledgementDocumentUrl && (
+                              <a href={`${backendUrl}${cnvData.acknowledgementDocumentUrl}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 font-semibold hover:underline">
+                                <FileUp className="w-3.5 h-3.5" />
+                                View Acknowledgement Document
+                              </a>
+                            )}
+                          </div>
+                        )}
+
+                        {/* CNV History / Audit Trail */}
+                        {cnvData?.history && cnvData.history.length > 0 && (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <History className="w-3.5 h-3.5 text-slate-400" />
+                              <span className="text-[11px] font-extrabold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Compliance Audit Trail</span>
+                            </div>
+                            <div className="space-y-2">
+                              {[...cnvData.history].reverse().map((h, i) => {
+                                const actionColor = h.action === "ACKNOWLEDGED" || h.action === "ACKNOWLEDGEMENT_RECORDED" ? "emerald"
+                                  : h.action === "SUBMISSION_RECORDED" ? "indigo"
+                                  : h.action === "NOTIFICATION_GENERATED" ? "sky"
+                                  : "slate";
+                                const colorMap2 = {
+                                  emerald: "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400",
+                                  indigo: "bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400",
+                                  sky: "bg-sky-100 dark:bg-sky-950/40 text-sky-700 dark:text-sky-400",
+                                  slate: "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400",
+                                };
+                                return (
+                                  <div key={h.id || i} className="flex gap-3 items-start">
+                                    <div className={`mt-0.5 p-1.5 rounded-full shrink-0 ${colorMap2[actionColor]}`}>
+                                      <ChevronRight className="w-2.5 h-2.5" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded ${colorMap2[actionColor]}`}>{h.action.replace(/_/g, " ")}</span>
+                                        <span className="text-[9.5px] text-slate-400 dark:text-slate-500">{new Date(h.createdAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</span>
+                                        {h.performedBy && <span className="text-[9.5px] text-slate-500 dark:text-slate-400">by {h.performedBy}</span>}
+                                      </div>
+                                      <p className="text-[10.5px] text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">{h.description}</p>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Record Submission Form */}
+                  {cnvSection === "submit" && (
+                    <form onSubmit={handleCnvSubmit} className="space-y-3" noValidate>
+                      <div className="flex items-center gap-2 mb-1">
+                        <Send className="w-4 h-4 text-amber-500" />
+                        <h3 className="font-extrabold text-sm text-slate-800 dark:text-white">Record CNV Submission</h3>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Employment Exchange / Designated Authority <span className="text-rose-500">*</span></Label>
+                        <Input
+                          placeholder="e.g. District Employment Exchange, Industrial Area"
+                          className="h-9 text-xs"
+                          value={cnvSubmitForm.employmentExchangeOffice}
+                          onChange={e => { setCnvSubmitForm(p => ({ ...p, employmentExchangeOffice: e.target.value })); setCnvFormErrors(p => ({ ...p, employmentExchangeOffice: null })); }}
+                        />
+                        {cnvFormErrors.employmentExchangeOffice && <span className="text-rose-500 text-[10.5px] font-bold">{cnvFormErrors.employmentExchangeOffice}</span>}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Notification Date <span className="text-rose-500">*</span></Label>
+                          <DateTimePicker type="date" date={cnvSubmitForm.notificationDate} setDate={val => { setCnvSubmitForm(p => ({ ...p, notificationDate: val })); setCnvFormErrors(p => ({ ...p, notificationDate: null })); }} />
+                          {cnvFormErrors.notificationDate && <span className="text-rose-500 text-[10.5px] font-bold">{cnvFormErrors.notificationDate}</span>}
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Submission Mode <span className="text-rose-500">*</span></Label>
+                          <Select value={cnvSubmitForm.submissionMode} onValueChange={val => { setCnvSubmitForm(p => ({ ...p, submissionMode: val })); setCnvFormErrors(p => ({ ...p, submissionMode: null })); }}>
+                            <SelectTrigger className="h-9 text-xs rounded-lg bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 w-full">
+                              <SelectValue placeholder="Select mode..." />
+                            </SelectTrigger>
+                            <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                              <SelectItem value="ONLINE_PORTAL">Online Portal</SelectItem>
+                              <SelectItem value="EMAIL">Email</SelectItem>
+                              <SelectItem value="PHYSICAL">Physical / In-Person</SelectItem>
+                              <SelectItem value="OTHER">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {cnvFormErrors.submissionMode && <span className="text-rose-500 text-[10.5px] font-bold">{cnvFormErrors.submissionMode}</span>}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Reference No. <span className="text-slate-400 font-normal">(optional)</span></Label>
+                          <Input placeholder="e.g. CNV-EE-2026/09" className="h-9 text-xs" value={cnvSubmitForm.referenceNumber} onChange={e => setCnvSubmitForm(p => ({ ...p, referenceNumber: e.target.value }))} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Submitted By <span className="text-slate-400 font-normal">(optional)</span></Label>
+                          <Input placeholder="e.g. HR Manager" className="h-9 text-xs" value={cnvSubmitForm.submittedBy} onChange={e => setCnvSubmitForm(p => ({ ...p, submittedBy: e.target.value }))} />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Remarks <span className="text-slate-400 font-normal">(optional)</span></Label>
+                        <textarea placeholder="Any additional notes..." className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs h-16 resize-none" value={cnvSubmitForm.cnvRemarks} onChange={e => setCnvSubmitForm(p => ({ ...p, cnvRemarks: e.target.value }))} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Attach Document <span className="text-slate-400 font-normal">(PDF, max 5MB, optional)</span></Label>
+                        <input type="file" accept="application/pdf" className="text-xs text-slate-600 dark:text-slate-300 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-50 dark:file:bg-indigo-950/40 file:text-indigo-700 dark:file:text-indigo-400 hover:file:bg-indigo-100 w-full" onChange={e => setCnvSubmitFile(e.target.files[0] || null)} />
+                      </div>
+                      <div className="flex gap-2 pt-1">
+                        <Button type="button" variant="outline" onClick={() => { setCnvSection("overview"); setCnvFormErrors({}); }} className="flex-1 rounded-xl font-bold text-xs h-9">Cancel</Button>
+                        <Button type="submit" disabled={cnvSubmitting} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold text-xs h-9 flex items-center gap-2">
+                          {cnvSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                          Record Submission
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Record Acknowledgement Form */}
+                  {cnvSection === "acknowledge" && (
+                    <form onSubmit={handleCnvAcknowledge} className="space-y-3" noValidate>
+                      <div className="flex items-center gap-2 mb-1">
+                        <CheckCircle className="w-4 h-4 text-emerald-500" />
+                        <h3 className="font-extrabold text-sm text-slate-800 dark:text-white">Record Acknowledgement</h3>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Acknowledgement No. <span className="text-rose-500">*</span></Label>
+                          <Input placeholder="e.g. EE/ACK/2026/0042" className="h-9 text-xs" value={cnvAckForm.acknowledgementNumber} onChange={e => { setCnvAckForm(p => ({ ...p, acknowledgementNumber: e.target.value })); setCnvFormErrors(p => ({ ...p, acknowledgementNumber: null })); }} />
+                          {cnvFormErrors.acknowledgementNumber && <span className="text-rose-500 text-[10.5px] font-bold">{cnvFormErrors.acknowledgementNumber}</span>}
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Acknowledgement Date <span className="text-rose-500">*</span></Label>
+                          <DateTimePicker type="date" date={cnvAckForm.acknowledgementDate} setDate={val => { setCnvAckForm(p => ({ ...p, acknowledgementDate: val })); setCnvFormErrors(p => ({ ...p, acknowledgementDate: null })); }} />
+                          {cnvFormErrors.acknowledgementDate && <span className="text-rose-500 text-[10.5px] font-bold">{cnvFormErrors.acknowledgementDate}</span>}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Acknowledged By <span className="text-slate-400 font-normal">(optional)</span></Label>
+                        <Input placeholder="e.g. Employment Exchange Officer" className="h-9 text-xs" value={cnvAckForm.acknowledgedBy} onChange={e => setCnvAckForm(p => ({ ...p, acknowledgedBy: e.target.value }))} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Remarks <span className="text-slate-400 font-normal">(optional)</span></Label>
+                        <textarea placeholder="Any additional notes..." className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs h-16 resize-none" value={cnvAckForm.cnvRemarks} onChange={e => setCnvAckForm(p => ({ ...p, cnvRemarks: e.target.value }))} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">Attach Acknowledgement Document <span className="text-slate-400 font-normal">(PDF, max 5MB, optional)</span></Label>
+                        <input type="file" accept="application/pdf" className="text-xs text-slate-600 dark:text-slate-300 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-50 dark:file:bg-emerald-950/40 file:text-emerald-700 dark:file:text-emerald-400 hover:file:bg-emerald-100 w-full" onChange={e => setCnvAckFile(e.target.files[0] || null)} />
+                      </div>
+                      <div className="flex gap-2 pt-1">
+                        <Button type="button" variant="outline" onClick={() => { setCnvSection("overview"); setCnvFormErrors({}); }} className="flex-1 rounded-xl font-bold text-xs h-9">Cancel</Button>
+                        <Button type="submit" disabled={cnvSubmitting} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs h-9 flex items-center gap-2">
+                          {cnvSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                          Record Acknowledgement
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Offer Letter Preview & Print Modal */}
       {viewOfferModal && (
