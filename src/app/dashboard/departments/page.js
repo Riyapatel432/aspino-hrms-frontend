@@ -73,11 +73,13 @@ export default function DepartmentsPage() {
 
       if (deptData && deptData.data) {
         setDepartments(Array.isArray(deptData.data) ? deptData.data : []);
-        setTotalRecords(deptData.pagination?.total || 0);
+        setTotalRecords(deptData.pagination?.total ?? deptData.total ?? (Array.isArray(deptData.data) ? deptData.data.length : 0));
         setPage(deptData.pagination?.page || page);
         setRows(deptData.pagination?.limit || rows);
       } else {
-        setDepartments(Array.isArray(deptData) ? deptData : []);
+        const list = Array.isArray(deptData) ? deptData : [];
+        setDepartments(list);
+        setTotalRecords(list.length);
       }
     } catch (e) {
       console.error("Error loading department data:", e);

@@ -51,6 +51,7 @@ export function DataTable({
   actions,
   onRowClick,
   searchKeys,
+  showSrNo = true,
   // Lazy / Server-Side Mode Props
   lazy = false,
   isServerSide: propIsServerSide,
@@ -111,6 +112,44 @@ export function DataTable({
   const activeCurrentPage = isLazy ? (serverPage ?? propCurrentPage ?? 1) : localCurrentPage;
   const activeRowsPerPage = isLazy ? effectivePageSize : localRowsPerPage;
 
+  // Effective Columns with Sr No.
+  const effectiveColumns = useMemo(() => {
+    if (showSrNo === false) return columns;
+    const hasSrNo = columns.some(
+      (c) =>
+        c.key === "srNo" ||
+        c.key === "serialNo" ||
+        c.key === "_srNo" ||
+        c.label?.toLowerCase() === "sr no." ||
+        c.label?.toLowerCase() === "sr. no." ||
+        c.label?.toLowerCase() === "sr no" ||
+        c.header?.toLowerCase() === "sr no." ||
+        c.header?.toLowerCase() === "sr. no." ||
+        c.header?.toLowerCase() === "sr no"
+    );
+    if (hasSrNo) return columns;
+
+    const srNoCol = {
+      key: "_srNo",
+      label: "Sr No.",
+      header: "Sr No.",
+      sortable: false,
+      headerClassName: "w-16 text-center",
+      className: "w-16 text-center",
+      render: (_, index) => {
+        const pageOffset = (activeCurrentPage - 1) * activeRowsPerPage;
+        const srNo = pageOffset + index + 1;
+        return (
+          <span className="font-semibold text-xs text-slate-500 dark:text-slate-400 font-mono">
+            {srNo}
+          </span>
+        );
+      },
+    };
+
+    return [srNoCol, ...columns];
+  }, [columns, showSrNo, activeCurrentPage, activeRowsPerPage]);
+
   // Client-side search filtering
   const keysToSearch = useMemo(() => {
     if (searchKeys && searchKeys.length > 0) return searchKeys;
@@ -159,7 +198,11 @@ export function DataTable({
 
   // Total count & total pages calculation
   const totalCount = isLazy
-    ? (serverTotalRecords ?? propTotalCount ?? rawData.length)
+    ? (serverTotalRecords != null && Number(serverTotalRecords) > 0
+        ? Number(serverTotalRecords)
+        : propTotalCount != null && Number(propTotalCount) > 0
+        ? Number(propTotalCount)
+        : rawData.length)
     : sortedData.length;
 
   const activeTotalPages = isLazy
@@ -193,7 +236,7 @@ export function DataTable({
   };
 
   const handleSort = (key) => {
-    if (!key) return;
+    if (!key || key === "_srNo") return;
     const isAsc = currentSortKey === key && (currentSortDir === "asc" || currentSortDir === 1);
     const nextDir = isAsc ? "desc" : "asc";
 
@@ -253,7 +296,7 @@ export function DataTable({
           <div className="p-0">
             {[...Array(5)].map((_, i) => (
               <div key={i} className="flex items-center gap-4 px-6 py-4 border-b last:border-0">
-                {columns.map((_, j) => (
+                {effectiveColumns.map((_, j) => (
                   <Skeleton key={j} className="h-5 flex-1" />
                 ))}
               </div>
@@ -302,22 +345,24 @@ export function DataTable({
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40 hover:bg-muted/40">
-              {columns.map((col, index) => {
+              {effectiveColumns.map((col, index) => {
                 const colKey = col.key || col.accessorKey || col.id || `col-${index}`;
                 const colLabel = col.label ?? col.header ?? "";
-                const isSortable = col.sortable !== false;
+                const isSortable = col.sortable !== false && colKey !== "_srNo";
 
                 return (
                   <TableHead
                     key={colKey}
                     className={`font-semibold text-xs uppercase tracking-wider text-muted-foreground ${
+                      col.headerClassName || col.className || ""
+                    } ${
                       isSortable
                         ? "cursor-pointer select-none hover:text-foreground transition-colors"
                         : ""
                     }`}
                     onClick={() => isSortable && handleSort(colKey)}
                   >
-                    <div className="flex items-center gap-1.5">
+                    <div className={`flex items-center gap-1.5 ${col.headerClassName?.includes("text-center") || col.className?.includes("text-center") ? "justify-center" : ""}`}>
                       {colLabel}
                       {isSortable && getSortIcon(colKey)}
                     </div>
@@ -329,7 +374,7 @@ export function DataTable({
           <TableBody>
             {paginatedData.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-48">
+                <TableCell colSpan={effectiveColumns.length} className="h-48">
                   <div className="flex flex-col items-center justify-center gap-3 text-muted-foreground py-8">
                     <div className="rounded-full bg-muted p-4">
                       <PackageOpen className="h-8 w-8 text-muted-foreground/60" />
@@ -354,14 +399,14 @@ export function DataTable({
                   }`}
                   onClick={() => onRowClick?.(row)}
                 >
-                  {columns.map((col, j) => {
+                  {effectiveColumns.map((col, j) => {
                     const colKey = col.key || col.accessorKey || col.id || `cell-${j}`;
                     return (
-                      <TableCell key={colKey} className="py-3.5">
+                      <TableCell key={colKey} className={`py-3.5 ${col.className || ""}`}>
                         {col.render
-                          ? col.render(row)
+                          ? col.render(row, i)
                           : col.cell
-                          ? col.cell(row)
+                          ? col.cell(row, i)
                           : (() => {
                               const val = colKey
                                 ?.split(".")

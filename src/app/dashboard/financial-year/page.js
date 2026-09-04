@@ -50,9 +50,11 @@ export default function FinancialYearPage() {
 
       if (data && data.data) {
         setFiscalYears(Array.isArray(data.data) ? data.data : []);
-        setTotalRecords(data.total || 0);
+        setTotalRecords(data.pagination?.total ?? data.total ?? (Array.isArray(data.data) ? data.data.length : 0));
       } else {
-        setFiscalYears(Array.isArray(data) ? data : []);
+        const list = Array.isArray(data) ? data : [];
+        setFiscalYears(list);
+        setTotalRecords(list.length);
       }
     } catch (e) {
       console.error("Error loading financial years:", e);

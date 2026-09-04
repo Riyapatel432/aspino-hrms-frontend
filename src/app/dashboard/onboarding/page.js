@@ -84,9 +84,9 @@ export default function OnboardingPage() {
 
       const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/employees?${params.toString()}`);
       const result = await res.json();
-      const data = result.data || [];
+      const data = result.data || (Array.isArray(result) ? result : []);
       setEmployees(data);
-      setTotalRecords(result.pagination?.total || 0);
+      setTotalRecords(result.pagination?.total ?? result.total ?? (Array.isArray(data) ? data.length : 0));
       setPage(result.pagination?.page || page);
       setRows(result.pagination?.limit || rows);
 

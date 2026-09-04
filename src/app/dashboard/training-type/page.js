@@ -74,9 +74,11 @@ export default function TrainingTypesPage() {
 
       if (data && data.data) {
         setTrainingTypes(Array.isArray(data.data) ? data.data : []);
-        setTotalRecords(data.total || 0);
+        setTotalRecords(data.pagination?.total ?? data.total ?? (Array.isArray(data.data) ? data.data.length : 0));
       } else {
-        setTrainingTypes(Array.isArray(data) ? data : []);
+        const list = Array.isArray(data) ? data : [];
+        setTrainingTypes(list);
+        setTotalRecords(list.length);
       }
     } catch (e) {
       console.error("Error loading training types:", e);
