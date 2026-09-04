@@ -240,11 +240,24 @@ export default function RecruitmentPage() {
   
   // Edit States
   const [editingRequisition, setEditingRequisition] = useState(null);
-  const [editingCandidate, setEditingCandidate] = useState(null);
-
   const [formErrors, setFormErrors] = useState({});
 
   const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
+  const getResumeUrl = (url) => {
+    if (!url) return "#";
+    if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("blob:") || url.startsWith("data:")) {
+      return url;
+    }
+    const base = backendUrl.replace(/\/+$/, "");
+    if (url.startsWith("/uploads/") || url.startsWith("uploads/")) {
+      return `${base}${url.startsWith("/") ? "" : "/"}${url}`;
+    }
+    if (url.startsWith("/")) {
+      return `${base}${url}`;
+    }
+    return `${base}/uploads/resumes/${url}`;
+  };
 
   // --- Panelist Parsing & Display Helpers ---
   const parsePanelistList = (raw) => {
@@ -2700,7 +2713,7 @@ export default function RecruitmentPage() {
                       <div className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 mb-1">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-rose-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
                         <a
-                          href={`${backendUrl}${newCand.resumeUrl}`}
+                          href={getResumeUrl(newCand.resumeUrl)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs text-sky-600 dark:text-sky-400 font-semibold underline truncate"
@@ -2908,7 +2921,7 @@ export default function RecruitmentPage() {
                       sortable: false,
                       render: (row) => row.resumeUrl ? (
                         <a
-                          href={`${backendUrl}${row.resumeUrl}`}
+                          href={getResumeUrl(row.resumeUrl)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-sky-500 hover:text-sky-600 dark:text-sky-400 font-extrabold text-xs"
