@@ -65,14 +65,14 @@ export function Navbar({ user: initialUser = {} }) {
         {/* Search */}
         <div className="flex-1 flex items-center">
           <div className="relative hidden md:block w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            {/* <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search employees, leaves, departments..."
               className="pl-10 h-9 bg-muted/40 border-0 focus:bg-background focus:border-border transition-all"
-            />
-            <kbd className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono">
+            /> */}
+            {/* <kbd className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono">
               ⌘K
-            </kbd>
+            </kbd> */}
           </div>
           <Button
             variant="ghost"

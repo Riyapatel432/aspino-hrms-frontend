@@ -106,6 +106,9 @@ export const fetchSchedules = createAsyncThunk("recruitment/fetchSchedules", asy
     if (params.sortBy) query.append("sortBy", params.sortBy);
     if (params.sortOrder) query.append("sortOrder", params.sortOrder);
     if (params.status) query.append("status", params.status);
+    if (params.date) query.append("date", params.date);
+    if (params.startDate) query.append("startDate", params.startDate);
+    if (params.endDate) query.append("endDate", params.endDate);
 
     const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/schedules?${query.toString()}`);
     if (!res.ok) throw new Error("Failed to fetch schedules");
@@ -216,20 +219,30 @@ const recruitmentSlice = createSlice({
       .addCase(fetchRequisitions.fulfilled, (state, action) => {
         state.loading = false;
         state.requisitions = action.payload?.data || (Array.isArray(action.payload) ? action.payload : []);
-        state.totalRequisitions = action.payload?.pagination?.total || state.requisitions.length;
+        state.totalRequisitions = action.payload?.pagination?.total ?? action.payload?.total ?? state.requisitions.length;
       })
       .addCase(fetchRequisitions.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
-      .addCase(createRequisition.fulfilled, (state, action) => { state.requisitions.push(action.payload); })
+      .addCase(createRequisition.fulfilled, (state, action) => {
+        if (action.payload) {
+          state.requisitions.unshift(action.payload);
+          state.totalRequisitions = (state.totalRequisitions || 0) + 1;
+        }
+      })
       
       // Candidates
       .addCase(fetchCandidates.pending, (state) => { state.loading = true; state.error = null; })
       .addCase(fetchCandidates.fulfilled, (state, action) => {
         state.loading = false;
         state.candidates = action.payload?.data || (Array.isArray(action.payload) ? action.payload : []);
-        state.totalCandidates = action.payload?.pagination?.total || state.candidates.length;
+        state.totalCandidates = action.payload?.pagination?.total ?? action.payload?.total ?? state.candidates.length;
       })
       .addCase(fetchCandidates.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
-      .addCase(createCandidate.fulfilled, (state, action) => { state.candidates.push(action.payload); })
+      .addCase(createCandidate.fulfilled, (state, action) => {
+        if (action.payload) {
+          state.candidates.unshift(action.payload);
+          state.totalCandidates = (state.totalCandidates || 0) + 1;
+        }
+      })
       .addCase(updateCandidateStatus.fulfilled, (state, action) => {
         const idx = state.candidates.findIndex(c => c.id === action.payload.id);
         if (idx !== -1) state.candidates[idx].status = action.payload.status;
@@ -240,20 +253,30 @@ const recruitmentSlice = createSlice({
       .addCase(fetchSchedules.fulfilled, (state, action) => {
         state.loading = false;
         state.schedules = action.payload?.data || (Array.isArray(action.payload) ? action.payload : []);
-        state.totalSchedules = action.payload?.pagination?.total || state.schedules.length;
+        state.totalSchedules = action.payload?.pagination?.total ?? action.payload?.total ?? state.schedules.length;
       })
       .addCase(fetchSchedules.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
-      .addCase(createSchedule.fulfilled, (state, action) => { state.schedules.push(action.payload); })
+      .addCase(createSchedule.fulfilled, (state, action) => {
+        if (action.payload) {
+          state.schedules.unshift(action.payload);
+          state.totalSchedules = (state.totalSchedules || 0) + 1;
+        }
+      })
 
       // Offers
       .addCase(fetchOffers.pending, (state) => { state.loading = true; state.error = null; })
       .addCase(fetchOffers.fulfilled, (state, action) => {
         state.loading = false;
         state.offers = action.payload?.data || (Array.isArray(action.payload) ? action.payload : []);
-        state.totalOffers = action.payload?.pagination?.total || state.offers.length;
+        state.totalOffers = action.payload?.pagination?.total ?? action.payload?.total ?? state.offers.length;
       })
       .addCase(fetchOffers.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
-      .addCase(createOffer.fulfilled, (state, action) => { state.offers.push(action.payload); })
+      .addCase(createOffer.fulfilled, (state, action) => {
+        if (action.payload) {
+          state.offers.unshift(action.payload);
+          state.totalOffers = (state.totalOffers || 0) + 1;
+        }
+      })
       .addCase(updateOfferStatus.fulfilled, (state, action) => {
         const idx = state.offers.findIndex(o => o.id === action.payload.id);
         if (idx !== -1) state.offers[idx].status = action.payload.status;
@@ -264,7 +287,7 @@ const recruitmentSlice = createSlice({
       .addCase(fetchDepartments.fulfilled, (state, action) => {
         state.loading = false;
         state.departments = action.payload?.data || (Array.isArray(action.payload) ? action.payload : []);
-        state.totalDepartments = action.payload?.pagination?.total || state.departments.length;
+        state.totalDepartments = action.payload?.pagination?.total ?? action.payload?.total ?? state.departments.length;
       })
       .addCase(fetchDepartments.rejected, (state, action) => { state.loading = false; state.error = action.payload; });
   }

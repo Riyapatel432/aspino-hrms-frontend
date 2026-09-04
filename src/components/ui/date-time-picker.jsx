@@ -57,34 +57,28 @@ export function DateTimePicker({ date, setDate, type = "datetime", placeholder =
   // Update parent when either changes
   const updateParent = (newD, newT) => {
     if (type === "time") {
-      setDate(newT); // just return the time string HH:mm
+      setDate(newT || ""); // just return the time string HH:mm
       return;
     }
     
-    if (!newD) {
+    const targetDate = newD || parsedDate || (newT ? new Date() : null);
+    if (!targetDate) {
       setDate("");
       return;
     }
     
-    const finalDate = new Date(newD);
-    if (type === "datetime" && newT) {
-      const [h, m] = newT.split(":");
-      finalDate.setHours(parseInt(h, 10) || 0);
-      finalDate.setMinutes(parseInt(m, 10) || 0);
+    const finalDate = new Date(targetDate);
+    if (type === "datetime") {
+      const effectiveTime = newT || timeStr || "10:00";
+      const [h, m] = effectiveTime.split(":");
+      finalDate.setHours(parseInt(h, 10) || 0, parseInt(m, 10) || 0, 0, 0);
+      setDate(finalDate.toISOString());
     } else {
       finalDate.setHours(0, 0, 0, 0);
-    }
-    
-    if (type === "date") {
-      // Return YYYY-MM-DD
-      const tzOffset = finalDate.getTimezoneOffset() * 60000;
-      const localISOTime = (new Date(finalDate.getTime() - tzOffset)).toISOString().slice(0, 10);
-      setDate(localISOTime);
-    } else {
-      // Return YYYY-MM-DDTHH:mm
-      const tzOffset = finalDate.getTimezoneOffset() * 60000;
-      const localISOTime = (new Date(finalDate.getTime() - tzOffset)).toISOString().slice(0, 16);
-      setDate(localISOTime);
+      const year = finalDate.getFullYear();
+      const month = String(finalDate.getMonth() + 1).padStart(2, '0');
+      const day = String(finalDate.getDate()).padStart(2, '0');
+      setDate(`${year}-${month}-${day}`);
     }
   };
 
@@ -121,7 +115,9 @@ export function DateTimePicker({ date, setDate, type = "datetime", placeholder =
                 defaultMonth={parsedDate || (disablePast ? new Date() : undefined)}
                 disabled={calendarDisabled}
                 onSelect={(d) => {
-                  updateParent(d, timeStr);
+                  const currentOrDefTime = timeStr || "10:00";
+                  setTimeStr(currentOrDefTime);
+                  updateParent(d, currentOrDefTime);
                   setOpen(false);
                 }}
               />
@@ -133,12 +129,13 @@ export function DateTimePicker({ date, setDate, type = "datetime", placeholder =
         <div className={type === "datetime" ? "w-[120px]" : "w-full"}>
           <Input
             type="time"
-            value={timeStr}
+            value={timeStr || ""}
             onChange={(e) => {
-              setTimeStr(e.target.value);
-              updateParent(parsedDate, e.target.value);
+              const val = e.target.value;
+              setTimeStr(val);
+              updateParent(parsedDate || new Date(), val);
             }}
-            className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none text-center w-full"
+            className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center w-full font-medium"
           />
         </div>
       )}

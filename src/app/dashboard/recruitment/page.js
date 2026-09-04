@@ -7,6 +7,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DataTable } from "@/components/ui/data-table";
@@ -41,7 +42,8 @@ import {
   FileUp,
   AlertCircle,
   ChevronRight,
-  X
+  X,
+  Filter
 } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -113,12 +115,15 @@ export default function RecruitmentPage() {
   const [candSearch, setCandSearch] = useState("");
   const [candSortBy, setCandSortBy] = useState("createdAt");
   const [candSortOrder, setCandSortOrder] = useState("desc");
+  const [candStatusFilter, setCandStatusFilter] = useState("ALL");
 
   const [schedPage, setSchedPage] = useState(1);
   const [schedRows, setSchedRows] = useState(10);
   const [schedSearch, setSchedSearch] = useState("");
   const [schedSortBy, setSchedSortBy] = useState("scheduledAt");
   const [schedSortOrder, setSchedSortOrder] = useState("desc");
+  const [schedStatusFilter, setSchedStatusFilter] = useState("ALL");
+  const [schedDateFilter, setSchedDateFilter] = useState("");
 
   const [offerPage, setOfferPage] = useState(1);
   const [offerRows, setOfferRows] = useState(10);
@@ -133,13 +138,28 @@ export default function RecruitmentPage() {
 
   useEffect(() => {
     if (activeTab !== "candidates") return;
-    dispatch(fetchCandidates({ page: candPage, limit: candRows, search: candSearch, sortBy: candSortBy, sortOrder: candSortOrder }));
-  }, [dispatch, activeTab, candPage, candRows, candSearch, candSortBy, candSortOrder]);
+    dispatch(fetchCandidates({
+      page: candPage,
+      limit: candRows,
+      search: candSearch,
+      sortBy: candSortBy,
+      sortOrder: candSortOrder,
+      status: candStatusFilter === "ALL" ? undefined : candStatusFilter,
+    }));
+  }, [dispatch, activeTab, candPage, candRows, candSearch, candSortBy, candSortOrder, candStatusFilter]);
 
   useEffect(() => {
     if (activeTab !== "interviews") return;
-    dispatch(fetchSchedules({ page: schedPage, limit: schedRows, search: schedSearch, sortBy: schedSortBy, sortOrder: schedSortOrder }));
-  }, [dispatch, activeTab, schedPage, schedRows, schedSearch, schedSortBy, schedSortOrder]);
+    dispatch(fetchSchedules({
+      page: schedPage,
+      limit: schedRows,
+      search: schedSearch,
+      sortBy: schedSortBy,
+      sortOrder: schedSortOrder,
+      status: schedStatusFilter === "ALL" ? undefined : schedStatusFilter,
+      date: schedDateFilter || undefined,
+    }));
+  }, [dispatch, activeTab, schedPage, schedRows, schedSearch, schedSortBy, schedSortOrder, schedStatusFilter, schedDateFilter]);
 
   useEffect(() => {
     if (activeTab !== "offers") return;
@@ -435,17 +455,52 @@ export default function RecruitmentPage() {
     else if (newCand.name.trim().length < 2) errs.name = "Name must be at least 2 characters.";
     else if (/\d/.test(newCand.name)) errs.name = "Numbers are not allowed in full name.";
     
-    if (!newCand.email?.trim()) errs.email = "Email address is required.";
-    else {
-      const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRx.test(newCand.email)) errs.email = "Please provide a valid email address.";
+    // Email format, Gmail rules & duplicate validation
+    if (!newCand.email?.trim()) {
+      errs.email = "Email address is required.";
+    } else {
+      const emailTrimmed = newCand.email.trim().toLowerCase();
+      const emailRx = /^[a-zA-Z0-9]+([._-][a-zA-Z0-9]+)*@[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/;
+      if (!emailRx.test(emailTrimmed)) {
+        if (emailTrimmed.includes("%")) {
+          errs.email = "Special character '%' is not allowed in email.";
+        } else {
+          errs.email = "Please provide a valid email address.";
+        }
+      } else {
+        const [username, domain] = emailTrimmed.split("@");
+        if (domain === "gmail.com" || domain === "googlemail.com") {
+          if (!/^[a-z0-9]+(\.[a-z0-9]+)*$/i.test(username)) {
+            errs.email = "Sorry, only letters (a-z), numbers (0-9), and periods (.) are allowed.";
+          }
+        }
+      }
+
+      if (!errs.email) {
+        const dupEmail = (candidates || []).find(
+          (c) => String(c.id) !== String(newCand.id) && c.email && c.email.trim().toLowerCase() === emailTrimmed
+        );
+        if (dupEmail) {
+          errs.email = "Candidate with this email already exists.";
+        }
+      }
     }
     
+    // Phone format & duplicate validation
     if (!newCand.phone?.trim()) {
       errs.phone = "Phone number is required.";
     } else if (!/^\d{10}$/.test(newCand.phone.trim())) {
       errs.phone = "Phone number must be exactly 10 digits.";
+    } else {
+      const phoneTrimmed = newCand.phone.trim();
+      const dupPhone = (candidates || []).find(
+        (c) => String(c.id) !== String(newCand.id) && c.phone && c.phone.trim() === phoneTrimmed
+      );
+      if (dupPhone) {
+        errs.phone = "Candidate with this phone number already exists.";
+      }
     }
+
     if (!newCand.requisitionId) errs.requisitionId = "Please select a Job Requisition.";
     if (!newCand.source) errs.source = "Please select a sourcing source.";
     if (!newCand.resumeUrl) errs.resumeUrl = "Resume / CV (PDF) is required.";
@@ -459,7 +514,7 @@ export default function RecruitmentPage() {
     if (!newSched.candidateId) {
       errs.candidateId = "Please select a candidate.";
     } else {
-      const cand = candidates.find(c => String(c.id) === String(newSched.candidateId));
+      const cand = (dropdownCandidates.length > 0 ? dropdownCandidates : candidates).find(c => String(c.id) === String(newSched.candidateId));
       if (cand) {
         const coolOff = getCandidateCoolOffInfo(cand);
         if (coolOff.isCoolingOff) {
@@ -473,9 +528,23 @@ export default function RecruitmentPage() {
     } else if (newSched.roundName.trim() === "0" || /^0+$/.test(newSched.roundName.trim())) {
       errs.roundName = "Round name cannot be 0.";
     }
-    if (!newSched.scheduledAt) errs.scheduledAt = "Interview date and time is required.";
-    else if (new Date(newSched.scheduledAt) < new Date()) {
+    if (!newSched.scheduledAt) {
+      errs.scheduledAt = "Interview date and time is required.";
+    } else if (new Date(newSched.scheduledAt) < new Date()) {
       errs.scheduledAt = "Interview date and time cannot be in the past.";
+    } else if (newSched.candidateId) {
+      const candSchedules = (schedules || []).filter(
+        (s) => String(s.candidateId) === String(newSched.candidateId) && (!newSched.id || String(s.id) !== String(newSched.id))
+      );
+      if (candSchedules.length > 0) {
+        const sortedSchedules = [...candSchedules].sort(
+          (a, b) => new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()
+        );
+        const latestSched = sortedSchedules[0];
+        if (!newSched.id && new Date(newSched.scheduledAt) <= new Date(latestSched.scheduledAt)) {
+          errs.scheduledAt = `New round must be scheduled after previous round "${latestSched.roundName}" (${new Date(latestSched.scheduledAt).toLocaleString()}).`;
+        }
+      }
     }
     const panelistsList = parsePanelistList(newSched.panelists);
     if (panelistsList.length === 0) errs.panelists = "At least one panelist is required.";
@@ -486,7 +555,16 @@ export default function RecruitmentPage() {
 
   const validateFeedback = () => {
     const errs = {};
-    if (!newFeedback.scheduleId) errs.scheduleId = "Please select an interview schedule.";
+    if (!newFeedback.scheduleId) {
+      errs.scheduleId = "Please select an interview schedule.";
+    } else {
+      const selSched = schedules.find((s) => String(s.id) === String(newFeedback.scheduleId));
+      if (selSched && selSched.scheduledAt) {
+        if (new Date(selSched.scheduledAt) > new Date()) {
+          errs.scheduleId = `Feedback cannot be submitted before the interview takes place (${new Date(selSched.scheduledAt).toLocaleString()}).`;
+        }
+      }
+    }
     if (!newFeedback.panelistName?.trim()) errs.panelistName = "Panelist name is required.";
     if (newFeedback.rating === "" || newFeedback.rating === undefined || newFeedback.rating === null || Number(newFeedback.rating) < 1 || Number(newFeedback.rating) > 10) {
       errs.rating = "Rating must be between 1 and 10.";
@@ -646,9 +724,9 @@ export default function RecruitmentPage() {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            name: newCand.name,
-            email: newCand.email,
-            phone: newCand.phone,
+            name: newCand.name.trim(),
+            email: newCand.email.toLowerCase().trim(),
+            phone: newCand.phone.trim(),
             source: newCand.source,
             requisitionId: newCand.requisitionId,
             experienceYears: newCand.experienceYears === "" || newCand.experienceYears === null ? 0 : Number(newCand.experienceYears),
@@ -656,28 +734,62 @@ export default function RecruitmentPage() {
           })
         });
         if (res.ok) {
-          dispatch(fetchCandidates());
+          dispatch(fetchCandidates({
+            page: candPage,
+            limit: candRows,
+            search: candSearch,
+            sortBy: candSortBy,
+            sortOrder: candSortOrder,
+            status: candStatusFilter === "ALL" ? undefined : candStatusFilter,
+          }));
           setNewCand({ name: "", email: "", phone: "", source: "", requisitionId: "", experienceYears: "", resumeUrl: "" });
+          setFormErrors({});
           toast.success("Candidate updated successfully");
         } else {
           const msg = await getErrorMessage(res, "Failed to update candidate");
+          if (msg.toLowerCase().includes("email")) {
+            setFormErrors(prev => ({ ...prev, email: msg }));
+          }
+          if (msg.toLowerCase().includes("phone")) {
+            setFormErrors(prev => ({ ...prev, phone: msg }));
+          }
           toast.error(msg);
         }
       } else {
         // Create mode
         await dispatch(createCandidate({
           ...newCand,
+          name: newCand.name.trim(),
+          email: newCand.email.toLowerCase().trim(),
+          phone: newCand.phone.trim(),
           experienceYears: newCand.experienceYears === "" || newCand.experienceYears === null ? 0 : Number(newCand.experienceYears),
           source: newCand.source || "Portal",
         })).unwrap();
+        setCandPage(1);
+        dispatch(fetchCandidates({
+          page: 1,
+          limit: candRows,
+          search: candSearch,
+          sortBy: candSortBy,
+          sortOrder: candSortOrder,
+          status: candStatusFilter === "ALL" ? undefined : candStatusFilter,
+        }));
         setNewCand({ name: "", email: "", phone: "", source: "", requisitionId: "", experienceYears: "", resumeUrl: "" });
+        setFormErrors({});
         const fileInput = document.getElementById("resume-upload-input");
         if (fileInput) fileInput.value = "";
         toast.success("Candidate added successfully");
       }
     } catch (err) {
       console.error(err);
-      toast.error(typeof err === "string" ? err : (newCand.id ? "Failed to update candidate" : "Failed to add candidate"));
+      const errMsg = typeof err === "string" ? err : err?.message || (newCand.id ? "Failed to update candidate" : "Failed to add candidate");
+      if (errMsg.toLowerCase().includes("email")) {
+        setFormErrors(prev => ({ ...prev, email: errMsg }));
+      }
+      if (errMsg.toLowerCase().includes("phone")) {
+        setFormErrors(prev => ({ ...prev, phone: errMsg }));
+      }
+      toast.error(errMsg);
     }
   };
 
@@ -691,7 +803,14 @@ export default function RecruitmentPage() {
           setNewCand({ name: "", email: "", phone: "", requisitionId: "", resumeUrl: "", experienceYears: "", skills: "" });
           setFormErrors({});
         }
-        dispatch(fetchCandidates());
+        dispatch(fetchCandidates({
+          page: candPage,
+          limit: candRows,
+          search: candSearch,
+          sortBy: candSortBy,
+          sortOrder: candSortOrder,
+          status: candStatusFilter === "ALL" ? undefined : candStatusFilter,
+        }));
         toast.success("Candidate deleted successfully");
       }
     } catch (err) {
@@ -711,6 +830,14 @@ export default function RecruitmentPage() {
   const handleUpdateCandidateStatus = async (id, status) => {
     try {
       await dispatch(updateCandidateStatus({ id, status })).unwrap();
+      dispatch(fetchCandidates({
+        page: candPage,
+        limit: candRows,
+        search: candSearch,
+        sortBy: candSortBy,
+        sortOrder: candSortOrder,
+        status: candStatusFilter === "ALL" ? undefined : candStatusFilter,
+      }));
       toast.success("Candidate status updated");
     } catch (err) {
       console.error(err);
@@ -838,6 +965,37 @@ export default function RecruitmentPage() {
     } catch (err) {
       console.error(err);
       toast.error(newFeedback.id ? "Failed to update feedback" : "Failed to submit feedback");
+    }
+  };
+
+  const handleDeleteFeedback = async (id) => {
+    try {
+      const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/feedbacks/${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        if (newFeedback.id === id) {
+          setNewFeedback({ id: "", scheduleId: "", panelistId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
+          setFormErrors({});
+        }
+        dispatch(fetchSchedules({
+          page: schedPage,
+          limit: schedRows,
+          search: schedSearch,
+          sortBy: schedSortBy,
+          sortOrder: schedSortOrder,
+          status: schedStatusFilter === "ALL" ? undefined : schedStatusFilter,
+          date: schedDateFilter || undefined,
+        }));
+        dispatch(fetchCandidates());
+        toast.success("Feedback deleted successfully");
+      } else {
+        const msg = await getErrorMessage(res, "Failed to delete feedback");
+        toast.error(msg);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to delete feedback");
     }
   };
 
@@ -1707,7 +1865,7 @@ export default function RecruitmentPage() {
                 <div class="recipient-block">
                   <div class="ref">${refNo}</div>
                   <div class="date">Dt. ${dateFormatted}</div>
-                  <div class="name">Mr. ${candidateName},</div>
+                  <div class="name">Mr./ Miss ${candidateName},</div>
                   <div>${candidateAddress}</div>
                   <div>${candidateCity}</div>
                   <div>${candidateState}</div>
@@ -2602,6 +2760,85 @@ export default function RecruitmentPage() {
                   onSortChange={(k, dir) => { setCandSortBy(k); setCandSortOrder(dir); setCandPage(1); }}
                   onSearchChange={(s) => { setCandSearch(s); setCandPage(1); }}
                   emptyMessage="No candidates found."
+                  headerRight={
+                    <div className="flex items-center gap-2">
+                      <Select
+                        value={candStatusFilter}
+                        onValueChange={(val) => {
+                          setCandStatusFilter(val);
+                          setCandPage(1);
+                        }}
+                      >
+                        <SelectTrigger className="h-10 text-xs font-semibold rounded-xl bg-background border border-border/60 hover:border-slate-400 dark:hover:border-slate-600 focus:ring-1 focus:ring-sky-500 w-[180px] shadow-sm transition-all">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <SelectValue placeholder="All Statuses" />
+                          </div>
+                        </SelectTrigger>
+                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xl rounded-xl z-50">
+                          <SelectItem value="ALL" className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                            All Statuses
+                          </SelectItem>
+                          <SelectItem value="SOURCED" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-sky-500"></span>
+                              Sourced
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="INTERVIEWING" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                              Interviewing
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="SELECTED" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                              Selected
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="OFFERED" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                              Offered
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="ACCEPTED" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-teal-500"></span>
+                              Accepted
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="REJECTED" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                              Rejected
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="RE_INTERVIEW_ELIGIBLE" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                              Re-interview Eligible
+                            </span>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {candStatusFilter !== "ALL" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setCandStatusFilter("ALL");
+                            setCandPage(1);
+                          }}
+                          className="h-10 px-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                          title="Clear Filter"
+                        >
+                          <X className="w-3.5 h-3.5 mr-1" /> Clear
+                        </Button>
+                      )}
+                    </div>
+                  }
                   columns={[
                     {
                       key: "name",
@@ -2783,30 +3020,55 @@ export default function RecruitmentPage() {
                   <form onSubmit={handleSubmitSchedule} className="space-y-3" noValidate>
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Candidate</Label>
-                      <Select value={newSched.candidateId} onValueChange={(val) => {
-                        setNewSched({ ...newSched, candidateId: val });
-                        if (formErrors.candidateId) setFormErrors({ ...formErrors, candidateId: null });
-                      }}>
-                        <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                          <SelectValue placeholder="Select..." />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                          {(dropdownCandidates.length > 0 ? dropdownCandidates : candidates).filter(c => c.status !== 'SELECTED' && c.status !== 'ACCEPTED').map((c) => {
-                            const coolOff = getCandidateCoolOffInfo(c);
-                            let labelSuffix = "";
-                            if (coolOff.isCoolingOff) {
-                              labelSuffix = ` (Rejected - ${coolOff.daysLeft}d cool-off left)`;
-                            } else if (c.status === 'REJECTED') {
-                              labelSuffix = ` (Rejected - Re-interview Eligible)`;
+                      {(() => {
+                        const baseList = (dropdownCandidates && dropdownCandidates.length > 0) ? dropdownCandidates : (candidates || []);
+                        const candidateOptions = [...baseList];
+                        if (newSched.candidateId) {
+                          const exists = candidateOptions.some(c => String(c.id) === String(newSched.candidateId));
+                          if (!exists) {
+                            const sched = schedules.find(s => String(s.candidateId) === String(newSched.candidateId) || String(s.id) === String(newSched.id));
+                            if (sched?.candidate) {
+                              candidateOptions.unshift(sched.candidate);
                             }
-                            return (
-                              <SelectItem key={c.id} value={String(c.id)}>
-                                {c.name}{labelSuffix}
-                              </SelectItem>
-                            );
-                          })}
-                        </SelectContent>
-                      </Select>
+                          }
+                        }
+
+                        const filteredCandidates = candidateOptions.filter(c => {
+                          if (newSched.candidateId && String(c.id) === String(newSched.candidateId)) return true;
+                          return c.status !== 'SELECTED' && c.status !== 'ACCEPTED';
+                        });
+
+                        return (
+                          <Select
+                            disabled={Boolean(newSched.id)}
+                            value={newSched.candidateId ? String(newSched.candidateId) : ""}
+                            onValueChange={(val) => {
+                              setNewSched({ ...newSched, candidateId: val });
+                              if (formErrors.candidateId) setFormErrors({ ...formErrors, candidateId: null });
+                            }}
+                          >
+                            <SelectTrigger className={`h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full ${newSched.id ? 'opacity-70 cursor-not-allowed bg-slate-100/70 dark:bg-slate-800/70' : ''}`}>
+                              <SelectValue placeholder="Select..." />
+                            </SelectTrigger>
+                            <SelectContent position="popper" className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                              {filteredCandidates.map((c) => {
+                                const coolOff = getCandidateCoolOffInfo(c);
+                                let labelSuffix = "";
+                                if (coolOff.isCoolingOff) {
+                                  labelSuffix = ` (Rejected - ${coolOff.daysLeft}d cool-off left)`;
+                                } else if (c.status === 'REJECTED') {
+                                  labelSuffix = ` (Rejected - Re-interview Eligible)`;
+                                }
+                                return (
+                                  <SelectItem key={c.id} value={String(c.id)}>
+                                    {c.name}{labelSuffix}
+                                  </SelectItem>
+                                );
+                              })}
+                            </SelectContent>
+                          </Select>
+                        );
+                      })()}
                       {formErrors.candidateId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.candidateId}</span>}
                     </div>
 
@@ -2816,6 +3078,14 @@ export default function RecruitmentPage() {
                       const coolOff = getCandidateCoolOffInfo(selCand);
                       const reHist = getReInterviewHistory(selCand);
                       const dbDaysLeft = selCand.coolOffDaysLeft ?? (coolOff.isCoolingOff ? coolOff.daysLeft : 0);
+                      const candSchedules = (schedules || []).filter(
+                        (s) => String(s.candidateId) === String(newSched.candidateId) && (!newSched.id || String(s.id) !== String(newSched.id))
+                      );
+                      const sortedSchedules = [...candSchedules].sort(
+                        (a, b) => new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()
+                      );
+                      const latestSched = sortedSchedules[0];
+
                       return (
                         <div className="p-3 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs space-y-1">
                           <div className="flex justify-between items-center flex-wrap gap-2">
@@ -2826,6 +3096,12 @@ export default function RecruitmentPage() {
                               </span>
                             )}
                           </div>
+                          {latestSched && (
+                            <div className="text-sky-600 dark:text-sky-400 font-semibold text-[11px] flex items-center gap-1">
+                              <Calendar className="w-3 h-3 shrink-0" />
+                              Latest Round ({latestSched.roundName}): {new Date(latestSched.scheduledAt).toLocaleString()}
+                            </div>
+                          )}
                           {coolOff.isCoolingOff ? (
                             <div className="text-rose-500 font-bold text-[11px] flex items-center gap-1">
                               <XCircle className="w-3.5 h-3.5" />
@@ -2858,14 +3134,30 @@ export default function RecruitmentPage() {
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Scheduled Date & Time</Label>
-                      <DateTimePicker
-                        date={newSched.scheduledAt}
-                        disablePast={true}
-                        setDate={(val) => {
-                          setNewSched({ ...newSched, scheduledAt: val });
-                          if (formErrors.scheduledAt) setFormErrors({ ...formErrors, scheduledAt: null });
-                        }}
-                      />
+                      {(() => {
+                        const candSchedules = (schedules || []).filter(
+                          (s) => String(s.candidateId) === String(newSched.candidateId) && (!newSched.id || String(s.id) !== String(newSched.id))
+                        );
+                        const sortedSchedules = [...candSchedules].sort(
+                          (a, b) => new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()
+                        );
+                        const latestSched = sortedSchedules[0];
+                        const minDateVal = latestSched && new Date(latestSched.scheduledAt) > new Date()
+                          ? new Date(latestSched.scheduledAt)
+                          : undefined;
+
+                        return (
+                          <DateTimePicker
+                            date={newSched.scheduledAt}
+                            disablePast={true}
+                            minDate={minDateVal}
+                            setDate={(val) => {
+                              setNewSched({ ...newSched, scheduledAt: val });
+                              if (formErrors.scheduledAt) setFormErrors({ ...formErrors, scheduledAt: null });
+                            }}
+                          />
+                        );
+                      })()}
                       {formErrors.scheduledAt && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.scheduledAt}</span>}
                     </div>
                     {/* Panel Members (Multi-Select) */}
@@ -2971,43 +3263,115 @@ export default function RecruitmentPage() {
                   <form onSubmit={handleCreateFeedback} className="space-y-3" noValidate>
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Filter by Candidate</Label>
-                      <Select value={feedbackCandidateId} onValueChange={(val) => { setFeedbackCandidateId(val); setNewFeedback({ ...newFeedback, scheduleId: "", panelistId: "", panelistName: "" }); }}>
-                        <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                          <SelectValue placeholder="All Candidates" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                          <SelectItem value="ALL">All Candidates</SelectItem>
-                          {(dropdownCandidates.length > 0 ? dropdownCandidates : candidates).map((c) => (
-                            <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {(() => {
+                        const candidatesWithEligibleInterviews = Array.from(
+                          new Map(
+                            (schedules || [])
+                              .filter((s) => s.scheduledAt && new Date(s.scheduledAt) <= new Date())
+                              .map((s) => {
+                                const cand =
+                                  s.candidate ||
+                                  (dropdownCandidates || candidates || []).find(
+                                    (c) => String(c.id) === String(s.candidateId),
+                                  );
+                                return cand ? [String(cand.id), cand] : null;
+                              })
+                              .filter(Boolean),
+                          ).values(),
+                        );
+
+                        return (
+                          <Select
+                            value={feedbackCandidateId}
+                            onValueChange={(val) => {
+                              setFeedbackCandidateId(val);
+                              setNewFeedback({
+                                ...newFeedback,
+                                scheduleId: "",
+                                panelistId: "",
+                                panelistName: "",
+                              });
+                            }}
+                          >
+                            <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
+                              <SelectValue placeholder="All Candidates" />
+                            </SelectTrigger>
+                            <SelectContent position="popper" className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                              <SelectItem value="ALL">All Eligible Candidates ({candidatesWithEligibleInterviews.length})</SelectItem>
+                              {candidatesWithEligibleInterviews.map((c) => (
+                                <SelectItem key={c.id} value={String(c.id)}>
+                                  {c.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        );
+                      })()}
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Select Schedule</Label>
                       <Select value={newFeedback.scheduleId} onValueChange={(val) => {
+                        if (val === "_none" || !val) return;
                         const selSched = schedules.find(s => String(s.id) === String(val));
                         const assigned = parsePanelistList(selSched?.panelists);
                         const firstUser = users.find(u => String(u.id) === String(assigned[0]) || u.name?.toLowerCase() === assigned[0]?.toLowerCase());
-                        setNewFeedback({
-                          ...newFeedback,
-                          scheduleId: val,
-                          panelistId: firstUser ? firstUser.id : (assigned[0] || ""),
-                          panelistName: firstUser ? firstUser.name : (assigned[0] || "")
-                        });
+                        const firstPanelistId = firstUser ? firstUser.id : (assigned[0] || "");
+                        const firstPanelistName = firstUser ? firstUser.name : (assigned[0] || "");
+
+                        // Auto-load existing feedback if already submitted
+                        const existingFb = selSched?.feedbacks?.find((f) =>
+                          (firstPanelistId && String(f.panelistId) === String(firstPanelistId)) ||
+                          (firstPanelistName && f.panelistName?.toLowerCase() === firstPanelistName.toLowerCase())
+                        );
+
+                        if (existingFb) {
+                          setNewFeedback({
+                            id: existingFb.id,
+                            scheduleId: val,
+                            panelistId: firstPanelistId,
+                            panelistName: firstPanelistName,
+                            rating: existingFb.rating !== undefined && existingFb.rating !== null ? String(existingFb.rating) : "",
+                            comments: existingFb.comments || "",
+                            recommendation: existingFb.recommendation || "",
+                          });
+                        } else {
+                          setNewFeedback({
+                            id: "",
+                            scheduleId: val,
+                            panelistId: firstPanelistId,
+                            panelistName: firstPanelistName,
+                            rating: "",
+                            comments: "",
+                            recommendation: "",
+                          });
+                        }
                         if (formErrors.scheduleId) setFormErrors({ ...formErrors, scheduleId: null });
                       }}>
                         <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
                           <SelectValue placeholder="Select a schedule..." />
                         </SelectTrigger>
-                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                          {schedules
-                            .filter(s => feedbackCandidateId === 'ALL' || s.candidateId === feedbackCandidateId)
-                            .map((s) => (
+                        <SelectContent position="popper" className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                          {(() => {
+                            const eligibleSchedules = schedules.filter(s => {
+                              const matchesCandidate = feedbackCandidateId === 'ALL' || String(s.candidateId) === String(feedbackCandidateId);
+                              const hasStarted = s.scheduledAt ? new Date(s.scheduledAt) <= new Date() : false;
+                              return matchesCandidate && hasStarted;
+                            });
+
+                            if (eligibleSchedules.length === 0) {
+                              return (
+                                <SelectItem disabled value="_none">
+                                  No completed or ongoing interviews available
+                                </SelectItem>
+                              );
+                            }
+
+                            return eligibleSchedules.map((s) => (
                               <SelectItem key={s.id} value={String(s.id)}>
-                                {s.candidate?.name} - {s.roundName} ({new Date(s.scheduledAt).toLocaleDateString()})
+                                {s.candidate?.name || "Candidate"} - Round: {s.roundName} ({new Date(s.scheduledAt).toLocaleDateString()})
                               </SelectItem>
-                            ))}
+                            ));
+                          })()}
                         </SelectContent>
                       </Select>
                       {formErrors.scheduleId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.scheduleId}</span>}
@@ -3071,11 +3435,36 @@ export default function RecruitmentPage() {
                             value={selectedPanelistValue}
                             onValueChange={(val) => {
                               const matchObj = panelistOptions.find(p => String(p.id) === String(val) || p.name.toLowerCase() === val.toLowerCase());
-                              setNewFeedback({ 
-                                ...newFeedback, 
-                                panelistId: matchObj ? matchObj.id : val,
-                                panelistName: matchObj ? matchObj.name : val 
-                              });
+                              const pId = matchObj ? matchObj.id : val;
+                              const pName = matchObj ? matchObj.name : val;
+
+                              // Check if feedback already exists for this panelist on this schedule
+                              const existingFb = currentSchedule?.feedbacks?.find((f) =>
+                                (pId && String(f.panelistId) === String(pId)) ||
+                                (pName && f.panelistName?.toLowerCase() === pName.toLowerCase())
+                              );
+
+                              if (existingFb) {
+                                setNewFeedback({
+                                  id: existingFb.id,
+                                  scheduleId: currentSchedule?.id || newFeedback.scheduleId,
+                                  panelistId: pId,
+                                  panelistName: pName,
+                                  rating: existingFb.rating !== undefined && existingFb.rating !== null ? String(existingFb.rating) : "",
+                                  comments: existingFb.comments || "",
+                                  recommendation: existingFb.recommendation || "",
+                                });
+                              } else {
+                                setNewFeedback({
+                                  ...newFeedback,
+                                  id: "",
+                                  panelistId: pId,
+                                  panelistName: pName,
+                                  rating: "",
+                                  comments: "",
+                                  recommendation: "",
+                                });
+                              }
                               if (formErrors.panelistName) setFormErrors({ ...formErrors, panelistName: null });
                             }}
                           >
@@ -3084,11 +3473,16 @@ export default function RecruitmentPage() {
                             </SelectTrigger>
                             <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
                               {panelistOptions.length > 0 ? (
-                                panelistOptions.map((p) => (
-                                  <SelectItem key={p.id} value={String(p.id)}>
-                                    {p.name} ({p.role})
-                                  </SelectItem>
-                                ))
+                                panelistOptions.map((p) => {
+                                  const hasFb = currentSchedule?.feedbacks?.some(
+                                    f => String(f.panelistId) === String(p.id) || f.panelistName?.toLowerCase() === p.name.toLowerCase()
+                                  );
+                                  return (
+                                    <SelectItem key={p.id} value={String(p.id)}>
+                                      {p.name} ({p.role}) {hasFb ? "✓ (Recorded)" : ""}
+                                    </SelectItem>
+                                  );
+                                })
                               ) : (
                                 <SelectItem disabled value="_empty">
                                   No panel members assigned to this schedule
@@ -3158,9 +3552,19 @@ export default function RecruitmentPage() {
                           Cancel
                         </Button>
                       )}
-                      <Button type="submit" className={`bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl ${newFeedback.id ? 'w-2/3' : 'w-full'}`}>
-                        {newFeedback.id ? "Update Feedback" : "Submit Recommendation"}
-                      </Button>
+                      {(() => {
+                        const selSched = schedules.find(s => String(s.id) === String(newFeedback.scheduleId));
+                        const isUpcoming = selSched && selSched.scheduledAt && new Date(selSched.scheduledAt) > new Date();
+                        return (
+                          <Button
+                            type="submit"
+                            disabled={isUpcoming}
+                            className={`bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl ${newFeedback.id ? 'w-2/3' : 'w-full'} ${isUpcoming ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          >
+                            {newFeedback.id ? "Update Feedback" : "Submit Recommendation"}
+                          </Button>
+                        );
+                      })()}
                     </div>
                   </form>
                 </div>
@@ -3183,6 +3587,78 @@ export default function RecruitmentPage() {
                   onRowsChange={(r) => { setSchedRows(r); setSchedPage(1); }}
                   onSortChange={(k, dir) => { setSchedSortBy(k); setSchedSortOrder(dir); setSchedPage(1); }}
                   onSearchChange={(s) => { setSchedSearch(s); setSchedPage(1); }}
+                  headerRight={
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* Shadcn UI DatePicker Filter */}
+                      <div className="w-[155px]">
+                        <DatePicker
+                          date={schedDateFilter}
+                          setDate={(val) => {
+                            setSchedDateFilter(val);
+                            setSchedPage(1);
+                          }}
+                          placeholder="Filter Date"
+                          className="h-10 text-xs font-semibold rounded-xl"
+                        />
+                      </div>
+
+                      {/* Status Filter */}
+                      <Select
+                        value={schedStatusFilter}
+                        onValueChange={(val) => {
+                          setSchedStatusFilter(val);
+                          setSchedPage(1);
+                        }}
+                      >
+                        <SelectTrigger className="h-10 text-xs font-semibold rounded-xl bg-background border border-border/60 hover:border-slate-400 dark:hover:border-slate-600 focus:ring-1 focus:ring-sky-500 w-[155px] shadow-sm transition-all">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <SelectValue placeholder="All Statuses" />
+                          </div>
+                        </SelectTrigger>
+                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xl rounded-xl z-50">
+                          <SelectItem value="ALL" className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                            All Statuses
+                          </SelectItem>
+                          <SelectItem value="SCHEDULED" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-sky-500"></span>
+                              Scheduled
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="COMPLETED" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                              Completed
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="CANCELLED" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                              Cancelled
+                            </span>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      {/* Clear Filters */}
+                      {(schedStatusFilter !== "ALL" || schedDateFilter) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSchedStatusFilter("ALL");
+                            setSchedDateFilter("");
+                            setSchedPage(1);
+                          }}
+                          className="h-10 px-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                          title="Clear Date & Status Filters"
+                        >
+                          <X className="w-3.5 h-3.5 mr-1" /> Clear
+                        </Button>
+                      )}
+                    </div>
+                  }
                   columns={[
                     {
                       key: "candidate",
@@ -3289,6 +3765,14 @@ export default function RecruitmentPage() {
                                   >
                                     <Edit className="w-3 h-3" />
                                   </button>
+                                  <button
+                                    type="button"
+                                    title="Delete Feedback"
+                                    onClick={() => handleDeleteFeedback(f.id)}
+                                    className="p-1 text-slate-400 hover:text-rose-500 rounded-md transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
                                 </div>
                               </div>
                               {f.comments && (
@@ -3322,11 +3806,12 @@ export default function RecruitmentPage() {
                             onClick={() => {
                               setNewSched({
                                 id: row.id,
-                                candidateId: row.candidateId,
-                                roundName: row.roundName,
-                                scheduledAt: row.scheduledAt,
+                                candidateId: String(row.candidateId || row.candidate?.id || ""),
+                                roundName: row.roundName || "",
+                                scheduledAt: row.scheduledAt || "",
                                 panelists: parsePanelistList(row.panelists)
                               });
+                              setFormErrors({});
                               window.scrollTo({ top: 0, behavior: 'smooth' });
                             }}
                             className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all cursor-pointer"
@@ -4088,7 +4573,7 @@ export default function RecruitmentPage() {
                         Dt. {formatOfferDate(viewOfferModal.createdAt || new Date())}
                       </div>
                       <div className="font-medium text-slate-900 pt-1">
-                        Mr. {viewOfferModal.candidate?.name || "Ravi Babariya"},
+                        Mr./ Miss {viewOfferModal.candidate?.name || "Ravi Babariya"},
                       </div>
                       <div className="text-slate-700">{viewOfferModal.candidate?.address || "Dadri, Kosamba Tarsadi"}</div>
                       <div className="text-slate-700">{viewOfferModal.candidate?.city || "Surat"}</div>
