@@ -341,6 +341,21 @@ export default function ReportsTab() {
     window.open(`${backendUrl}/staff-hrms/payroll/export/bank-transfer?month=${selectedMonth}&year=${selectedYear}`, "_blank");
   };
 
+  const handleExportPfEcr = () => {
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    window.open(`${backendUrl}/staff-hrms/payroll/export/statutory/pf-ecr?month=${selectedMonth}&year=${selectedYear}`, "_blank");
+  };
+
+  const handleExportEsi = () => {
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    window.open(`${backendUrl}/staff-hrms/payroll/export/statutory/esi-return?month=${selectedMonth}&year=${selectedYear}`, "_blank");
+  };
+
+  const handleExportPt = () => {
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    window.open(`${backendUrl}/staff-hrms/payroll/export/statutory/pt-report?month=${selectedMonth}&year=${selectedYear}`, "_blank");
+  };
+
   const handleOpenForm16 = async (employeeId) => {
     const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
     const res = await fetch(`${backendUrl}/staff-hrms/payroll/export/form16/${employeeId}?financialYear=${reportFinancialYear}`);
@@ -621,9 +636,9 @@ export default function ReportsTab() {
                 <p className="text-xs text-slate-500 mt-1">Monthly PF ECR file, ESI return summary, and Professional Tax reports formatted for government portal filing.</p>
               </div>
               <div className="mt-6 flex gap-2">
-                <Button variant="outline" className="flex-1 rounded-xl text-xs h-10">PF ECR Report</Button>
-                <Button variant="outline" className="flex-1 rounded-xl text-xs h-10">ESI Return</Button>
-                <Button variant="outline" className="flex-1 rounded-xl text-xs h-10">PT Slab Report</Button>
+                <Button variant="outline" onClick={handleExportPfEcr} className="flex-1 rounded-xl text-xs h-10 hover:bg-slate-50 dark:hover:bg-slate-800">PF ECR Report</Button>
+                <Button variant="outline" onClick={handleExportEsi} className="flex-1 rounded-xl text-xs h-10 hover:bg-slate-50 dark:hover:bg-slate-800">ESI Return</Button>
+                <Button variant="outline" onClick={handleExportPt} className="flex-1 rounded-xl text-xs h-10 hover:bg-slate-50 dark:hover:bg-slate-800">PT Slab Report</Button>
               </div>
             </Card>
           </div>
