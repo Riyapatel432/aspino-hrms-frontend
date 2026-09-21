@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, useMemo, Suspense } from "react";
 import { apiFetch } from "@/lib/api";
 import { useDispatch, useSelector } from "react-redux";
+import { usePermissions } from "@/context/PermissionContext";
 import { useSearchParams } from "next/navigation";
 import {
   fetchPayrollEmployees,
@@ -67,7 +68,7 @@ import {
 
 
 export default function MonthlyRunTab() {
-
+  const { isEmployee, user } = usePermissions();
   const dispatch = useDispatch();
   const {
     employees = [],
@@ -80,6 +81,22 @@ export default function MonthlyRunTab() {
     loading = false,
     activeFinancialYear = "",
   } = useSelector((state) => state.payroll || {});
+
+  const rawEmpList = useMemo(
+    () => (Array.isArray(employees?.data) ? employees.data : Array.isArray(employees) ? employees : []),
+    [employees]
+  );
+  const myEmployee = useMemo(() => {
+    if (!user) return null;
+    if (user.employee) return user.employee;
+    return rawEmpList.find(
+      (e) =>
+        (user.id && (String(e.userId) === String(user.id) || String(e.id) === String(user.id))) ||
+        (user.employeeId && (String(e.id) === String(user.employeeId) || String(e.employeeId) === String(user.employeeId))) ||
+        (user.email && e.email?.toLowerCase() === user.email.toLowerCase())
+    );
+  }, [user, rawEmpList]);
+  const myEmployeeId = myEmployee?.id || user?.employeeId || user?.id || null;
 
   const activeTab = "run";
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -219,9 +236,22 @@ export default function MonthlyRunTab() {
         search: runSearch,
         month: selectedMonth,
         year: selectedYear,
+        employeeId: isEmployee ? (myEmployeeId || undefined) : undefined,
       })
     );
-  }, [dispatch, runPage, runLimit, runSearch, selectedMonth, selectedYear]);
+  }, [dispatch, runPage, runLimit, runSearch, selectedMonth, selectedYear, isEmployee, myEmployeeId]);
+
+  const filteredMonthlyRunPayslips = useMemo(() => {
+    const list = Array.isArray(payslips?.data) ? payslips.data : Array.isArray(payslips) ? payslips : [];
+    if (!isEmployee || !myEmployeeId) return list;
+    return list.filter((rec) => {
+      const empId = String(rec.employeeId || rec.employee?.id || "");
+      const empCode = String(rec.employee?.employeeId || "");
+      const targetId = String(myEmployeeId);
+      const targetCode = String(myEmployee?.employeeId || "");
+      return empId === targetId || empCode === targetCode || empId === targetCode || empCode === targetId;
+    });
+  }, [payslips, isEmployee, myEmployeeId, myEmployee]);
 
   // Calculations for Structure Modal Live Preview
   const calculatedHra = (Number(structForm.basicSalary) * Number(structForm.hraPercent)) / 100;
@@ -594,16 +624,18 @@ export default function MonthlyRunTab() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
-                <Button onClick={handleRunPayroll} className="bg-sky-600 hover:bg-sky-700 text-white rounded-xl gap-2 h-10 px-5 shadow-md">
-                  <RefreshCw className="size-4" /> Calculate & Preview Payroll
-                </Button>
-                {currentRun && currentRun.status === "PREVIEW" && (
-                  <Button onClick={handleApproveRun} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl gap-2 h-10 px-5 shadow-md">
-                    <CheckCircle2 className="size-4" /> Approve & Lock Payroll
+              {!isEmployee && (
+                <div className="flex items-center gap-3">
+                  <Button onClick={handleRunPayroll} className="bg-sky-600 hover:bg-sky-700 text-white rounded-xl gap-2 h-10 px-5 shadow-md">
+                    <RefreshCw className="size-4" /> Calculate & Preview Payroll
                   </Button>
-                )}
-              </div>
+                  {currentRun && currentRun.status === "PREVIEW" && (
+                    <Button onClick={handleApproveRun} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl gap-2 h-10 px-5 shadow-md">
+                      <CheckCircle2 className="size-4" /> Approve & Lock Payroll
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Run Summary Banner */}
@@ -637,9 +669,9 @@ export default function MonthlyRunTab() {
               <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-3">Employee Payroll Breakdown Preview</h3>
               <DataTable
                 columns={payslipPreviewColumns}
-                data={payslips?.data || []}
-                totalRecords={payslips?.total || 0}
-                lazy={true}
+                data={filteredMonthlyRunPayslips}
+                totalRecords={isEmployee ? filteredMonthlyRunPayslips.length : (payslips?.total || filteredMonthlyRunPayslips.length)}
+                lazy={!isEmployee}
                 loading={loading}
                 page={runPage}
                 rows={runLimit}

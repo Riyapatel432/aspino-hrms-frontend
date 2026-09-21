@@ -27,6 +27,7 @@ export const fetchLeaves = createAsyncThunk("leave/fetchLeaves", async (params =
     if (params.sortOrder) query.append("sortOrder", params.sortOrder);
     if (params.status) query.append("status", params.status);
     if (params.leaveType) query.append("leaveType", params.leaveType);
+    if (params.employeeId) query.append("employeeId", params.employeeId);
 
     const res = await apiFetch(`${backendUrl}/staff-hrms/leave/leaves?${query.toString()}`);
     if (!res.ok) throw new Error("Failed to fetch leaves");
@@ -195,7 +196,7 @@ const leaveSlice = createSlice({
       .addCase(fetchLeaves.fulfilled, (state, action) => {
         state.loading = false;
         state.leaves = action.payload?.data || (Array.isArray(action.payload) ? action.payload : []);
-        state.totalLeaves = action.payload?.pagination?.total || state.leaves.length;
+        state.totalLeaves = action.payload?.total ?? action.payload?.pagination?.total ?? state.leaves.length;
       })
       .addCase(fetchLeaves.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
       .addCase(createLeave.fulfilled, (state, action) => {
@@ -225,7 +226,7 @@ const leaveSlice = createSlice({
       .addCase(fetchLeaveMasters.fulfilled, (state, action) => {
         state.loading = false;
         state.leaveMasters = action.payload?.data || (Array.isArray(action.payload) ? action.payload : []);
-        state.totalLeaveMasters = action.payload?.pagination?.total || state.leaveMasters.length;
+        state.totalLeaveMasters = action.payload?.total ?? action.payload?.pagination?.total ?? state.leaveMasters.length;
       })
       .addCase(fetchLeaveMasters.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
       .addCase(createLeaveMaster.fulfilled, (state, action) => { 
@@ -249,7 +250,7 @@ const leaveSlice = createSlice({
       .addCase(fetchHolidays.fulfilled, (state, action) => {
         state.loading = false;
         state.holidays = action.payload?.data || (Array.isArray(action.payload) ? action.payload : []);
-        state.totalHolidays = action.payload?.pagination?.total || state.holidays.length;
+        state.totalHolidays = action.payload?.total ?? action.payload?.pagination?.total ?? state.holidays.length;
       })
       .addCase(fetchHolidays.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
       .addCase(createHoliday.fulfilled, (state, action) => { 

@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { DataTable } from "@/components/ui/data-table";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { RouteGuard } from "@/context/PermissionContext";
 import {
   UserCheck,
   FileCheck,
@@ -29,6 +30,14 @@ import {
 } from "lucide-react";
 
 export default function OnboardingPage() {
+  return (
+    <RouteGuard subject="onboarding" action="read">
+      <OnboardingPageContent />
+    </RouteGuard>
+  );
+}
+
+function OnboardingPageContent() {
   const [employees, setEmployees] = useState([]);
   const [banks, setBanks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -480,7 +489,7 @@ export default function OnboardingPage() {
                 </div>
 
                 {/* Horizontal Navigation Tabs (Style matches the image) */}
-                <div className="flex border-b border-slate-200 dark:border-slate-850 gap-6 overflow-x-auto">
+                <div className="flex border-b border-slate-200 dark:border-slate-800 gap-6 overflow-x-auto">
                   {[
                     { id: "documents", label: "Document Collection", icon: FileCheck },
                     { id: "system", label: "System Access", icon: Laptop },

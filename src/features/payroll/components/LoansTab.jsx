@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, useMemo, Suspense } from "react";
 import { apiFetch } from "@/lib/api";
 import { useDispatch, useSelector } from "react-redux";
+import { usePermissions } from "@/context/PermissionContext";
 import { useSearchParams } from "next/navigation";
 import {
   fetchPayrollEmployees,
@@ -68,7 +69,7 @@ import {
 
 
 export default function LoansTab() {
-
+  const { isEmployee, user } = usePermissions();
   const dispatch = useDispatch();
   const {
     employees = [],
@@ -81,6 +82,22 @@ export default function LoansTab() {
     loading = false,
     activeFinancialYear = "",
   } = useSelector((state) => state.payroll || {});
+
+  const rawEmpList = useMemo(
+    () => (Array.isArray(employees?.data) ? employees.data : Array.isArray(employees) ? employees : []),
+    [employees]
+  );
+  const myEmployee = useMemo(() => {
+    if (!user) return null;
+    if (user.employee) return user.employee;
+    return rawEmpList.find(
+      (e) =>
+        (user.id && (String(e.userId) === String(user.id) || String(e.id) === String(user.id))) ||
+        (user.employeeId && (String(e.id) === String(user.employeeId) || String(e.employeeId) === String(user.employeeId))) ||
+        (user.email && e.email?.toLowerCase() === user.email.toLowerCase())
+    );
+  }, [user, rawEmpList]);
+  const myEmployeeId = myEmployee?.id || user?.employeeId || user?.id || null;
 
   const activeTab = "loans";
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -226,9 +243,22 @@ export default function LoansTab() {
         search: loanSearch,
         month: loanFilterMonth && loanFilterMonth !== "ALL" ? Number(loanFilterMonth) : undefined,
         year: loanFilterYear && loanFilterYear !== "ALL" ? Number(loanFilterYear) : undefined,
+        employeeId: isEmployee ? (myEmployeeId || undefined) : undefined,
       })
     );
-  }, [dispatch, loanPage, loanLimit, loanSearch, loanFilterMonth, loanFilterYear]);
+  }, [dispatch, loanPage, loanLimit, loanSearch, loanFilterMonth, loanFilterYear, isEmployee, myEmployeeId]);
+
+  const filteredLoansData = useMemo(() => {
+    const list = Array.isArray(loans?.data) ? loans.data : Array.isArray(loans) ? loans : [];
+    if (!isEmployee || !myEmployeeId) return list;
+    return list.filter((rec) => {
+      const empId = String(rec.employeeId || rec.employee?.id || "");
+      const empCode = String(rec.employee?.employeeId || "");
+      const targetId = String(myEmployeeId);
+      const targetCode = String(myEmployee?.employeeId || "");
+      return empId === targetId || empCode === targetCode || empId === targetCode || empCode === targetId;
+    });
+  }, [loans, isEmployee, myEmployeeId, myEmployee]);
 
   // Calculations for Structure Modal Live Preview
   const calculatedHra = (Number(structForm.basicSalary) * Number(structForm.hraPercent)) / 100;
@@ -785,11 +815,11 @@ export default function LoansTab() {
               </div>
             </div>
             <DataTable
-              data={loans.data || []}
+              data={filteredLoansData}
               columns={loanColumns}
               emptyMessage="No active loans or salary advances recorded."
-              lazy={true}
-              totalRecords={loans.total || 0}
+              lazy={!isEmployee}
+              totalRecords={isEmployee ? filteredLoansData.length : (loans.total || filteredLoansData.length)}
               page={loanPage}
               rows={loanLimit}
               search={loanSearch}

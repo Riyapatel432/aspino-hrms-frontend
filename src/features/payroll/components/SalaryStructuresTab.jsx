@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, useMemo, Suspense } from "react";
 import { apiFetch } from "@/lib/api";
 import { useDispatch, useSelector } from "react-redux";
+import { usePermissions } from "@/context/PermissionContext";
 import { useSearchParams } from "next/navigation";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -79,10 +80,90 @@ import {
   Filter,
 } from "lucide-react";
 
+export const BANK_IFSC_PREFIX_MAP = {
+  "HDFC": ["HDFC"],
+  "ICICI": ["ICIC"],
+  "STATE BANK OF INDIA": ["SBIN", "SBHY", "SBMY", "STBP", "SBTR", "SBI"],
+  "SBI": ["SBIN", "SBHY", "SBMY", "STBP", "SBTR", "SBI"],
+  "AXIS": ["UTIB", "AXIS"],
+  "KOTAK": ["KKBK"],
+  "PUNJAB NATIONAL": ["PUNB"],
+  "PNB": ["PUNB"],
+  "BANK OF BARODA": ["BARB"],
+  "BOB": ["BARB"],
+  "INDUSIND": ["INDB"],
+  "CANARA": ["CNRB"],
+  "UNION BANK": ["UBIN"],
+  "IDFC": ["IDFB"],
+  "YES BANK": ["YESB"],
+  "BANK OF INDIA": ["BKID"],
+  "BOI": ["BKID"],
+  "CENTRAL BANK": ["CBIN"],
+  "INDIAN BANK": ["IDIB"],
+  "INDIAN OVERSEAS": ["IOBA"],
+  "IOB": ["IOBA"],
+  "UCO": ["UCBA"],
+  "PUNJAB & SIND": ["PSIB"],
+  "FEDERAL": ["FDRL"],
+  "SOUTH INDIAN": ["SIBL"],
+  "RBL": ["RATN"],
+  "BANDHAN": ["BDBL"],
+  "AU SMALL": ["AUBL"],
+  "EQUITAS": ["ESFB"],
+  "CITY UNION": ["CIUB"],
+  "KARUR VYSYA": ["KVBL"],
+  "KARNATAKA": ["KARB"],
+  "STANDARD CHARTERED": ["SCBL"],
+  "HSBC": ["HSBC"],
+  "CITIBANK": ["CITI"],
+  "CITI": ["CITI"],
+  "DBS": ["DBSS"],
+};
+
+export function getExpectedIfscPrefixes(bankName) {
+  if (!bankName) return [];
+  const normalized = bankName.trim().toUpperCase();
+  for (const [key, prefixes] of Object.entries(BANK_IFSC_PREFIX_MAP)) {
+    if (normalized.includes(key)) {
+      return prefixes;
+    }
+  }
+  const clean = normalized.replace(/[^A-Z]/g, "");
+  if (clean.length >= 4) {
+    return [clean.slice(0, 4)];
+  }
+  return [];
+}
 
 export default function SalaryStructuresTab() {
-
+  const { isEmployee, isSuperAdmin, role, can, user } = usePermissions();
   const dispatch = useDispatch();
+
+  const canManageSalary = useMemo(() => {
+    const extractRoleName = (r) => {
+      if (!r) return "";
+      if (typeof r === "string") return r;
+      if (typeof r === "object") return r.name || r.role || r.displayName || "";
+      return String(r);
+    };
+    const rName = (
+      extractRoleName(role) ||
+      extractRoleName(user?.role) ||
+      extractRoleName(user?.roleRelation?.name) ||
+      ""
+    ).toUpperCase();
+
+    return (
+      rName.includes("HR") ||
+      rName.includes("ADMIN") ||
+      rName.includes("MANAGER") ||
+      isSuperAdmin ||
+      can("manage", "payroll") ||
+      can("update", "payroll") ||
+      can("create", "payroll") ||
+      !isEmployee
+    );
+  }, [role, user, isSuperAdmin, isEmployee, can]);
   const {
     employees = [],
     salaryStructures = [],
@@ -94,6 +175,22 @@ export default function SalaryStructuresTab() {
     loading = false,
     activeFinancialYear = "",
   } = useSelector((state) => state.payroll || {});
+
+  const rawEmpList = useMemo(
+    () => (Array.isArray(employees?.data) ? employees.data : Array.isArray(employees) ? employees : []),
+    [employees]
+  );
+  const myEmployee = useMemo(() => {
+    if (!user) return null;
+    if (user.employee) return user.employee;
+    return rawEmpList.find(
+      (e) =>
+        (user.id && (String(e.userId) === String(user.id) || String(e.id) === String(user.id))) ||
+        (user.employeeId && (String(e.id) === String(user.employeeId) || String(e.employeeId) === String(user.employeeId))) ||
+        (user.email && e.email?.toLowerCase() === user.email.toLowerCase())
+    );
+  }, [user, rawEmpList]);
+  const myEmployeeId = myEmployee?.id || user?.employeeId || user?.id || null;
 
   const activeTab = "structures";
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -169,6 +266,9 @@ export default function SalaryStructuresTab() {
     financialYear: activeFinancialYear || "2026-2027",
     landlordName: "",
     landlordPan: "",
+    houseNo: "",
+    landmark: "",
+    city: "",
     landlordAddress: "",
     monthlyRent: "",
   });
@@ -404,18 +504,44 @@ export default function SalaryStructuresTab() {
   }, [dispatch, selectedMonth, selectedYear]);
 
   useEffect(() => {
-    if (Array.isArray(employees) && employees.length > 0) {
-      const firstId = employees[0].id;
-      setStructForm((prev) => (prev.employeeId ? prev : { ...prev, employeeId: firstId }));
-      setRentForm((prev) => (prev.employeeId ? prev : { ...prev, employeeId: firstId }));
-      setTaxForm((prev) => (prev.employeeId ? prev : { ...prev, employeeId: firstId }));
-      setLoanForm((prev) => (prev.employeeId ? prev : { ...prev, employeeId: firstId }));
+    const empArr = Array.isArray(employees?.data) ? employees.data : (Array.isArray(employees) ? employees : []);
+    if (empArr.length > 0) {
+      const defaultId = isEmployee && myEmployeeId ? myEmployeeId : empArr[0].id;
+      setStructForm((prev) => (prev.employeeId ? prev : { ...prev, employeeId: defaultId }));
+      setRentForm((prev) => (prev.employeeId ? prev : { ...prev, employeeId: defaultId }));
+      setTaxForm((prev) => (prev.employeeId ? prev : { ...prev, employeeId: defaultId }));
+      setLoanForm((prev) => (prev.employeeId ? prev : { ...prev, employeeId: defaultId }));
     }
-  }, [employees]);
+  }, [employees, isEmployee, myEmployeeId]);
 
   useEffect(() => {
-    dispatch(fetchSalaryStructures({ page: structPage, limit: structLimit, search: structSearch, month: selectedMonth, year: selectedYear }));
-  }, [dispatch, structPage, structLimit, structSearch, selectedMonth, selectedYear]);
+    dispatch(
+      fetchSalaryStructures({
+        page: structPage,
+        limit: structLimit,
+        search: structSearch,
+        month: selectedMonth,
+        year: selectedYear,
+        employeeId: isEmployee ? (myEmployeeId || undefined) : undefined,
+      })
+    );
+  }, [dispatch, structPage, structLimit, structSearch, selectedMonth, selectedYear, isEmployee, myEmployeeId]);
+
+  const filteredSalaryStructuresData = useMemo(() => {
+    const list = Array.isArray(salaryStructures?.data)
+      ? salaryStructures.data
+      : Array.isArray(salaryStructures)
+      ? salaryStructures
+      : [];
+    if (!isEmployee || !myEmployeeId) return list;
+    return list.filter((rec) => {
+      const empId = String(rec.employeeId || rec.employee?.id || "");
+      const empCode = String(rec.employee?.employeeId || "");
+      const targetId = String(myEmployeeId);
+      const targetCode = String(myEmployee?.employeeId || "");
+      return empId === targetId || empCode === targetCode || empId === targetCode || empCode === targetId;
+    });
+  }, [salaryStructures, isEmployee, myEmployeeId, myEmployee]);
 
   const calculatedGross =
     Number(structForm.basicSalary) +
@@ -475,22 +601,40 @@ export default function SalaryStructuresTab() {
       errors.bankId = "Bank name is required.";
     }
 
-    if (!structForm.accountNumber || !structForm.accountNumber.trim()) {
+    const accNum = String(structForm.accountNumber || "").trim();
+    if (!accNum) {
       errors.accountNumber = "Account number is required.";
-    } else if (!/^\d{9,18}$/.test(structForm.accountNumber.trim())) {
-      errors.accountNumber = "Account number must be 9 to 18 digits.";
+    } else if (!/^\d+$/.test(accNum)) {
+      errors.accountNumber = "Account number must contain numbers only.";
+    } else if (accNum.length < 9 || accNum.length > 18) {
+      errors.accountNumber = `Account number must be 9 to 18 digits (currently ${accNum.length}).`;
     }
 
-    if (!structForm.ifscCode || !structForm.ifscCode.trim()) {
+    const ifsc = String(structForm.ifscCode || "").trim().toUpperCase();
+    if (!ifsc) {
       errors.ifscCode = "IFSC code is required.";
-    } else if (!/^[A-Z]{4}0[A-Z0-9]{6}$/i.test(structForm.ifscCode.trim())) {
-      errors.ifscCode = "Invalid IFSC Code format (e.g. HDFC0001234).";
+    } else if (ifsc.length !== 11) {
+      errors.ifscCode = `IFSC code must be exactly 11 characters (currently ${ifsc.length}).`;
+    } else if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) {
+      errors.ifscCode = "Invalid IFSC format. Must be 4 letters + 0 + 6 alphanumeric (e.g. HDFC0001234).";
+    } else if (structForm.bankId) {
+      const selectedBank = (banks || []).find((b) => String(b.id) === String(structForm.bankId));
+      if (selectedBank) {
+        const prefix = ifsc.slice(0, 4);
+        const expectedPrefixes = getExpectedIfscPrefixes(selectedBank.name);
+        if (expectedPrefixes.length > 0 && !expectedPrefixes.includes(prefix)) {
+          errors.ifscCode = `IFSC prefix "${prefix}" does not match selected bank "${selectedBank.name}". Expected prefix: ${expectedPrefixes.join(" or ")}.`;
+        }
+      }
     }
 
-    if (!structForm.panNumber || !structForm.panNumber.trim()) {
+    const pan = String(structForm.panNumber || "").trim().toUpperCase();
+    if (!pan) {
       errors.panNumber = "PAN number is required.";
-    } else if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/i.test(structForm.panNumber.trim())) {
-      errors.panNumber = "Invalid PAN format (e.g. ABCDE1234F).";
+    } else if (pan.length !== 10) {
+      errors.panNumber = `PAN number must be exactly 10 characters (currently ${pan.length}).`;
+    } else if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan)) {
+      errors.panNumber = "Invalid PAN format. Must be 5 letters + 4 digits + 1 letter (e.g. ABCDE1234F).";
     }
 
     if (Object.keys(errors).length > 0) {
@@ -592,15 +736,46 @@ export default function SalaryStructuresTab() {
     if (!rentForm.employeeId) errors.employeeId = "Employee is required.";
     if (!rentForm.financialYear) errors.financialYear = "Financial Year is required.";
     if (rentForm.monthlyRent === "" || Number(rentForm.monthlyRent) <= 0) errors.monthlyRent = "Valid monthly rent is required.";
-    if (!rentForm.landlordName) errors.landlordName = "Landlord name is required.";
-    if (!rentForm.landlordAddress) errors.landlordAddress = "Landlord address is required.";
+    if (!rentForm.landlordName?.trim()) errors.landlordName = "Landlord name is required.";
+    if (!rentForm.houseNo?.trim()) errors.houseNo = "House No. / Flat No. is required.";
+    if (!rentForm.landmark?.trim()) errors.landmark = "Landmark / Street is required.";
+    if (!rentForm.city?.trim()) errors.city = "City is required.";
+
+    const pan = String(rentForm.landlordPan || "").trim().toUpperCase();
+    const annualRent = (Number(rentForm.monthlyRent) || 0) * 12;
+
+    if (annualRent > 100000 && !pan) {
+      errors.landlordPan = "Landlord PAN is mandatory for annual rent exceeding ₹1,00,000.";
+    } else if (pan) {
+      if (pan.length !== 10) {
+        errors.landlordPan = `Landlord PAN must be exactly 10 characters (currently ${pan.length}).`;
+      } else if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan)) {
+        errors.landlordPan = "Invalid PAN format. Must be 5 letters + 4 digits + 1 letter (e.g. ABCDE1234F).";
+      }
+    }
 
     if (Object.keys(errors).length > 0) {
       setRentErrors(errors);
+      toast.error("Please resolve the validation errors before submitting.");
       return;
     }
+
+    const fullAddress = [
+      rentForm.houseNo?.trim(),
+      rentForm.landmark?.trim(),
+      rentForm.city?.trim(),
+    ].filter(Boolean).join(", ");
+
     setRentErrors({});
-    await dispatch(submitRentReceipt({...rentForm, monthlyRent: Number(rentForm.monthlyRent)}));
+    await dispatch(submitRentReceipt({
+      ...rentForm,
+      monthlyRent: Number(rentForm.monthlyRent),
+      landlordPan: pan,
+      houseNo: rentForm.houseNo?.trim(),
+      landmark: rentForm.landmark?.trim(),
+      city: rentForm.city?.trim(),
+      landlordAddress: fullAddress || rentForm.landlordAddress || "",
+    }));
     setIsRentOpen(false);
     dispatch(fetchRentReceipts());
   };
@@ -671,113 +846,125 @@ export default function SalaryStructuresTab() {
     }
   };
 
-  const salaryStructureColumns = [
-    {
-      key: "employee",
-      label: "Employee",
-      render: (row) => (
-        <span className="font-semibold">
-          {row.employee ? `${row.employee.firstName} ${row.employee.lastName} (${row.employee.employeeId})` : row.employeeId}
-        </span>
-      ),
-    },
-    {
-      key: "basicSalary",
-      label: "Basic Salary",
-      render: (row) => <span className="font-medium text-slate-900 dark:text-slate-100">₹{row.basicSalary.toLocaleString()}</span>,
-    },
-    {
-      key: "hraAmount",
-      label: "HRA",
-      render: (row) => <span className="text-emerald-600 font-medium">₹{row.hraAmount.toLocaleString()}</span>,
-    },
-    {
-      key: "da_allowances",
-      label: "DA / Allowances",
-      render: (row) => `₹${(row.da + row.conveyance + row.specialAllowance).toLocaleString()}`,
-    },
-    {
-      key: "grossSalary",
-      label: "Gross Monthly Salary",
-      render: (row) => <span className="font-extrabold text-sky-600 dark:text-sky-400">₹{row.grossSalary.toLocaleString()}</span>,
-    },
-    {
-      key: "statutoryFlags",
-      label: "Statutory Deductions",
-      sortable: false,
-      render: (row) => (
-        <div className="space-x-1">
-          {row.pfAmount > 0 && <Badge className="bg-emerald-100 text-emerald-800 text-[10px]">PF: ₹{row.pfAmount}</Badge>}
-          {row.esiAmount > 0 && <Badge className="bg-amber-100 text-amber-800 text-[10px]">ESI: ₹{row.esiAmount}</Badge>}
-          {row.ptAmount > 0 && <Badge className="bg-indigo-100 text-indigo-800 text-[10px]">PT: ₹{row.ptAmount}</Badge>}
-        </div>
-      ),
-    },
-    {
-      key: "bankDetails",
-      label: "Bank Account & PAN",
-      sortable: false,
-      render: (row) => (
-        <div className="text-xs space-y-0.5">
-          {row.employee?.bankId || row.employee?.bankName || row.employee?.accountNumber ? (
-            <>
-              <div className="font-semibold text-slate-800 dark:text-slate-200">
-                {row.employee?.bank?.name || row.employee?.bankName || (banks.find(b => b.id === row.employee?.bankId)?.name) || "Bank"} {row.employee?.accountNumber ? `(•••${row.employee.accountNumber.slice(-4)})` : ""}
-              </div>
-              <div className="text-[10px] text-slate-500 font-mono">
-                IFSC: {row.employee?.ifscCode || "N/A"} | PAN: {row.employee?.panNumber || "N/A"}
-              </div>
-            </>
-          ) : (
-            <span className="text-slate-400 italic text-[11px]">Not configured</span>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: "actions",
-      label: "Actions",
-      sortable: false,
-      render: (row) => (
-        <div className="flex items-center gap-2 justify-end">
-          <button
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-sky-500 hover:text-white hover:border-sky-500 dark:hover:bg-sky-500 rounded-lg transition-all cursor-pointer"
-            title="Edit Structure"
-            onClick={() => {
-              setStructForm({
-                employeeId: row.employeeId,
-                basicSalary: row.basicSalary,
-                hraAmount: row.hraAmount,
-                da: row.da,
-                conveyance: row.conveyance,
-                specialAllowance: row.specialAllowance,
-                statutoryBonus: row.statutoryBonus,
-                reimbursements: row.reimbursements,
-                pfAmount: row.pfAmount,
-                esiAmount: row.esiAmount,
-                ptAmount: row.ptAmount,
-                taxRegime: row.taxRegime,
-                bankId: row.employee?.bankId || row.employee?.bank?.id || "",
-                accountNumber: row.employee?.accountNumber || "",
-                ifscCode: row.employee?.ifscCode || "",
-                panNumber: row.employee?.panNumber || "",
-              });
-              setIsStructureOpen(true);
-            }}
-          >
-            <Edit className="w-4 h-4" />
-          </button>
-          <button
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all cursor-pointer"
-            title="Delete Structure"
-            onClick={() => setDeleteStructId(row.id)}
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
-      ),
-    },
-  ];
+  const salaryStructureColumns = useMemo(() => {
+    const cols = [
+      {
+        key: "employee",
+        label: "Employee",
+        sortValue: (row) => `${row.employee?.firstName || ""} ${row.employee?.lastName || ""} ${row.employee?.employeeId || row.employeeId || ""}`,
+        render: (row) => (
+          <span className="font-semibold">
+            {row.employee ? `${row.employee.firstName} ${row.employee.lastName} (${row.employee.employeeId})` : row.employeeId}
+          </span>
+        ),
+      },
+      {
+        key: "basicSalary",
+        label: "Basic Salary",
+        sortValue: (row) => Number(row.basicSalary) || 0,
+        render: (row) => <span className="font-medium text-slate-900 dark:text-slate-100">₹{row.basicSalary.toLocaleString()}</span>,
+      },
+      {
+        key: "hraAmount",
+        label: "HRA",
+        sortValue: (row) => Number(row.hraAmount) || 0,
+        render: (row) => <span className="text-emerald-600 font-medium">₹{row.hraAmount.toLocaleString()}</span>,
+      },
+      {
+        key: "da_allowances",
+        label: "DA / Allowances",
+        sortValue: (row) => (Number(row.da) || 0) + (Number(row.conveyance) || 0) + (Number(row.specialAllowance) || 0) + (Number(row.statutoryBonus) || 0) + (Number(row.reimbursements) || 0),
+        render: (row) => `₹${((row.da || 0) + (row.conveyance || 0) + (row.specialAllowance || 0) + (row.statutoryBonus || 0) + (row.reimbursements || 0)).toLocaleString()}`,
+      },
+      {
+        key: "grossSalary",
+        label: "Gross Monthly Salary",
+        sortValue: (row) => Number(row.grossSalary) || 0,
+        render: (row) => <span className="font-extrabold text-sky-600 dark:text-sky-400">₹{row.grossSalary.toLocaleString()}</span>,
+      },
+      {
+        key: "statutoryFlags",
+        label: "Statutory Deductions",
+        sortable: false,
+        render: (row) => (
+          <div className="space-x-1">
+            {row.pfAmount > 0 && <Badge className="bg-emerald-100 text-emerald-800 text-[10px]">PF: ₹{row.pfAmount}</Badge>}
+            {row.esiAmount > 0 && <Badge className="bg-amber-100 text-amber-800 text-[10px]">ESI: ₹{row.esiAmount}</Badge>}
+            {row.ptAmount > 0 && <Badge className="bg-indigo-100 text-indigo-800 text-[10px]">PT: ₹{row.ptAmount}</Badge>}
+          </div>
+        ),
+      },
+      {
+        key: "bankDetails",
+        label: "Bank Account & PAN",
+        sortable: false,
+        render: (row) => (
+          <div className="text-xs space-y-0.5">
+            {row.employee?.bankId || row.employee?.bankName || row.employee?.accountNumber ? (
+              <>
+                <div className="font-semibold text-slate-800 dark:text-slate-200">
+                  {row.employee?.bank?.name || row.employee?.bankName || (banks.find(b => b.id === row.employee?.bankId)?.name) || "Bank"} {row.employee?.accountNumber ? `(•••${row.employee.accountNumber.slice(-4)})` : ""}
+                </div>
+                <div className="text-[10px] text-slate-500 font-mono">
+                  IFSC: {row.employee?.ifscCode || "N/A"} | PAN: {row.employee?.panNumber || "N/A"}
+                </div>
+              </>
+            ) : (
+              <span className="text-slate-400 italic text-[11px]">Not configured</span>
+            )}
+          </div>
+        ),
+      },
+    ];
+
+    if (canManageSalary) {
+      cols.push({
+        key: "actions",
+        label: "Actions",
+        sortable: false,
+        render: (row) => (
+          <div className="flex items-center gap-2 justify-end">
+            <button
+              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-sky-500 hover:text-white hover:border-sky-500 dark:hover:bg-sky-500 rounded-lg transition-all cursor-pointer"
+              title="Edit Structure"
+              onClick={() => {
+                setStructForm({
+                  employeeId: row.employeeId,
+                  basicSalary: row.basicSalary,
+                  hraAmount: row.hraAmount,
+                  da: row.da,
+                  conveyance: row.conveyance,
+                  specialAllowance: row.specialAllowance,
+                  statutoryBonus: row.statutoryBonus,
+                  reimbursements: row.reimbursements,
+                  pfAmount: row.pfAmount,
+                  esiAmount: row.esiAmount,
+                  ptAmount: row.ptAmount,
+                  taxRegime: row.taxRegime,
+                  bankId: row.employee?.bankId || row.employee?.bank?.id || "",
+                  accountNumber: row.employee?.accountNumber || "",
+                  ifscCode: row.employee?.ifscCode || "",
+                  panNumber: row.employee?.panNumber || "",
+                });
+                setIsStructureOpen(true);
+              }}
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+            <button
+              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all cursor-pointer"
+              title="Delete Structure"
+              onClick={() => setDeleteStructId(row.id)}
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        ),
+      });
+    }
+
+    return cols;
+  }, [canManageSalary, banks]);
 
   const rentReceiptColumns = [
     {
@@ -895,31 +1082,34 @@ export default function SalaryStructuresTab() {
   
   return (
     <div className="space-y-6">
-          <div className="flex justify-between items-center">
-            <div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Configured Salary Structures</h2>
-              <p className="text-sm text-slate-500">Base salary breakdown for direct employees with Metro/Non-Metro HRA logic.</p>
-            </div>
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Configured Salary Structures</h2>
+          <p className="text-sm text-slate-500">Base salary breakdown for direct employees with Metro/Non-Metro HRA logic.</p>
+        </div>
 
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                className="border-indigo-500/30 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 rounded-xl h-10 px-4 font-semibold gap-2 cursor-pointer transition-all"
-                onClick={() => setIsCopyModalOpen(true)}
-                title="Salary Transfer"
-              >
-                <Repeat className="size-4 text-indigo-500" />
-                Salary Transfer
-              </Button>
+        {canManageSalary && (
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              className="border-indigo-500/30 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 rounded-xl h-10 px-4 font-semibold gap-2 cursor-pointer transition-all"
+              onClick={() => setIsCopyModalOpen(true)}
+              title="Salary Transfer"
+            >
+              <Repeat className="size-4 text-indigo-500" />
+              Salary Transfer
+            </Button>
 
-              {/* ENHANCED MODAL 1: SALARY STRUCTURE SETUP */}
-              <Dialog open={isStructureOpen} onOpenChange={setIsStructureOpen}>
-                <DialogTrigger asChild>
-                  <Button className="bg-sky-600 hover:bg-sky-700 text-white rounded-xl h-10 px-6 font-semibold shadow-md gap-2" onClick={resetStructForm}>
-                    <Plus className="size-4" /> Assign / Update Structure
-                  </Button>
-                </DialogTrigger>
-              <DialogContent className="max-w-6xl sm:max-w-6xl w-[94vw] max-h-[92vh] overflow-y-auto border-0 shadow-2xl rounded-3xl p-0 bg-slate-50 dark:bg-slate-950">
+            <Button className="bg-sky-600 hover:bg-sky-700 text-white rounded-xl h-10 px-6 font-semibold shadow-md gap-2" onClick={() => { resetStructForm(); setIsStructureOpen(true); }}>
+              <Plus className="size-4" /> Assign / Update Structure
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* ENHANCED MODAL 1: SALARY STRUCTURE SETUP */}
+      <Dialog open={isStructureOpen} onOpenChange={setIsStructureOpen}>
+        <DialogContent className="max-w-6xl sm:max-w-6xl w-[94vw] max-h-[92vh] overflow-y-auto border-0 shadow-2xl rounded-3xl p-0 bg-slate-50 dark:bg-slate-950">
                 {/* Modal Header */}
                 <div className="bg-gradient-to-r from-sky-900 via-indigo-900 to-slate-900 p-6 text-white flex justify-between items-start">
                   <div>
@@ -1170,7 +1360,7 @@ export default function SalaryStructuresTab() {
                         </h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
-                            <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Bank Name</Label>
+                            <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Bank Name *</Label>
                             <div className="mt-1.5">
                               <SearchableSelect
                                 options={(banks || []).map((b) => ({
@@ -1178,7 +1368,29 @@ export default function SalaryStructuresTab() {
                                   label: b.name
                                 }))}
                                 value={structForm.bankId ? String(structForm.bankId) : ""}
-                                onValueChange={(val) => setStructForm({ ...structForm, bankId: val ? Number(val) : "" })}
+                                onValueChange={(val) => {
+                                  const newBankId = val ? Number(val) : "";
+                                  const bankObj = (banks || []).find((b) => String(b.id) === String(newBankId));
+                                  setStructForm((prev) => ({ ...prev, bankId: newBankId }));
+
+                                  if (structErrors.bankId) {
+                                    setStructErrors((prev) => ({ ...prev, bankId: undefined }));
+                                  }
+
+                                  // Real-time IFSC prefix validation with newly selected bank
+                                  if (bankObj && structForm.ifscCode && structForm.ifscCode.trim().length >= 4) {
+                                    const prefix = structForm.ifscCode.trim().slice(0, 4).toUpperCase();
+                                    const expected = getExpectedIfscPrefixes(bankObj.name);
+                                    if (expected.length > 0 && !expected.includes(prefix)) {
+                                      setStructErrors((prev) => ({
+                                        ...prev,
+                                        ifscCode: `IFSC prefix "${prefix}" does not match ${bankObj.name}. Expected: ${expected.join(" or ")}`,
+                                      }));
+                                    } else {
+                                      setStructErrors((prev) => ({ ...prev, ifscCode: undefined }));
+                                    }
+                                  }
+                                }}
                                 placeholder={banksLoading ? "Loading banks..." : "Search & select Bank..."}
                                 searchPlaceholder="Type bank name (e.g. HDFC, SBI, ICICI)..."
                                 className={structErrors.bankId ? 'border-red-500 border-2' : ''}
@@ -1191,13 +1403,25 @@ export default function SalaryStructuresTab() {
                             )}
                           </div>
                           <div>
-                            <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Account Number</Label>
+                            <div className="flex items-center justify-between">
+                              <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Account Number *</Label>
+                              <span className={`text-[10px] font-mono ${structForm.accountNumber?.length >= 9 && structForm.accountNumber?.length <= 18 ? 'text-emerald-500 font-semibold' : 'text-slate-400'}`}>
+                                {structForm.accountNumber ? `${structForm.accountNumber.length}/18 digits` : "9-18 digits"}
+                              </span>
+                            </div>
                             <Input
                               type="text"
                               placeholder="e.g. 50100234567890"
-                              value={structForm.accountNumber}
-                              onChange={(e) => setStructForm({ ...structForm, accountNumber: e.target.value })}
-                              className={`rounded-xl mt-1.5 h-11 ${structErrors.accountNumber ? 'border-red-500 border-2' : ''}`}
+                              value={structForm.accountNumber || ""}
+                              maxLength={18}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/\D/g, '').slice(0, 18);
+                                setStructForm({ ...structForm, accountNumber: val });
+                                if (structErrors.accountNumber) {
+                                  setStructErrors((prev) => ({ ...prev, accountNumber: undefined }));
+                                }
+                              }}
+                              className={`rounded-xl mt-1.5 h-11 font-mono tracking-wider ${structErrors.accountNumber ? 'border-red-500 border-2 focus-visible:ring-red-500' : ''}`}
                             />
                             {structErrors.accountNumber && (
                               <div className="text-red-500 text-[11px] font-bold mt-1 pl-1">
@@ -1206,13 +1430,55 @@ export default function SalaryStructuresTab() {
                             )}
                           </div>
                           <div>
-                            <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">IFSC Code</Label>
+                            <div className="flex items-center justify-between">
+                              <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">IFSC Code *</Label>
+                              <span className={`text-[10px] font-mono ${structForm.ifscCode?.length === 11 && !structErrors.ifscCode ? 'text-emerald-500 font-semibold' : 'text-slate-400'}`}>
+                                {structForm.ifscCode ? `${structForm.ifscCode.length}/11 chars` : "11 chars"}
+                              </span>
+                            </div>
                             <Input
                               type="text"
-                              placeholder="e.g. HDFC0001234"
-                              value={structForm.ifscCode}
-                              onChange={(e) => setStructForm({ ...structForm, ifscCode: e.target.value.toUpperCase() })}
-                              className={`rounded-xl mt-1.5 h-11 uppercase ${structErrors.ifscCode ? 'border-red-500 border-2' : ''}`}
+                              placeholder={
+                                structForm.bankId && (banks || []).find((b) => String(b.id) === String(structForm.bankId))
+                                  ? `e.g. ${(getExpectedIfscPrefixes((banks || []).find((b) => String(b.id) === String(structForm.bankId)).name)[0] || 'HDFC')}0001234`
+                                  : "e.g. HDFC0001234"
+                              }
+                              value={structForm.ifscCode || ""}
+                              maxLength={11}
+                              onChange={(e) => {
+                                const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 11);
+                                
+                                // Auto-detect bank if no bank is selected yet and 4 chars typed
+                                let nextBankId = structForm.bankId;
+                                if (!nextBankId && val.length >= 4) {
+                                  const prefix = val.slice(0, 4);
+                                  const autoMatch = (banks || []).find((b) => getExpectedIfscPrefixes(b.name).includes(prefix));
+                                  if (autoMatch) {
+                                    nextBankId = autoMatch.id;
+                                  }
+                                }
+
+                                setStructForm((prev) => ({ ...prev, ifscCode: val, bankId: nextBankId || prev.bankId }));
+
+                                // Real-time validation against selected bank
+                                const currentBankId = nextBankId || structForm.bankId;
+                                const selectedBank = (banks || []).find((b) => String(b.id) === String(currentBankId));
+                                if (selectedBank && val.length >= 4) {
+                                  const prefix = val.slice(0, 4);
+                                  const expected = getExpectedIfscPrefixes(selectedBank.name);
+                                  if (expected.length > 0 && !expected.includes(prefix)) {
+                                    setStructErrors((prev) => ({
+                                      ...prev,
+                                      ifscCode: `IFSC prefix "${prefix}" does not match selected bank "${selectedBank.name}". Expected: ${expected.join(" or ")}`,
+                                    }));
+                                  } else {
+                                    setStructErrors((prev) => ({ ...prev, ifscCode: undefined, bankId: undefined }));
+                                  }
+                                } else if (structErrors.ifscCode) {
+                                  setStructErrors((prev) => ({ ...prev, ifscCode: undefined }));
+                                }
+                              }}
+                              className={`rounded-xl mt-1.5 h-11 uppercase font-mono tracking-wider ${structErrors.ifscCode ? 'border-red-500 border-2 focus-visible:ring-red-500' : ''}`}
                             />
                             {structErrors.ifscCode && (
                               <div className="text-red-500 text-[11px] font-bold mt-1 pl-1">
@@ -1221,13 +1487,25 @@ export default function SalaryStructuresTab() {
                             )}
                           </div>
                           <div>
-                            <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">PAN Number</Label>
+                            <div className="flex items-center justify-between">
+                              <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">PAN Number *</Label>
+                              <span className={`text-[10px] font-mono ${structForm.panNumber?.length === 10 ? 'text-emerald-500 font-semibold' : 'text-slate-400'}`}>
+                                {structForm.panNumber ? `${structForm.panNumber.length}/10 chars` : "10 chars"}
+                              </span>
+                            </div>
                             <Input
                               type="text"
                               placeholder="e.g. ABCDE1234F"
-                              value={structForm.panNumber}
-                              onChange={(e) => setStructForm({ ...structForm, panNumber: e.target.value.toUpperCase() })}
-                              className={`rounded-xl mt-1.5 h-11 uppercase ${structErrors.panNumber ? 'border-red-500 border-2' : ''}`}
+                              value={structForm.panNumber || ""}
+                              maxLength={10}
+                              onChange={(e) => {
+                                const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+                                setStructForm({ ...structForm, panNumber: val });
+                                if (structErrors.panNumber) {
+                                  setStructErrors((prev) => ({ ...prev, panNumber: undefined }));
+                                }
+                              }}
+                              className={`rounded-xl mt-1.5 h-11 uppercase font-mono tracking-wider ${structErrors.panNumber ? 'border-red-500 border-2 focus-visible:ring-red-500' : ''}`}
                             />
                             {structErrors.panNumber && (
                               <div className="text-red-500 text-[11px] font-bold mt-1 pl-1">
@@ -1251,8 +1529,6 @@ export default function SalaryStructuresTab() {
                 </form>
               </DialogContent>
             </Dialog>
-          </div>
-        </div>
 
         {/* BULK SALARY STRUCTURE IMPORT DIALOG */}
         <Dialog open={isBulkSalaryOpen} onOpenChange={(open) => { setIsBulkSalaryOpen(open); if (!open) handleCloseBulkModal(); }}>
@@ -1467,9 +1743,9 @@ export default function SalaryStructuresTab() {
 
               <DataTable
                 columns={salaryStructureColumns}
-                data={salaryStructures?.data || []}
-                totalRecords={salaryStructures?.total || 0}
-                lazy={true}
+                data={filteredSalaryStructuresData}
+                totalRecords={isEmployee ? filteredSalaryStructuresData.length : (salaryStructures?.total || filteredSalaryStructuresData.length)}
+                lazy={!isEmployee}
                 loading={loading}
                 page={structPage}
                 rows={structLimit}

@@ -15,7 +15,18 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 
-export function DateTimePicker({ date, setDate, type = "datetime", placeholder = "Select date", minDate, disablePast = false, disabled }) {
+export function DateTimePicker({
+  date,
+  setDate,
+  type = "datetime",
+  placeholder = "Select date",
+  minDate,
+  maxDate,
+  disablePast = false,
+  disableFuture = false,
+  disabled,
+  className,
+}) {
   const [open, setOpen] = React.useState(false);
 
   // Helper to extract HH:mm time string safely
@@ -82,16 +93,27 @@ export function DateTimePicker({ date, setDate, type = "datetime", placeholder =
     }
   };
 
-  const calendarDisabled = disabled
-    ? disabled
-    : minDate
-    ? { before: new Date(minDate) }
-    : disablePast
-    ? { before: new Date(new Date().setHours(0, 0, 0, 0)) }
-    : undefined;
+  const calendarDisabled = React.useMemo(() => {
+    if (disabled) return disabled;
+    const rules = [];
+    if (minDate) rules.push({ before: new Date(minDate) });
+    if (maxDate) rules.push({ after: new Date(maxDate) });
+    if (disablePast) {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      rules.push({ before: todayStart });
+    }
+    if (disableFuture) {
+      const todayEnd = new Date();
+      todayEnd.setHours(23, 59, 59, 999);
+      rules.push({ after: todayEnd });
+    }
+    if (rules.length === 0) return undefined;
+    return rules.length === 1 ? rules[0] : rules;
+  }, [disabled, minDate, maxDate, disablePast, disableFuture]);
 
   return (
-    <div className={cn("flex flex-row items-center gap-2", type === "datetime" ? "w-full" : "w-auto")}>
+    <div className={cn("flex flex-row items-center gap-2 w-full", className)}>
       {(type === "date" || type === "datetime") && (
         <div className={type === "datetime" ? "flex-1" : "w-full"}>
           <Popover open={open} onOpenChange={setOpen}>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { API_URL, apiFetch, getErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
+import { RouteGuard } from "@/context/PermissionContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +32,14 @@ import {
 } from "lucide-react";
 
 export default function ActivityLogsPage() {
+  return (
+    <RouteGuard subject="audit" action="read">
+      <ActivityLogsContent />
+    </RouteGuard>
+  );
+}
+
+function ActivityLogsContent() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedLog, setSelectedLog] = useState(null);

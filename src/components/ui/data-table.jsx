@@ -179,22 +179,69 @@ export function DataTable({
     });
   }, [rawData, localSearchQuery, keysToSearch, isLazy]);
 
-  // Client-side sorting
-  const currentSortKey = isLazy ? (serverSortBy ?? null) : localSortConfig.key;
-  const currentSortDir = isLazy ? (serverSortOrder ?? null) : localSortConfig.direction;
+  // Client-side sorting & Server-side sorting detection
+  const isServerSorting = isLazy && (onSortChange !== undefined || onSort !== undefined);
+  const currentSortKey = isServerSorting ? (serverSortBy ?? null) : localSortConfig.key;
+  const currentSortDir = isServerSorting ? (serverSortOrder ?? null) : localSortConfig.direction;
+
+  const resolveCellValue = (row, colKey, colDef) => {
+    if (!row) return null;
+    if (typeof colDef?.sortValue === "function") return colDef.sortValue(row);
+    if (typeof colDef?.accessorFn === "function") return colDef.accessorFn(row);
+    if (typeof colDef?.sortKey === "string") {
+      const val = colDef.sortKey.split(".").reduce((o, p) => o?.[p], row);
+      if (val !== undefined) return val;
+    }
+    
+    // Automatic helper for nested objects (e.g. employee object)
+    if (colKey === "employee" && row.employee) {
+      if (typeof row.employee === "object") {
+        return `${row.employee.firstName || ""} ${row.employee.lastName || ""} ${row.employee.employeeId || ""}`.trim();
+      }
+      return row.employee;
+    }
+    if (colKey === "da_allowances" || colKey === "daAllowances") {
+      return (Number(row.da) || 0) + (Number(row.conveyance) || 0) + (Number(row.specialAllowance) || 0) + (Number(row.statutoryBonus) || 0) + (Number(row.reimbursements) || 0);
+    }
+    
+    const val = colKey ? colKey.split(".").reduce((o, p) => o?.[p], row) : undefined;
+    if (val !== undefined) return val;
+    return null;
+  };
 
   const sortedData = useMemo(() => {
-    if (isLazy) return rawData;
-    if (!currentSortKey) return filteredData;
-    return [...filteredData].sort((a, b) => {
-      const aVal = currentSortKey.split(".").reduce((o, p) => o?.[p], a);
-      const bVal = currentSortKey.split(".").reduce((o, p) => o?.[p], b);
+    const sourceData = isLazy ? rawData : filteredData;
+    if (!currentSortKey || isServerSorting) return sourceData;
+    
+    const activeCol = effectiveColumns.find(
+      (c) => c.key === currentSortKey || c.id === currentSortKey || c.accessorKey === currentSortKey
+    );
+
+    return [...sourceData].sort((a, b) => {
+      const aVal = resolveCellValue(a, currentSortKey, activeCol);
+      const bVal = resolveCellValue(b, currentSortKey, activeCol);
+
+      if (aVal == null && bVal == null) return 0;
       if (aVal == null) return 1;
       if (bVal == null) return -1;
-      const cmp = String(aVal).localeCompare(String(bVal), undefined, { numeric: true });
+
+      // Direct number comparison
+      if (typeof aVal === "number" && typeof bVal === "number") {
+        return currentSortDir === "asc" ? aVal - bVal : bVal - aVal;
+      }
+
+      // Numeric string comparison
+      const numA = typeof aVal === "string" ? Number(aVal.replace(/[^0-9.-]+/g, "")) : Number(aVal);
+      const numB = typeof bVal === "string" ? Number(bVal.replace(/[^0-9.-]+/g, "")) : Number(bVal);
+      if (!isNaN(numA) && !isNaN(numB) && typeof aVal !== "boolean" && typeof bVal !== "boolean" && String(aVal).trim() !== "" && String(bVal).trim() !== "") {
+        return currentSortDir === "asc" ? numA - numB : numB - numA;
+      }
+
+      // String comparison
+      const cmp = String(aVal).localeCompare(String(bVal), undefined, { numeric: true, sensitivity: "base" });
       return currentSortDir === "asc" ? cmp : -cmp;
     });
-  }, [filteredData, currentSortKey, currentSortDir, isLazy, rawData]);
+  }, [filteredData, rawData, currentSortKey, currentSortDir, isLazy, isServerSorting, effectiveColumns]);
 
   // Total count & total pages calculation
   const totalCount = isLazy
@@ -210,13 +257,16 @@ export function DataTable({
     : Math.max(1, Math.ceil(sortedData.length / activeRowsPerPage));
 
   const paginatedData = useMemo(() => {
-    if (isLazy) return rawData;
+    if (isLazy) {
+      if (isServerSorting) return rawData;
+      return sortedData;
+    }
     const safePage = Math.min(activeCurrentPage, activeTotalPages);
     return sortedData.slice(
       (safePage - 1) * activeRowsPerPage,
       safePage * activeRowsPerPage
     );
-  }, [sortedData, activeCurrentPage, activeRowsPerPage, activeTotalPages, isLazy, rawData]);
+  }, [sortedData, activeCurrentPage, activeRowsPerPage, activeTotalPages, isLazy, isServerSorting, rawData]);
 
   // Event handlers
   const handleSearchChange = (term) => {
@@ -240,13 +290,15 @@ export function DataTable({
     const isAsc = currentSortKey === key && (currentSortDir === "asc" || currentSortDir === 1);
     const nextDir = isAsc ? "desc" : "asc";
 
-    if (isLazy) {
+    if (isServerSorting) {
       onSortChange?.(key, nextDir);
       onSort?.({ sortField: key, sortOrder: nextDir === "asc" ? 1 : -1 });
       onPageChange?.(1);
     } else {
       setLocalSortConfig({ key, direction: nextDir });
-      setLocalCurrentPage(1);
+      if (!isLazy) {
+        setLocalCurrentPage(1);
+      }
     }
   };
 
@@ -406,7 +458,9 @@ export function DataTable({
                         {col.render
                           ? col.render(row, i)
                           : col.cell
-                          ? col.cell(row, i)
+                          ? typeof col.cell === "function"
+                            ? col.cell({ row, ...row, original: row, getValue: () => colKey.split(".").reduce((o, p) => o?.[p], row) }, i)
+                            : col.cell
                           : (() => {
                               const val = colKey
                                 ?.split(".")

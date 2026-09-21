@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { apiFetch, getErrorMessage } from "@/lib/api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -60,8 +61,17 @@ import {
   updateOfferStatus
 } from "@/features/recruitment/store/recruitmentSlice";
 import { toast } from "sonner";
+import { RouteGuard } from "@/context/PermissionContext";
 
 export default function RecruitmentPage() {
+  return (
+    <RouteGuard subject="recruitment" action="read">
+      <RecruitmentPageContent />
+    </RouteGuard>
+  );
+}
+
+function RecruitmentPageContent() {
   const [activeTab, setActiveTab] = useState("requisitions");
   const [viewOfferModal, setViewOfferModal] = useState(null);
   // CNV Compliance Modal State
@@ -169,6 +179,7 @@ export default function RecruitmentPage() {
   const [dropdownRequisitions, setDropdownRequisitions] = useState([]);
   const [dropdownCandidates, setDropdownCandidates] = useState([]);
   const [dropdownEmployees, setDropdownEmployees] = useState([]);
+  const [dropdownInterviewRounds, setDropdownInterviewRounds] = useState([]);
 
   // Departments & Employees: needed on Job Requisitions tab (form dropdowns)
   useEffect(() => {
@@ -184,14 +195,15 @@ export default function RecruitmentPage() {
   // Requisitions dropdown: needed on Candidates & Sourcing tab (Job Requisition select)
   useEffect(() => {
     if (activeTab !== "candidates") return;
+    dispatch(fetchDepartments());
     const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
     apiFetch(`${backendUrl}/staff-hrms/recruitment/requisitions`)
       .then(res => res.json())
       .then(data => setDropdownRequisitions(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
       .catch(err => console.error("Failed to fetch dropdown requisitions:", err));
-  }, [activeTab]);
+  }, [dispatch, activeTab]);
 
-  // Candidates dropdown + Users: needed on Interview Scheduling tab (Candidate select & Panel Members)
+  // Candidates dropdown + Users + Interview Rounds: needed on Interview Scheduling tab
   useEffect(() => {
     if (activeTab !== "interviews") return;
     const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -199,6 +211,11 @@ export default function RecruitmentPage() {
       .then(res => res.json())
       .then(data => setDropdownCandidates(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
       .catch(err => console.error("Failed to fetch dropdown candidates:", err));
+
+    apiFetch(`${backendUrl}/staff-hrms/recruitment/interview-rounds?limit=100&isActive=true`)
+      .then(res => res.json())
+      .then(data => setDropdownInterviewRounds(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
+      .catch(err => console.error("Failed to fetch interview rounds:", err));
 
     apiFetch(`${backendUrl}/users`)
       .then(res => res.json())
@@ -228,7 +245,7 @@ export default function RecruitmentPage() {
   const [newCand, setNewCand] = useState({ name: "", email: "", phone: "", source: "", requisitionId: "", experienceYears: "", resumeUrl: "" });
   const [uploadingFile, setUploadingFile] = useState(false);
   // Schedule Form State
-  const [newSched, setNewSched] = useState({ candidateId: "", roundName: "", scheduledAt: "", panelists: [] });
+  const [newSched, setNewSched] = useState({ candidateId: "", interviewRoundId: "", roundName: "", scheduledAt: "", panelists: [] });
   // Feedback Form State
   const [newFeedback, setNewFeedback] = useState({ id: "", scheduleId: "", panelistId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
   const [feedbackCandidateId, setFeedbackCandidateId] = useState("ALL");
@@ -307,6 +324,19 @@ export default function RecruitmentPage() {
       const found = (usersList || []).find((u) => String(u.id) === String(item) || u.name?.toLowerCase() === String(item).toLowerCase());
       return found ? found.name : item;
     }).filter(Boolean);
+  };
+
+  const getRoundDisplayName = (sched) => {
+    if (!sched) return "";
+    if (sched.interviewRound?.name) return sched.interviewRound.name;
+    const roundIdOrName = sched.interviewRoundId || sched.roundName;
+    const matched = (dropdownInterviewRounds || []).find(
+      (r) =>
+        String(r.id) === String(roundIdOrName) ||
+        (r.name && r.name.toLowerCase() === String(roundIdOrName).toLowerCase())
+    );
+    if (matched) return matched.name;
+    return sched.roundName || "Interview Round";
   };
 
   const computeEmployeeTenure = (doj, lastDay, createdAt) => {
@@ -536,10 +566,27 @@ export default function RecruitmentPage() {
       }
     }
 
-    if (!newSched.roundName?.trim()) {
-      errs.roundName = "Interview round name is required.";
-    } else if (newSched.roundName.trim() === "0" || /^0+$/.test(newSched.roundName.trim())) {
+    const selectedRoundVal = newSched.interviewRoundId || newSched.roundName;
+    if (!selectedRoundVal?.trim()) {
+      errs.roundName = "Interview round is required.";
+    } else if (selectedRoundVal.trim() === "0" || /^0+$/.test(selectedRoundVal.trim())) {
       errs.roundName = "Round name cannot be 0.";
+    } else if (newSched.candidateId) {
+      const normalizedRound = selectedRoundVal.trim().toLowerCase();
+      const duplicateRound = (schedules || []).find(
+        (s) =>
+          String(s.candidateId) === String(newSched.candidateId) &&
+          (!newSched.id || String(s.id) !== String(newSched.id)) &&
+          ((s.interviewRoundId && String(s.interviewRoundId) === String(selectedRoundVal)) ||
+            (s.roundName && String(s.roundName) === String(selectedRoundVal)) ||
+            (s.roundName && s.roundName?.trim().toLowerCase() === normalizedRound) ||
+            (newSched.interviewRoundId && s.roundName && String(s.roundName) === String(newSched.interviewRoundId))) &&
+          s.status !== "CANCELLED"
+      );
+      if (duplicateRound) {
+        const dupName = getRoundDisplayName(duplicateRound);
+        errs.roundName = `Candidate is already scheduled for round "${dupName}". Multiple interviews in the same round are not allowed.`;
+      }
     }
     if (!newSched.scheduledAt) {
       errs.scheduledAt = "Interview date and time is required.";
@@ -555,7 +602,8 @@ export default function RecruitmentPage() {
         );
         const latestSched = sortedSchedules[0];
         if (!newSched.id && new Date(newSched.scheduledAt) <= new Date(latestSched.scheduledAt)) {
-          errs.scheduledAt = `New round must be scheduled after previous round "${latestSched.roundName}" (${new Date(latestSched.scheduledAt).toLocaleString()}).`;
+          const latestName = getRoundDisplayName(latestSched);
+          errs.scheduledAt = `New round must be scheduled after previous round "${latestName}" (${new Date(latestSched.scheduledAt).toLocaleString()}).`;
         }
       }
     }
@@ -863,6 +911,7 @@ export default function RecruitmentPage() {
     if (!validateSchedule()) return;
     try {
       const panelistsList = parsePanelistList(newSched.panelists);
+      const masterRoundId = newSched.interviewRoundId || newSched.roundName;
       if (newSched.id) {
         // Edit mode
         const res = await apiFetch(`${backendUrl}/staff-hrms/recruitment/schedules/${newSched.id}`, {
@@ -870,14 +919,15 @@ export default function RecruitmentPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             candidateId: newSched.candidateId,
-            roundName: newSched.roundName,
+            interviewRoundId: masterRoundId || null,
+            roundName: masterRoundId,
             scheduledAt: newSched.scheduledAt,
             panelists: panelistsList
           })
         });
         if (res.ok) {
           dispatch(fetchSchedules());
-          setNewSched({ candidateId: "", roundName: "", scheduledAt: "", panelists: [] });
+          setNewSched({ candidateId: "", interviewRoundId: "", roundName: "", scheduledAt: "", panelists: [] });
           toast.success("Schedule updated successfully");
         } else {
           const msg = await getErrorMessage(res, "Failed to update schedule");
@@ -887,8 +937,9 @@ export default function RecruitmentPage() {
         // Create mode
         await dispatch(createSchedule({
           ...newSched,
+          interviewRoundId: masterRoundId || null,
           panelists: panelistsList,
-          roundName: newSched.roundName?.trim() || "Technical Round",
+          roundName: masterRoundId || "Technical Round",
         })).unwrap();
         // Automatically update candidate status to INTERVIEWING if active
         try {
@@ -898,7 +949,7 @@ export default function RecruitmentPage() {
         }
         dispatch(fetchCandidates());
         dispatch(fetchSchedules());
-        setNewSched({ candidateId: "", roundName: "", scheduledAt: "", panelists: [] });
+        setNewSched({ candidateId: "", interviewRoundId: "", roundName: "", scheduledAt: "", panelists: [] });
         toast.success("Schedule created successfully");
       }
     } catch (err) {
@@ -914,7 +965,7 @@ export default function RecruitmentPage() {
       });
       if (res.ok) {
         if (newSched.id === id) {
-          setNewSched({ candidateId: "", interviewer: "", scheduledAt: "", location: "" });
+          setNewSched({ candidateId: "", interviewRoundId: "", roundName: "", scheduledAt: "", panelists: [] });
           setFormErrors({});
         }
         dispatch(fetchSchedules());
@@ -1038,7 +1089,9 @@ export default function RecruitmentPage() {
         }
       } else {
         // Create mode
-        await dispatch(createOffer(newOffer)).unwrap();
+        await dispatch(createOffer({
+          ...newOffer,
+        })).unwrap();
         setNewOffer({ candidateId: "", role: "", salary: "", joiningDate: "" });
         toast.success("Offer created successfully");
       }
@@ -2673,6 +2726,19 @@ export default function RecruitmentPage() {
                       </SelectContent>
                     </Select>
                     {formErrors.requisitionId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.requisitionId}</span>}
+                    {newCand.requisitionId && (() => {
+                      const selReq = dropdownRequisitions.find(r => String(r.id) === String(newCand.requisitionId));
+                      const deptName = selReq?.department?.name || departments.find(d => String(d.id) === String(selReq?.departmentId))?.name;
+                      if (!deptName) return null;
+                      return (
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                          <span className="font-semibold text-slate-600 dark:text-slate-300">Department:</span>
+                          <span className="font-bold text-sky-600 dark:text-sky-400 uppercase bg-sky-50 dark:bg-sky-950/40 px-2 py-0.5 rounded border border-sky-100 dark:border-sky-800/60 text-[10px]">
+                            {deptName}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
@@ -2916,6 +2982,22 @@ export default function RecruitmentPage() {
                       },
                     },
                     {
+                      key: "department",
+                      label: "Department",
+                      render: (row) => {
+                        const deptName =
+                          row.requisition?.department?.name ||
+                          dropdownRequisitions.find((r) => String(r.id) === String(row.requisitionId))?.department?.name ||
+                          departments.find((d) => String(d.id) === String(row.requisition?.departmentId))?.name ||
+                          "—";
+                        return (
+                          <span className="text-xs font-extrabold uppercase px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 inline-block">
+                            {deptName}
+                          </span>
+                        );
+                      },
+                    },
+                    {
                       key: "resumeUrl",
                       label: "Resume",
                       sortable: false,
@@ -2933,28 +3015,32 @@ export default function RecruitmentPage() {
                     {
                       key: "status",
                       label: "Status",
-                      render: (row) => {
-                        const coolOff = getCandidateCoolOffInfo(row);
-                        if (row.status === "REJECTED") {
-                          if (coolOff.isCoolingOff) {
-                            return (
-                              <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-lg uppercase bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-500/20">
-                                REJECTED ({coolOff.daysLeft}d cool-off)
-                              </span>
-                            );
-                          }
-                          return (
-                            <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-lg uppercase bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-500/20">
-                              REJECTED (Re-interview Eligible)
-                            </span>
-                          );
-                        }
-                        return (
-                          <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-lg uppercase bg-sky-50 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-100 dark:border-sky-500/20 dark:bg-sky-950 dark:text-sky-400 dark:border-sky-900/50">
+                      render: (row) => (
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border flex items-center gap-1.5 uppercase ${
+                            row.status === "SELECTED"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800"
+                              : row.status === "INTERVIEWING"
+                              ? "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950 dark:text-indigo-300 dark:border-indigo-800"
+                              : row.status === "ACCEPTED"
+                              ? "bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800"
+                              : row.status === "OFFERED"
+                              ? "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800"
+                              : row.status === "REJECTED"
+                              ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800"
+                              : "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800"
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                              row.status === "SELECTED" ? "bg-emerald-500" :
+                              row.status === "INTERVIEWING" ? "bg-indigo-500 animate-pulse" :
+                              row.status === "ACCEPTED" ? "bg-teal-500" :
+                              row.status === "OFFERED" ? "bg-purple-500" :
+                              row.status === "REJECTED" ? "bg-rose-500" : "bg-sky-500"
+                            }`} />
                             {row.status}
                           </span>
-                        );
-                      },
+                        </div>
+                      ),
                     },
                     {
                       key: "actions",
@@ -3109,10 +3195,20 @@ export default function RecruitmentPage() {
                               </span>
                             )}
                           </div>
+                          {candSchedules.length > 0 && (
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-1">
+                              <span className="font-semibold text-slate-700 dark:text-slate-300">Existing Rounds:</span>
+                              {candSchedules.map((s, idx) => (
+                                <span key={s.id || idx} className="inline-block px-1.5 py-0.5 rounded bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 font-bold border border-sky-200 dark:border-sky-800 text-[10px]">
+                                  {getRoundDisplayName(s)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                           {latestSched && (
                             <div className="text-sky-600 dark:text-sky-400 font-semibold text-[11px] flex items-center gap-1">
                               <Calendar className="w-3 h-3 shrink-0" />
-                              Latest Round ({latestSched.roundName}): {new Date(latestSched.scheduledAt).toLocaleString()}
+                              Latest Round ({getRoundDisplayName(latestSched)}): {new Date(latestSched.scheduledAt).toLocaleString()}
                             </div>
                           )}
                           {coolOff.isCoolingOff ? (
@@ -3135,14 +3231,87 @@ export default function RecruitmentPage() {
                       );
                     })()}
                     <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Round Name</Label>
-                      <Input
-                        value={newSched.roundName}
-                        onChange={(e) => {
-                          setNewSched({ ...newSched, roundName: e.target.value });
-                          if (formErrors.roundName) setFormErrors({ ...formErrors, roundName: null });
-                        }}
-                      />
+                      <div className="flex justify-between items-center">
+                        <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Round Name</Label>
+                        <Link
+                          href="/dashboard/interview-rounds"
+                          className="text-[10.5px] font-bold text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-0.5"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          + Manage Rounds
+                        </Link>
+                      </div>
+                      {(() => {
+                        const availableRounds = Array.isArray(dropdownInterviewRounds) ? dropdownInterviewRounds : [];
+                        const matchedRound = availableRounds.find(r =>
+                          (newSched.interviewRoundId && String(r.id) === String(newSched.interviewRoundId)) ||
+                          (newSched.roundName && String(r.id) === String(newSched.roundName)) ||
+                          (newSched.roundName && r.name?.toLowerCase() === String(newSched.roundName)?.toLowerCase())
+                        );
+                        const selectVal = matchedRound ? String(matchedRound.id) : (newSched.interviewRoundId || newSched.roundName || "");
+
+                        return (
+                          <Select
+                            value={selectVal}
+                            onValueChange={(val) => {
+                              if (val && val !== "NONE_AVAILABLE") {
+                                const selectedRound = availableRounds.find(r => String(r.id) === String(val) || r.name?.toLowerCase() === val.toLowerCase());
+                                const chosenId = selectedRound ? selectedRound.id : val;
+                                setNewSched({
+                                  ...newSched,
+                                  interviewRoundId: chosenId,
+                                  roundName: chosenId, // Store Master ID in roundName
+                                });
+                                if (formErrors.roundName) setFormErrors({ ...formErrors, roundName: null });
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
+                              <SelectValue placeholder={availableRounds.length === 0 ? "No rounds found in Master..." : "Select interview round..."} />
+                            </SelectTrigger>
+                            <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 max-h-60">
+                              {/* Current custom value when editing an existing schedule with legacy round */}
+                              {newSched.roundName && !matchedRound && (
+                                <SelectItem value={newSched.interviewRoundId || newSched.roundName}>
+                                  {getRoundDisplayName(newSched)} (Current)
+                                </SelectItem>
+                              )}
+                              {availableRounds.length === 0 ? (
+                                <SelectItem value="NONE_AVAILABLE" disabled className="text-slate-400 italic text-xs">
+                                  No interview rounds configured. Click "+ Manage Rounds" to add.
+                                </SelectItem>
+                              ) : (
+                                availableRounds.map((r) => {
+                                  const isAlreadyScheduled = Boolean(
+                                    newSched.candidateId &&
+                                    (schedules || []).some(
+                                      (s) =>
+                                        String(s.candidateId) === String(newSched.candidateId) &&
+                                        (!newSched.id || String(s.id) !== String(newSched.id)) &&
+                                        ((s.interviewRoundId && String(s.interviewRoundId) === String(r.id)) ||
+                                          (s.roundName && String(s.roundName) === String(r.id)) ||
+                                          (s.roundName && s.roundName.trim().toLowerCase() === r.name?.trim().toLowerCase())) &&
+                                        s.status !== "CANCELLED"
+                                    )
+                                  );
+
+                                  return (
+                                    <SelectItem
+                                      key={r.id}
+                                      value={String(r.id)}
+                                      disabled={isAlreadyScheduled}
+                                      className={isAlreadyScheduled ? "opacity-40 text-slate-400 font-medium" : ""}
+                                    >
+                                      {r.name} {isAlreadyScheduled ? "(Already Scheduled)" : ""}
+                                    </SelectItem>
+                                  );
+                                })
+                              )}
+                            </SelectContent>
+                          </Select>
+                        );
+                      })()}
                       {formErrors.roundName && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.roundName}</span>}
                     </div>
                     <div className="space-y-1">
@@ -3252,7 +3421,7 @@ export default function RecruitmentPage() {
                           type="button" 
                           variant="outline" 
                           onClick={() => {
-                            setNewSched({ candidateId: "", roundName: "Technical Round 1", scheduledAt: "", panelists: [] });
+                            setNewSched({ candidateId: "", interviewRoundId: "", roundName: "", scheduledAt: "", panelists: [] });
                             setFormErrors({});
                           }}
                           className="w-1/3 rounded-xl font-bold"
@@ -3381,7 +3550,7 @@ export default function RecruitmentPage() {
 
                             return eligibleSchedules.map((s) => (
                               <SelectItem key={s.id} value={String(s.id)}>
-                                {s.candidate?.name || "Candidate"} - Round: {s.roundName} ({new Date(s.scheduledAt).toLocaleDateString()})
+                                {s.candidate?.name || "Candidate"} - Round: {getRoundDisplayName(s)} ({new Date(s.scheduledAt).toLocaleDateString()})
                               </SelectItem>
                             ));
                           })()}
@@ -3695,7 +3864,7 @@ export default function RecruitmentPage() {
                               )}
                             </span>
                             <span className="text-[10px] text-sky-600 dark:text-sky-400 font-extrabold uppercase block mt-0.5 truncate">
-                              Round: {row.roundName}
+                              Round: {getRoundDisplayName(row)}
                             </span>
                           </div>
                         );
@@ -3800,27 +3969,35 @@ export default function RecruitmentPage() {
                       key: "status",
                       label: "Status",
                       render: (row) => (
-                        <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-lg border uppercase whitespace-nowrap ${
-                          row.status === "COMPLETED"
-                            ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/20"
-                            : "bg-sky-50 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-100 dark:border-sky-500/20"
-                        }`}>
-                          {row.status}
-                        </span>
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${
+                            row.status === "COMPLETED"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800"
+                              : row.status === "CANCELLED"
+                              ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800"
+                              : "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800"
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                              row.status === "COMPLETED" ? "bg-emerald-500" : row.status === "CANCELLED" ? "bg-rose-500" : "bg-sky-500 animate-pulse"
+                            }`} />
+                            {row.status}
+                          </span>
+                        </div>
                       ),
                     },
                     {
                       key: "actions",
                       label: "Actions",
-                      sortable: false,
                       render: (row) => (
                         <div className="flex gap-1.5 items-center">
                           <button
                             onClick={() => {
+                              const roundIdOrVal = row.interviewRoundId || row.roundName || "";
                               setNewSched({
                                 id: row.id,
                                 candidateId: String(row.candidateId || row.candidate?.id || ""),
-                                roundName: row.roundName || "",
+                                interviewRoundId: roundIdOrVal,
+                                roundName: roundIdOrVal,
                                 scheduledAt: row.scheduledAt || "",
                                 panelists: parsePanelistList(row.panelists)
                               });
@@ -3833,7 +4010,7 @@ export default function RecruitmentPage() {
                             <Edit className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => setDeleteTarget({ id: row.id, name: `interview round "${row.roundName}" for ${row.candidate?.name || 'candidate'}`, type: "schedule", label: "Interview Schedule" })}
+                            onClick={() => setDeleteTarget({ id: row.id, name: `interview round "${getRoundDisplayName(row)}" for ${row.candidate?.name || 'candidate'}`, type: "schedule", label: "Interview Schedule" })}
                             className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all cursor-pointer"
                             title="Delete"
                           >

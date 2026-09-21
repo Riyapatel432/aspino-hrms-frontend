@@ -1241,7 +1241,15 @@ export default function HodShiftScheduleHub({
                                 : "hover:bg-slate-100 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300"
                             }`}
                           >
-                            <Checkbox checked={isSelected} onCheckedChange={() => handleTogglePlannerEmployee(String(emp.id))} />
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex items-center shrink-0 cursor-pointer"
+                            >
+                              <Checkbox
+                                checked={isSelected}
+                                onCheckedChange={() => handleTogglePlannerEmployee(String(emp.id))}
+                              />
+                            </div>
                             <div className="w-6 h-6 rounded-lg bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-300 flex items-center justify-center font-extrabold text-[10px]">
                               {(emp.firstName || "E")[0]}
                             </div>

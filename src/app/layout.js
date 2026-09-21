@@ -1,6 +1,7 @@
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ReduxProvider } from "@/store/provider";
+import { PermissionProvider } from "@/context/PermissionContext";
 import "./globals.css";
 
 const inter = Inter({
@@ -30,10 +31,13 @@ export default function RootLayout({ children }) {
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <ThemeProvider defaultTheme="light">
           <ReduxProvider>
-            {children}
+            <PermissionProvider>
+              {children}
+            </PermissionProvider>
           </ReduxProvider>
         </ThemeProvider>
       </body>
     </html>
   );
 }
+

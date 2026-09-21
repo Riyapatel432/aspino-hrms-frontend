@@ -1,12 +1,16 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiFetch, getErrorMessage } from "@/lib/api";
+import { usePermissions } from "@/context/PermissionContext";
+import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
+import { DurationPicker } from "@/components/ui/duration-picker";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -44,6 +48,13 @@ import {
   Timer,
   Sparkles,
   Lock,
+  Play,
+  Pause,
+  Square,
+  Printer,
+  TrendingUp,
+  Sun,
+  Calendar,
 } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -72,6 +83,7 @@ import {
 } from "@/features/leave/store/leaveSlice";
 import { fetchDepartments } from "@/features/recruitment/store/recruitmentSlice";
 import HodShiftScheduleHub from "@/features/attendance/components/HodShiftScheduleHub";
+import TodayTimeUtilizationCard from "@/components/TodayTimeUtilizationCard";
 import { toast } from "sonner";
 
 const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -87,8 +99,17 @@ export const formatDateDDMMYYYY = (dateVal) => {
 };
 
 export default function AttendanceLeavePage() {
-  const [activeTab, setActiveTab] = useState("attendance");
+  const searchParams = useSearchParams();
+  const tabParam = searchParams ? searchParams.get("tab") : null;
+  const { isEmployee, user } = usePermissions();
+  const [activeTab, setActiveTab] = useState(tabParam || "attendance");
   const [activeLeaveTab, setActiveLeaveTab] = useState("requests");
+
+  useEffect(() => {
+    if (tabParam) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
   
   const dispatch = useDispatch();
 
@@ -124,6 +145,64 @@ export default function AttendanceLeavePage() {
   // Per-table loading — prevents cross-table loading interference
   const attTableLoading = attendanceLoading;
   const leaveTableLoading = leaveLoading;
+
+  const rawEmpList = useMemo(() => Array.isArray(employees?.data) ? employees.data : (Array.isArray(employees) ? employees : []), [employees]);
+  const myEmployee = useMemo(() => {
+    if (!user) return null;
+    if (user.employee) return user.employee;
+    const found = rawEmpList.find(e => 
+      (user.id && (String(e.userId) === String(user.id) || String(e.id) === String(user.id))) ||
+      (user.employeeId && (String(e.id) === String(user.employeeId) || String(e.employeeId) === String(user.employeeId))) ||
+      (user.email && e.email?.toLowerCase() === user.email.toLowerCase()) ||
+      (user.name && (`${e.firstName} ${e.lastName}`.toLowerCase().includes(user.name.toLowerCase()) || user.name.toLowerCase().includes(e.firstName?.toLowerCase())))
+    );
+    if (found) return found;
+    if (isEmployee) {
+      return {
+        id: user.id || user.employeeId || "EMP_CURRENT",
+        employeeId: user.employeeCode || user.employeeId || user.id || "EMP_CURRENT",
+        firstName: user.name || "Employee",
+        lastName: "",
+        department: { name: "Staff" }
+      };
+    }
+    return null;
+  }, [user, rawEmpList, isEmployee]);
+
+  const myEmployeeId = myEmployee?.id || user?.employeeId || user?.id || null;
+
+  const displayedLeaves = useMemo(() => {
+    const rawLeaves = Array.isArray(leaves?.data) ? leaves.data : (Array.isArray(leaves) ? leaves : []);
+    let list = rawLeaves;
+    if (isEmployee) {
+      const myIds = new Set([
+        myEmployeeId,
+        myEmployee?.id,
+        myEmployee?.employeeId,
+        user?.id,
+        user?.employeeId,
+      ].filter(Boolean).map(String));
+
+      list = rawLeaves.filter((l) => {
+        const empId = String(l.employeeId || l.employee?.id || "");
+        const empCode = String(l.employee?.employeeId || "");
+        const empEmail = String(l.employee?.email || "").toLowerCase();
+        const userEmail = String(user?.email || "").toLowerCase();
+        const userName = String(user?.name || "").toLowerCase();
+        const empName = `${l.employee?.firstName || ""} ${l.employee?.lastName || ""}`.toLowerCase();
+
+        return (
+          myIds.has(empId) ||
+          myIds.has(empCode) ||
+          (userEmail && empEmail === userEmail) ||
+          (userName && (empName.includes(userName) || userName.includes(l.employee?.firstName?.toLowerCase() || "")))
+        );
+      });
+    }
+
+    // Sort descending by startDate so recent leaves show first
+    return [...list].sort((a, b) => new Date(b.startDate || 0) - new Date(a.startDate || 0));
+  }, [leaves, isEmployee, myEmployeeId, myEmployee, user]);
 
   // Pagination states
   const [attPage, setAttPage] = useState(1);
@@ -180,13 +259,364 @@ export default function AttendanceLeavePage() {
   const [breakIncidentForm, setBreakIncidentForm] = useState({
     employeeId: "",
     incidentDate: new Date().toISOString().split("T")[0],
-    breakType: "LUNCH_BREAK", // LUNCH_BREAK | TEA_BREAK | GENERAL_BREAK | SMOKING_BREAK | EXTENDED_ABSENCE
-    excessMinutes: 30,
-    deductionHours: 0.5,
-    severity: "WARNING", // WARNING | HALF_DAY_DEDUCTION | SALARY_DEDUCTION | VERBAL_ALERT
+    breakType: "",
+    excessTime: "",
+    excessMinutes: 0,
+    deductionHours: "",
+    severity: "",
     complaintDetails: "",
-    reportedByName: "Department HOD",
+    reportedByName: "",
   });
+  // Live Punch Clock, Break Tracking & Attendance Report States
+  const [liveClockTime, setLiveClockTime] = useState("");
+  const [liveClockDate, setLiveClockDate] = useState("");
+  const [breakStartTime, setBreakStartTime] = useState(null);
+  const [breakElapsedSeconds, setBreakElapsedSeconds] = useState(0);
+  const [punchLoading, setPunchLoading] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }, []);
+
+  // Today's attendance for the logged in employee
+  const todayAttendance = useMemo(() => {
+    const attList = Array.isArray(attendance?.data) ? attendance.data : (Array.isArray(attendance) ? attendance : []);
+    const targetEmpId = myEmployeeId;
+    return attList.find((rec) => {
+      const recDate = rec.date ? (typeof rec.date === "string" ? rec.date.split("T")[0] : new Date(rec.date).toISOString().split("T")[0]) : "";
+      const matchesDate = recDate === todayStr;
+      if (!matchesDate) return false;
+
+      const empId = String(rec.employeeId || rec.employee?.id || "");
+      const empCode = String(rec.employee?.employeeId || "");
+      if (isEmployee && targetEmpId) {
+        return empId === String(targetEmpId) || empCode === String(targetEmpId);
+      }
+      return true;
+    }) || null;
+  }, [attendance, todayStr, isEmployee, myEmployeeId]);
+
+  // Upcoming Holidays showcase memo
+  const upcomingHolidaysList = useMemo(() => {
+    const rawHolidays = Array.isArray(holidays?.data) ? holidays.data : (Array.isArray(holidays) ? holidays : []);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let list = rawHolidays.filter((h) => {
+      if (!h.date) return false;
+      const hDate = new Date(h.date);
+      return hDate >= today;
+    });
+
+    list.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Fallback official standard company calendar holidays if database has few or none
+    if (list.length === 0) {
+      const standardHolidays = [
+        { id: "std_1", name: "Gandhi Jayanti", date: "2026-10-02", type: "National Holiday" },
+        { id: "std_2", name: "Dussehra (Vijayadashami)", date: "2026-10-20", type: "Gazetted Festival" },
+        { id: "std_3", name: "Diwali (Deepavali)", date: "2026-11-08", type: "Gazetted Festival" },
+        { id: "std_4", name: "Govardhan Puja", date: "2026-11-09", type: "Restricted Holiday" },
+        { id: "std_5", name: "Guru Nanak Jayanti", date: "2026-11-24", type: "Gazetted Holiday" },
+        { id: "std_6", name: "Christmas Day", date: "2026-12-25", type: "National Holiday" },
+        { id: "std_7", name: "New Year's Day", date: "2027-01-01", type: "Public Holiday" },
+        { id: "std_8", name: "Republic Day", date: "2027-01-26", type: "National Holiday" },
+      ];
+      list = standardHolidays.filter(h => new Date(h.date) >= today);
+    }
+
+    return list.map(h => {
+      const hDate = new Date(h.date);
+      const diffDays = Math.ceil((hDate - today) / (1000 * 60 * 60 * 24));
+      let countdown = `In ${diffDays} days`;
+      if (diffDays === 0) countdown = "Today! 🎉";
+      else if (diffDays === 1) countdown = "Tomorrow! 🌟";
+
+      const dayName = hDate.toLocaleDateString("en-US", { weekday: "short" });
+      const monthShort = hDate.toLocaleDateString("en-US", { month: "short" });
+      const dayNum = hDate.getDate();
+
+      return {
+        ...h,
+        dayName,
+        monthShort,
+        dayNum,
+        countdown,
+        formattedDate: formatDateDDMMYYYY(h.date)
+      };
+    });
+  }, [holidays]);
+
+  // Attendance Monthly Log Report statistics
+  const attendanceReportStats = useMemo(() => {
+    const targetYear = Number(attYear) || new Date().getFullYear();
+    const targetMonth = attMonth === "ALL" ? (new Date().getMonth() + 1) : Number(attMonth);
+    const totalDaysInMonth = new Date(targetYear, targetMonth, 0).getDate();
+
+    const attList = Array.isArray(attendance?.data) ? attendance.data : (Array.isArray(attendance) ? attendance : []);
+    const leavesList = Array.isArray(leaves?.data) ? leaves.data : (Array.isArray(leaves) ? leaves : []);
+
+    let filteredAtt = attList;
+    if (isEmployee) {
+      filteredAtt = attList.filter(a => {
+        const empId = String(a.employeeId || a.employee?.id || "");
+        const empCode = String(a.employee?.employeeId || "");
+        return empId === String(myEmployeeId) || empCode === String(myEmployeeId);
+      });
+    }
+
+    let presentCount = 0;
+    let halfDayCount = 0;
+    let absentCount = 0;
+    let totalWorkHours = 0;
+    let totalOtHours = 0;
+    let totalBreakMins = 0;
+    let misuseCount = 0;
+
+    filteredAtt.forEach(rec => {
+      const st = (rec.status || "PRESENT").toUpperCase();
+      if (st === "PRESENT") presentCount++;
+      else if (st === "HALFDAY" || rec.isHalfDay) halfDayCount++;
+      else if (st === "ABSENT") absentCount++;
+      else presentCount++;
+
+      totalWorkHours += Number(rec.totalWorkHours || 0);
+      totalOtHours += Number(rec.otHours || 0);
+      totalBreakMins += Number(rec.breakMinutes || 0);
+      if (rec.hasBreakComplaint || (rec.breakMisuseMinutes && rec.breakMisuseMinutes > 0)) {
+        misuseCount++;
+      }
+    });
+
+    const approvedLeavesCount = leavesList.filter(l => l.status === "APPROVED").length;
+    const paidDays = presentCount + (halfDayCount * 0.5);
+
+    return {
+      totalDaysInMonth,
+      presentCount,
+      halfDayCount,
+      absentCount,
+      paidDays,
+      totalWorkHours: totalWorkHours.toFixed(1),
+      totalOtHours: totalOtHours.toFixed(1),
+      totalBreakMins,
+      misuseCount,
+      approvedLeavesCount,
+      monthName: new Date(targetYear, targetMonth - 1, 1).toLocaleString("default", { month: "long" }),
+      year: targetYear,
+      records: filteredAtt,
+    };
+  }, [attYear, attMonth, attendance, leaves, isEmployee, myEmployeeId]);
+
+  // Real-time Clock & Break localStorage recovery
+  useEffect(() => {
+    const updateClock = () => {
+      const now = new Date();
+      setLiveClockTime(now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+      setLiveClockDate(now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "short", day: "numeric" }));
+    };
+    updateClock();
+    const clockInterval = setInterval(updateClock, 1000);
+
+    const savedBreakStart = localStorage.getItem(`hrms_break_${myEmployeeId || 'curr'}`);
+    if (savedBreakStart) {
+      const startMs = Number(savedBreakStart);
+      if (!isNaN(startMs) && Date.now() - startMs < 24 * 60 * 60 * 1000) {
+        setBreakStartTime(startMs);
+      } else {
+        localStorage.removeItem(`hrms_break_${myEmployeeId || 'curr'}`);
+      }
+    }
+
+    dispatch(fetchHolidays({ limit: 100 }));
+
+    return () => clearInterval(clockInterval);
+  }, [dispatch, myEmployeeId]);
+
+  // Break Elapsed Counter
+  useEffect(() => {
+    let breakTimer = null;
+    if (breakStartTime) {
+      const updateBreakElapsed = () => {
+        setBreakElapsedSeconds(Math.max(0, Math.floor((Date.now() - breakStartTime) / 1000)));
+      };
+      updateBreakElapsed();
+      breakTimer = setInterval(updateBreakElapsed, 1000);
+    } else {
+      setBreakElapsedSeconds(0);
+    }
+    return () => {
+      if (breakTimer) clearInterval(breakTimer);
+    };
+  }, [breakStartTime]);
+
+  // --- LIVE PUNCH ACTIONS ---
+  const handleLivePunchIn = async () => {
+    const empId = myEmployee?.id || myEmployeeId || rawEmpList[0]?.id;
+    if (!empId) {
+      toast.error("Employee profile not found. Please contact Administrator.");
+      return;
+    }
+    setPunchLoading(true);
+    try {
+      const now = new Date();
+      const nowIso = now.toISOString();
+
+      await dispatch(createAttendance({
+        employeeId: String(empId),
+        date: todayStr,
+        checkIn: nowIso,
+        status: "PRESENT",
+        captureMethod: "WEB_CLOCK",
+        totalWorkHours: 0,
+        presentDay: 1.0,
+      })).unwrap();
+
+      toast.success(`🎉 Punched In successfully at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}!`);
+      dispatch(fetchAttendance({
+        page: attPage,
+        limit: attViewMode === "matrix" ? 1000 : attRows,
+        search: attSearch,
+        sortBy: attSortBy,
+        sortOrder: attSortOrder,
+        month: attMonth !== "ALL" ? attMonth : undefined,
+        year: attYear,
+        employeeId: isEmployee ? (myEmployeeId || undefined) : undefined,
+      }));
+    } catch (err) {
+      console.error(err);
+      toast.error(typeof err === "string" ? err : "Failed to punch in");
+    } finally {
+      setPunchLoading(false);
+    }
+  };
+
+  const handleLiveBreakIn = () => {
+    if (!todayAttendance || !todayAttendance.checkIn) {
+      toast.warning("Please Punch In first before starting a break.");
+      return;
+    }
+    if (todayAttendance.checkOut) {
+      toast.warning("You have already punched out for today.");
+      return;
+    }
+    const now = Date.now();
+    setBreakStartTime(now);
+    localStorage.setItem(`hrms_break_${myEmployeeId || 'curr'}`, String(now));
+    toast.info("☕ Break started! Allowed lunch / tea duration is up to 60 minutes.");
+  };
+
+  const handleLiveBreakOut = async () => {
+    if (!breakStartTime) return;
+    const elapsedMins = Math.max(0, Math.floor((Date.now() - breakStartTime) / 60000));
+    setPunchLoading(true);
+    try {
+      const empId = myEmployee?.id || myEmployeeId || todayAttendance?.employeeId;
+      const prevBreakMins = Number(todayAttendance?.breakMinutes || 0);
+      const newBreakMins = prevBreakMins + elapsedMins;
+
+      let netWorkHours = todayAttendance?.totalWorkHours || 0;
+      if (todayAttendance?.checkIn) {
+        const checkInDate = new Date(todayAttendance.checkIn);
+        const currentElapsedWorkMins = Math.max(0, Math.round((Date.now() - checkInDate.getTime()) / 60000) - newBreakMins);
+        netWorkHours = parseFloat((currentElapsedWorkMins / 60).toFixed(2));
+      }
+
+      await dispatch(createAttendance({
+        id: todayAttendance?.id,
+        employeeId: String(empId),
+        date: todayStr,
+        checkIn: todayAttendance?.checkIn,
+        checkOut: todayAttendance?.checkOut,
+        breakMinutes: newBreakMins,
+        totalWorkHours: netWorkHours,
+        status: todayAttendance?.status || "PRESENT",
+        captureMethod: "WEB_CLOCK",
+      })).unwrap();
+
+      setBreakStartTime(null);
+      localStorage.removeItem(`hrms_break_${myEmployeeId || 'curr'}`);
+      toast.success(`☕ Break ended (+${elapsedMins} mins). Welcome back!`);
+
+      dispatch(fetchAttendance({
+        page: attPage,
+        limit: attViewMode === "matrix" ? 1000 : attRows,
+        search: attSearch,
+        sortBy: attSortBy,
+        sortOrder: attSortOrder,
+        month: attMonth !== "ALL" ? attMonth : undefined,
+        year: attYear,
+        employeeId: isEmployee ? (myEmployeeId || undefined) : undefined,
+      }));
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to update break time.");
+    } finally {
+      setPunchLoading(false);
+    }
+  };
+
+  const handleLivePunchOut = async () => {
+    if (!todayAttendance || !todayAttendance.checkIn) {
+      toast.warning("No check-in record found for today.");
+      return;
+    }
+    setPunchLoading(true);
+    try {
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const empId = myEmployee?.id || myEmployeeId || todayAttendance.employeeId;
+      const inDate = new Date(todayAttendance.checkIn);
+      const diffMs = now.getTime() - inDate.getTime();
+      const totalSpanMins = Math.max(0, Math.round(diffMs / 60000));
+      const breakMins = Number(todayAttendance.breakMinutes || 0) + (breakStartTime ? Math.floor((Date.now() - breakStartTime) / 60000) : 0);
+      const netWorkMins = Math.max(0, totalSpanMins - breakMins);
+      const netHours = parseFloat((netWorkMins / 60).toFixed(2));
+      const otHours = netHours > 8.0 ? parseFloat((netHours - 8.0).toFixed(2)) : 0;
+      const isHalfDay = netHours < 4.5;
+      const status = isHalfDay ? "HALFDAY" : "PRESENT";
+      const presentDay = isHalfDay ? 0.5 : 1.0;
+
+      await dispatch(createAttendance({
+        id: todayAttendance.id,
+        employeeId: String(empId),
+        date: todayStr,
+        checkIn: todayAttendance.checkIn,
+        checkOut: nowIso,
+        breakMinutes: breakMins,
+        totalWorkHours: netHours,
+        otHours,
+        status,
+        presentDay,
+        captureMethod: "WEB_CLOCK",
+      })).unwrap();
+
+      setBreakStartTime(null);
+      localStorage.removeItem(`hrms_break_${myEmployeeId || 'curr'}`);
+      toast.success(`👋 Punched Out successfully! Total Work: ${netHours} hrs${otHours > 0 ? ` (+${otHours} hrs OT)` : ""}`);
+
+      dispatch(fetchAttendance({
+        page: attPage,
+        limit: attViewMode === "matrix" ? 1000 : attRows,
+        search: attSearch,
+        sortBy: attSortBy,
+        sortOrder: attSortOrder,
+        month: attMonth !== "ALL" ? attMonth : undefined,
+        year: attYear,
+        employeeId: isEmployee ? (myEmployeeId || undefined) : undefined,
+      }));
+    } catch (err) {
+      console.error(err);
+      toast.error(typeof err === "string" ? err : "Failed to punch out");
+    } finally {
+      setPunchLoading(false);
+    }
+  };
 
   const handleExportAttendanceCsv = () => {
     const attList = Array.isArray(attendance?.data) ? attendance.data : (Array.isArray(attendance) ? attendance : []);
@@ -230,32 +660,111 @@ export default function AttendanceLeavePage() {
     const targetMonth = attMonth === "ALL" ? (new Date().getMonth() + 1) : Number(attMonth);
     const totalDays = new Date(targetYear, targetMonth, 0).getDate();
 
-    const empList = Array.isArray(employees?.data) ? employees.data : (Array.isArray(employees) ? employees : []);
     const attList = Array.isArray(attendance?.data) ? attendance.data : (Array.isArray(attendance) ? attendance : []);
+    const leavesList = Array.isArray(leaves?.data) ? leaves.data : (Array.isArray(leaves) ? leaves : []);
+    const approvedLeaves = leavesList.filter((l) => l.status === "APPROVED");
+    const incidentsList = Array.isArray(breakIncidentsList) ? breakIncidentsList : [];
+
+    let empList = [...rawEmpList];
+    if (isEmployee) {
+      empList = myEmployee ? [myEmployee] : [];
+    } else {
+      // Fallback: If rawEmpList is empty or missing employees with records or incidents, supplement
+      const empIdSet = new Set(empList.map((e) => String(e.id || e.employeeId || "")));
+      attList.forEach((rec) => {
+        const empObj = rec.employee;
+        const eId = String(empObj?.id || rec.employeeId || "");
+        if (eId && !empIdSet.has(eId)) {
+          empIdSet.add(eId);
+          empList.push(empObj || {
+            id: eId,
+            employeeId: rec.employeeId || rec.employeeCode || eId,
+            firstName: rec.employeeName || "Employee",
+            lastName: "",
+            department: { name: "General" },
+          });
+        }
+      });
+      incidentsList.forEach((inc) => {
+        const empObj = inc.employee;
+        const eId = String(empObj?.id || inc.employeeId || "");
+        if (eId && !empIdSet.has(eId)) {
+          empIdSet.add(eId);
+          empList.push(empObj || {
+            id: eId,
+            employeeId: inc.employeeCode || inc.employeeId || eId,
+            firstName: inc.employeeName || "Employee",
+            lastName: "",
+            department: { name: "General" },
+          });
+        }
+      });
+    }
 
     const attMap = new Map();
     attList.forEach((rec) => {
       if (!rec.date) return;
-      const dateStr = typeof rec.date === "string" ? rec.date.split("T")[0] : new Date(rec.date).toISOString().split("T")[0];
-      const parts = dateStr.split("-");
-      if (parts.length >= 3) {
-        const recYear = parseInt(parts[0], 10);
-        const recMonth = parseInt(parts[1], 10);
-        const recDay = parseInt(parts[2], 10);
+      let recYear, recMonth, recDay;
+      if (typeof rec.date === "string" && /^\d{4}-\d{2}-\d{2}/.test(rec.date)) {
+        const parts = rec.date.split("T")[0].split("-").map(Number);
+        recYear = parts[0];
+        recMonth = parts[1];
+        recDay = parts[2];
+      } else {
+        const dObj = new Date(rec.date);
+        if (!isNaN(dObj.getTime())) {
+          recYear = dObj.getFullYear();
+          recMonth = dObj.getMonth() + 1;
+          recDay = dObj.getDate();
+        }
+      }
 
-        if (recYear === targetYear && recMonth === targetMonth) {
-          const empIdKey = rec.employeeId || rec.employee?.id;
-          const empCodeKey = rec.employee?.employeeId;
-          const normCode = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/gi, '');
-          if (empIdKey) {
-            attMap.set(`${empIdKey}_${recDay}`, rec);
-            attMap.set(`${empIdKey.toLowerCase()}_${recDay}`, rec);
-          }
-          if (empCodeKey) {
-            attMap.set(`${empCodeKey}_${recDay}`, rec);
-            attMap.set(`${empCodeKey.toLowerCase()}_${recDay}`, rec);
-            attMap.set(`${normCode(empCodeKey)}_${recDay}`, rec);
-          }
+      if (recYear === targetYear && recMonth === targetMonth && recDay) {
+        const empIdKey = rec.employeeId || rec.employee?.id;
+        const empCodeKey = rec.employee?.employeeId;
+        const normCode = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/gi, "");
+        if (empIdKey) {
+          attMap.set(`${empIdKey}_${recDay}`, rec);
+          attMap.set(`${String(empIdKey).toLowerCase()}_${recDay}`, rec);
+        }
+        if (empCodeKey) {
+          attMap.set(`${empCodeKey}_${recDay}`, rec);
+          attMap.set(`${String(empCodeKey).toLowerCase()}_${recDay}`, rec);
+          attMap.set(`${normCode(empCodeKey)}_${recDay}`, rec);
+        }
+      }
+    });
+
+    const incidentsMap = new Map();
+    incidentsList.forEach((inc) => {
+      if (!inc.incidentDate) return;
+      let iYear, iMonth, iDay;
+      if (typeof inc.incidentDate === "string" && /^\d{4}-\d{2}-\d{2}/.test(inc.incidentDate)) {
+        const parts = inc.incidentDate.split("T")[0].split("-").map(Number);
+        iYear = parts[0];
+        iMonth = parts[1];
+        iDay = parts[2];
+      } else {
+        const dObj = new Date(inc.incidentDate);
+        if (!isNaN(dObj.getTime())) {
+          iYear = dObj.getFullYear();
+          iMonth = dObj.getMonth() + 1;
+          iDay = dObj.getDate();
+        }
+      }
+
+      if (iYear === targetYear && iMonth === targetMonth && iDay) {
+        const empIdKey = inc.employeeId || inc.employee?.id;
+        const empCodeKey = inc.employee?.employeeId;
+        const normCode = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/gi, "");
+        if (empIdKey) {
+          incidentsMap.set(`${empIdKey}_${iDay}`, inc);
+          incidentsMap.set(`${String(empIdKey).toLowerCase()}_${iDay}`, inc);
+        }
+        if (empCodeKey) {
+          incidentsMap.set(`${empCodeKey}_${iDay}`, inc);
+          incidentsMap.set(`${String(empCodeKey).toLowerCase()}_${iDay}`, inc);
+          incidentsMap.set(`${normCode(empCodeKey)}_${iDay}`, inc);
         }
       }
     });
@@ -263,7 +772,7 @@ export default function AttendanceLeavePage() {
     let filteredEmpList = empList;
     if (matrixSearch && matrixSearch.trim()) {
       const q = matrixSearch.trim().toLowerCase();
-      filteredEmpList = empList.filter(emp => 
+      filteredEmpList = empList.filter((emp) => 
         (emp.firstName && emp.firstName.toLowerCase().includes(q)) ||
         (emp.lastName && emp.lastName.toLowerCase().includes(q)) ||
         (emp.employeeId && emp.employeeId.toLowerCase().includes(q)) ||
@@ -273,17 +782,36 @@ export default function AttendanceLeavePage() {
 
     const rows = filteredEmpList.map((emp) => {
       const empCodeKey = emp.employeeId || emp.id || "";
-      const normCode = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/gi, '');
+      const normCode = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/gi, "");
       let totalPresent = 0;
 
       const daysData = {};
       for (let day = 1; day <= totalDays; day++) {
-        const rec = attMap.get(`${emp.id}_${day}`) ||
-                    attMap.get(`${emp.id.toLowerCase()}_${day}`) ||
-                    (emp.employeeId ? attMap.get(`${emp.employeeId}_${day}`) : null) ||
-                    (emp.employeeId ? attMap.get(`${emp.employeeId.toLowerCase()}_${day}`) : null) ||
-                    (emp.employeeId ? attMap.get(`${normCode(emp.employeeId)}_${day}`) : null);
+        let rec = attMap.get(`${emp.id}_${day}`) ||
+                  attMap.get(`${String(emp.id).toLowerCase()}_${day}`) ||
+                  (emp.employeeId ? attMap.get(`${emp.employeeId}_${day}`) : null) ||
+                  (emp.employeeId ? attMap.get(`${String(emp.employeeId).toLowerCase()}_${day}`) : null) ||
+                  (emp.employeeId ? attMap.get(`${normCode(emp.employeeId)}_${day}`) : null);
+
+        const incRec = incidentsMap.get(`${emp.id}_${day}`) ||
+                       incidentsMap.get(`${String(emp.id).toLowerCase()}_${day}`) ||
+                       (emp.employeeId ? incidentsMap.get(`${emp.employeeId}_${day}`) : null) ||
+                       (emp.employeeId ? incidentsMap.get(`${String(emp.employeeId).toLowerCase()}_${day}`) : null) ||
+                       (emp.employeeId ? incidentsMap.get(`${normCode(emp.employeeId)}_${day}`) : null);
+
         if (rec) {
+          if (incRec) {
+            rec = {
+              ...rec,
+              hasBreakComplaint: true,
+              isBreakIncident: true,
+              breakMisuseMinutes: Number(rec.breakMisuseMinutes || 0) || Number(incRec.excessMinutes || 0),
+              breakDeductionHours: Number(rec.breakDeductionHours || 0) || Number(incRec.deductionHours || 0),
+              breakComplaintDetails: incRec.complaintDetails,
+              breakSeverity: incRec.severity,
+              breakType: incRec.breakType,
+            };
+          }
           const status = (rec.status || "PRESENT").toUpperCase();
           if (status === "PRESENT" || rec.isSundayPresent || rec.isHolidayPresent) {
             totalPresent += 1;
@@ -291,8 +819,73 @@ export default function AttendanceLeavePage() {
             totalPresent += 0.5;
           }
           daysData[day] = rec;
+        } else if (incRec) {
+          const isHalfDay = incRec.severity === "HALF_DAY_DEDUCTION";
+          const dayStatus = isHalfDay ? "HALFDAY" : "PRESENT";
+          if (isHalfDay) totalPresent += 0.5;
+          else totalPresent += 1;
+
+          daysData[day] = {
+            id: incRec.id || `inc_${emp.id}_${day}`,
+            employeeId: emp.id,
+            employee: emp,
+            date: `${targetYear}-${String(targetMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+            status: dayStatus,
+            hasBreakComplaint: true,
+            isBreakIncident: true,
+            breakMisuseMinutes: Number(incRec.excessMinutes || 0),
+            breakDeductionHours: Number(incRec.deductionHours || 0),
+            breakComplaintDetails: incRec.complaintDetails,
+            breakSeverity: incRec.severity,
+            breakType: incRec.breakType,
+            shiftName: `Break Misuse Incident (${(incRec.breakType || 'LUNCH_BREAK').replace(/_/g, ' ')})`,
+          };
         } else {
-          daysData[day] = null;
+          // Check for approved leave spanning this day
+          const dayDate = new Date(targetYear, targetMonth - 1, day, 12, 0, 0, 0);
+          const matchingLeave = approvedLeaves.find((l) => {
+            const lEmpId = String(l.employeeId || l.employee?.id || "");
+            const lEmpCode = String(l.employee?.employeeId || "");
+            const lEmpEmail = String(l.employee?.email || "").toLowerCase();
+            const empEmail = String(emp?.email || "").toLowerCase();
+            const empName = `${emp?.firstName || ""} ${emp?.lastName || ""}`.toLowerCase();
+            const lEmpName = `${l.employee?.firstName || ""} ${l.employee?.lastName || ""}`.toLowerCase();
+
+            const isThisEmp =
+              lEmpId === String(emp.id) ||
+              (emp.employeeId && (lEmpCode === String(emp.employeeId) || lEmpId === String(emp.employeeId))) ||
+              (emp.userId && String(l.employee?.userId) === String(emp.userId)) ||
+              (empEmail && lEmpEmail === empEmail) ||
+              (empName && (lEmpName.includes(empName) || empName.includes(l.employee?.firstName?.toLowerCase() || "")));
+
+            if (!isThisEmp) return false;
+
+            const s = new Date(l.startDate);
+            s.setHours(0, 0, 0, 0);
+            const e = new Date(l.endDate);
+            e.setHours(23, 59, 59, 999);
+            return dayDate >= s && dayDate <= e;
+          });
+
+          if (matchingLeave) {
+            const lType = (matchingLeave.leaveType || "CASUAL").toUpperCase();
+            let badge = "CL";
+            if (lType.includes("SICK")) badge = "SL";
+            else if (lType.includes("EARNED") || lType.includes("PRIVILEGE")) badge = "EL";
+            else if (lType.includes("LWP")) badge = "LWP";
+
+            daysData[day] = {
+              status: "LEAVE",
+              leaveType: matchingLeave.leaveType,
+              leaveBadge: badge,
+              isLeave: true,
+              reason: matchingLeave.reason,
+              shiftName: `Approved Leave (${matchingLeave.leaveType})`,
+              date: `${targetYear}-${String(targetMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+            };
+          } else {
+            daysData[day] = null;
+          }
         }
       }
 
@@ -373,6 +966,14 @@ export default function AttendanceLeavePage() {
     let lateIdx = -1;
     let earlyIdx = -1;
     let presentDayIdx = -1;
+    let breakIdx = -1;
+    let onDutyIdx = -1;
+    let workHoursIdx = -1;
+    let halfDayIdx = -1;
+    let sundayIdx = -1;
+    let fullNightIdx = -1;
+    let holidayIdx = -1;
+    let captureMethodIdx = -1;
     const punchColIndices = [];
 
     const startLineIdx = isFirstRowHeader ? 1 : 0;
@@ -382,11 +983,19 @@ export default function AttendanceLeavePage() {
       codeIdx = headerCols.findIndex(h => h.includes("code") || h.includes("employee id") || h.includes("card") || h === "id" || h.includes("user id"));
       dateIdx = headerCols.findIndex(h => h.includes("date"));
       shiftIdx = headerCols.findIndex(h => h.includes("shift") || h === "shiftname");
-      statusIdx = headerCols.findIndex(h => h.includes("status"));
-      otIdx = headerCols.findIndex(h => h.includes("ot"));
+      statusIdx = headerCols.findIndex(h => h === "status" || h.includes("attendance status"));
+      otIdx = headerCols.findIndex(h => h.includes("ot") || h.includes("overtime"));
       lateIdx = headerCols.findIndex(h => h.includes("late"));
       earlyIdx = headerCols.findIndex(h => h.includes("early"));
-      presentDayIdx = headerCols.findIndex(h => h.includes("present day"));
+      presentDayIdx = headerCols.findIndex(h => h.includes("present day") || h.includes("day credit") || h === "credit");
+      breakIdx = headerCols.findIndex(h => h.includes("break minute") || h.includes("break min") || h === "break" || h.includes("break time") || h.includes("break duration"));
+      onDutyIdx = headerCols.findIndex(h => h.includes("on duty") || h.includes("onduty") || h.includes("field work"));
+      workHoursIdx = headerCols.findIndex(h => h.includes("work hour") || h.includes("work hrs") || h.includes("total work") || h === "workhours");
+      halfDayIdx = headerCols.findIndex(h => h.includes("half day") || h.includes("ishalfday"));
+      sundayIdx = headerCols.findIndex(h => h.includes("sunday") || h.includes("issundaypresent"));
+      fullNightIdx = headerCols.findIndex(h => h.includes("full night") || h.includes("night present") || h.includes("isfullnightpresent"));
+      holidayIdx = headerCols.findIndex(h => h.includes("holiday present") || h.includes("isholidaypresent"));
+      captureMethodIdx = headerCols.findIndex(h => h.includes("capture") || h.includes("method"));
 
       headerCols.forEach((col, idx) => {
         if (
@@ -413,6 +1022,12 @@ export default function AttendanceLeavePage() {
         dateIdx = 2;
       }
     }
+
+    const parseBool = (val) => {
+      if (!val) return false;
+      const s = String(val).toLowerCase().trim();
+      return s === "true" || s === "1" || s === "yes" || s === "y" || s === "t";
+    };
 
     // Grouping by employee and date to support multiple log rows
     const groupedMap = new Map();
@@ -462,12 +1077,20 @@ export default function AttendanceLeavePage() {
         }
       }
 
-      const shiftName = shiftIdx !== -1 && cols[shiftIdx] ? cols[shiftIdx] : "";
-      const status = statusIdx !== -1 && cols[statusIdx] ? cols[statusIdx] : "PRESENT";
+      const shiftName = shiftIdx !== -1 && cols[shiftIdx] ? cols[shiftIdx].trim() : "";
+      const status = statusIdx !== -1 && cols[statusIdx] ? cols[statusIdx].trim().toUpperCase() : "PRESENT";
       const otHours = otIdx !== -1 && cols[otIdx] ? parseFloat(cols[otIdx]) : 0;
       const lateHours = lateIdx !== -1 && cols[lateIdx] ? parseFloat(cols[lateIdx]) : 0;
       const earlyGoingHours = earlyIdx !== -1 && cols[earlyIdx] ? parseFloat(cols[earlyIdx]) : 0;
-      const presentDay = presentDayIdx !== -1 && cols[presentDayIdx] ? parseFloat(cols[presentDayIdx]) : 1.0;
+      const presentDay = presentDayIdx !== -1 && cols[presentDayIdx] ? parseFloat(cols[presentDayIdx]) : (status === "HALFDAY" ? 0.5 : 1.0);
+      const explicitBreakMins = breakIdx !== -1 && cols[breakIdx] && !isNaN(parseFloat(cols[breakIdx])) ? parseFloat(cols[breakIdx]) : null;
+      const onDutyMinutes = onDutyIdx !== -1 && cols[onDutyIdx] && !isNaN(parseFloat(cols[onDutyIdx])) ? parseFloat(cols[onDutyIdx]) : 0;
+      const explicitWorkHours = workHoursIdx !== -1 && cols[workHoursIdx] && !isNaN(parseFloat(cols[workHoursIdx])) ? parseFloat(cols[workHoursIdx]) : 0;
+      const isHalfDay = halfDayIdx !== -1 ? parseBool(cols[halfDayIdx]) : status === "HALFDAY";
+      const isSundayPresent = sundayIdx !== -1 ? parseBool(cols[sundayIdx]) : false;
+      const isFullNightPresent = fullNightIdx !== -1 ? parseBool(cols[fullNightIdx]) : false;
+      const isHolidayPresent = holidayIdx !== -1 ? parseBool(cols[holidayIdx]) : false;
+      const captureMethod = captureMethodIdx !== -1 && cols[captureMethodIdx] ? cols[captureMethodIdx].trim() : "EXCEL_IMPORT";
 
       if (!groupedMap.has(key)) {
         groupedMap.set(key, {
@@ -479,6 +1102,14 @@ export default function AttendanceLeavePage() {
           lateHours: isNaN(lateHours) ? 0 : lateHours,
           earlyGoingHours: isNaN(earlyGoingHours) ? 0 : earlyGoingHours,
           presentDay: isNaN(presentDay) ? 1.0 : presentDay,
+          explicitBreakMins,
+          onDutyMinutes,
+          explicitWorkHours,
+          isHalfDay,
+          isSundayPresent,
+          isFullNightPresent,
+          isHolidayPresent,
+          captureMethod,
           punches: [...rowPunches],
         });
       } else {
@@ -486,6 +1117,7 @@ export default function AttendanceLeavePage() {
         existing.punches.push(...rowPunches);
         if (shiftName && !existing.shiftName) existing.shiftName = shiftName;
         if (otHours > 0) existing.otHours = otHours;
+        if (explicitBreakMins !== null && existing.explicitBreakMins === null) existing.explicitBreakMins = explicitBreakMins;
       }
     }
 
@@ -501,12 +1133,13 @@ export default function AttendanceLeavePage() {
 
       let checkIn = uniquePunches[0] || "";
       let checkOut = uniquePunches[uniquePunches.length - 1] || "";
-      let totalBreakMinutes = 0;
+      let totalBreakMinutes = entry.explicitBreakMins !== null ? entry.explicitBreakMins : 0;
       let totalWorkMinutes = 0;
       const breakIntervals = [];
 
       if (uniquePunches.length >= 4 && uniquePunches.length % 2 === 0) {
         // Paired sessions: (P0->P1 work, P1->P2 break, P2->P3 work...)
+        let detectedGapBreak = 0;
         for (let p = 0; p < uniquePunches.length; p += 2) {
           const inM = parseMinutes(uniquePunches[p]);
           const outM = parseMinutes(uniquePunches[p + 1]);
@@ -523,7 +1156,7 @@ export default function AttendanceLeavePage() {
               let gap = nextInM - prevOutM;
               if (gap < 0) gap += 24 * 60;
               if (gap > 0) {
-                totalBreakMinutes += gap;
+                detectedGapBreak += gap;
                 breakIntervals.push({
                   start: uniquePunches[p + 1],
                   end: uniquePunches[p + 2],
@@ -532,6 +1165,9 @@ export default function AttendanceLeavePage() {
               }
             }
           }
+        }
+        if (entry.explicitBreakMins === null) {
+          totalBreakMinutes = detectedGapBreak;
         }
       } else if (uniquePunches.length === 2) {
         const inM = parseMinutes(uniquePunches[0]);
@@ -551,7 +1187,17 @@ export default function AttendanceLeavePage() {
         }
       }
 
-      const totalWorkHours = totalWorkMinutes > 0 ? parseFloat((totalWorkMinutes / 60).toFixed(2)) : 8.0;
+      let netWorkHours = 8.0;
+      if (entry.explicitWorkHours > 0) {
+        netWorkHours = entry.explicitWorkHours;
+      } else if (totalWorkMinutes > 0) {
+        const effectiveBreak = Math.max(0, totalBreakMinutes - (entry.onDutyMinutes || 0));
+        let mins = totalWorkMinutes;
+        if (uniquePunches.length === 2 && effectiveBreak > 0) {
+          mins = Math.max(0, mins - effectiveBreak);
+        }
+        netWorkHours = parseFloat((mins / 60).toFixed(2));
+      }
 
       records.push({
         employeeCodeOrId: entry.employeeCodeOrId,
@@ -561,13 +1207,20 @@ export default function AttendanceLeavePage() {
         checkOut,
         punches: uniquePunches,
         breakDurationMinutes: totalBreakMinutes,
+        breakMinutes: totalBreakMinutes,
+        onDutyMinutes: entry.onDutyMinutes || 0,
         breakIntervals,
-        totalWorkHours,
-        status: entry.status,
+        totalWorkHours: netWorkHours,
+        status: entry.isHalfDay ? "HALFDAY" : entry.status,
         otHours: entry.otHours,
         lateHours: entry.lateHours,
         earlyGoingHours: entry.earlyGoingHours,
         presentDay: entry.presentDay,
+        isHalfDay: entry.isHalfDay,
+        isSundayPresent: entry.isSundayPresent,
+        isFullNightPresent: entry.isFullNightPresent,
+        isHolidayPresent: entry.isHolidayPresent,
+        captureMethod: entry.captureMethod,
       });
     });
 
@@ -712,9 +1365,17 @@ export default function AttendanceLeavePage() {
         sortOrder: attSortOrder,
         month: attMonth !== "ALL" ? attMonth : undefined,
         year: attYear,
+        employeeId: isEmployee ? (myEmployeeId || undefined) : undefined,
       })
     );
-    if (!employees || employees.length === 0) {
+    dispatch(
+      fetchLeaves({
+        page: 1,
+        limit: 1000,
+        employeeId: isEmployee ? (myEmployeeId || undefined) : undefined,
+      })
+    );
+    if (rawEmpList.length === 0) {
       dispatch(fetchEmployees());
     }
     if (dropdownShifts.length === 0) {
@@ -724,8 +1385,10 @@ export default function AttendanceLeavePage() {
         .then((data) => setDropdownShifts(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
         .catch(() => {});
     }
-    fetchBreakIncidents();
-  }, [dispatch, activeTab, attPage, attRows, attSearch, attSortBy, attSortOrder, attMonth, attYear, attViewMode]);
+    if (!isEmployee) {
+      fetchBreakIncidents();
+    }
+  }, [dispatch, activeTab, attPage, attRows, attSearch, attSortBy, attSortOrder, attMonth, attYear, attViewMode, isEmployee, myEmployeeId]);
 
   // 2. TAB 2: Shift Schedule HOD (Only fetch when activeTab === 'rosters')
   useEffect(() => {
@@ -748,6 +1411,7 @@ export default function AttendanceLeavePage() {
         search: leaveSearch,
         sortBy: leaveSortBy,
         sortOrder: leaveSortOrder,
+        employeeId: isEmployee ? (myEmployeeId || undefined) : undefined,
       })
     );
     dispatch(fetchLeaveMasters());
@@ -761,7 +1425,7 @@ export default function AttendanceLeavePage() {
         .then((data) => setFiscalYearOptions(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
         .catch(() => {});
     }
-  }, [dispatch, activeTab, leavePage, leaveRows, leaveSearch, leaveSortBy, leaveSortOrder]);
+  }, [dispatch, activeTab, leavePage, leaveRows, leaveSearch, leaveSortBy, leaveSortOrder, isEmployee, myEmployeeId]);
 
   // 4. TAB 4: Holiday Configuration (Only fetch when activeTab === 'holidays')
   useEffect(() => {
@@ -801,6 +1465,19 @@ export default function AttendanceLeavePage() {
       toast.error("Please select an employee.");
       return;
     }
+    if (!breakIncidentForm.breakType) {
+      toast.error("Please select a break type.");
+      return;
+    }
+    const totalMinutes = Number(breakIncidentForm.excessMinutes || 0);
+    if (totalMinutes <= 0) {
+      toast.error("Please specify excess break duration (at least 1 minute).");
+      return;
+    }
+    if (!breakIncidentForm.severity) {
+      toast.error("Please select a disciplinary severity.");
+      return;
+    }
     if (!breakIncidentForm.complaintDetails || breakIncidentForm.complaintDetails.trim().length < 5) {
       toast.error("Please provide detailed HOD complaint remarks.");
       return;
@@ -811,8 +1488,9 @@ export default function AttendanceLeavePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...breakIncidentForm,
-          excessMinutes: Number(breakIncidentForm.excessMinutes || 0),
-          deductionHours: Number(breakIncidentForm.deductionHours || (Number(breakIncidentForm.excessMinutes || 0) / 60).toFixed(2)),
+          excessMinutes: totalMinutes,
+          deductionHours: Number(breakIncidentForm.deductionHours !== "" ? breakIncidentForm.deductionHours : (totalMinutes / 60).toFixed(2)),
+          reportedByName: breakIncidentForm.reportedByName || user?.name || "Department HOD",
         })
       });
       if (res.ok) {
@@ -821,12 +1499,13 @@ export default function AttendanceLeavePage() {
         setBreakIncidentForm({
           employeeId: "",
           incidentDate: new Date().toISOString().split("T")[0],
-          breakType: "LUNCH_BREAK",
-          excessMinutes: 30,
-          deductionHours: 0.5,
-          severity: "WARNING",
+          breakType: "",
+          excessTime: "",
+          excessMinutes: 0,
+          deductionHours: "",
+          severity: "",
           complaintDetails: "",
-          reportedByName: "Department HOD",
+          reportedByName: "",
         });
         dispatch(fetchAttendance({
           page: attPage,
@@ -957,6 +1636,13 @@ export default function AttendanceLeavePage() {
   const [deleting, setDeleting] = useState(false);
   const [balanceEmpId, setBalanceEmpId] = useState("ALL");
   const [formErrors, setFormErrors] = useState({});
+
+  useEffect(() => {
+    if (isEmployee && myEmployeeId) {
+      setBalanceEmpId(myEmployeeId);
+      setNewLeave((prev) => (prev.employeeId ? prev : { ...prev, employeeId: myEmployeeId }));
+    }
+  }, [isEmployee, myEmployeeId]);
 
   const [allRosters, setAllRosters] = useState([]);
   const [loadingShiftEmployees, setLoadingShiftEmployees] = useState(false);
@@ -1486,44 +2172,73 @@ export default function AttendanceLeavePage() {
 
   // Compute remaining balances deducted by APPROVED leaves
   const getComputedBalances = (empId) => {
-    let quotas = { Casual: 0, Sick: 0, Earned: 0 };
+    let quotas = { Casual: 12, Sick: 10, Earned: 15 };
+    const effectiveEmpId = isEmployee ? (myEmployeeId || user?.employeeId || user?.id) : empId;
 
-    // Dynamically calculate quotas based on Leave Masters per department
-    if (empId && empId !== "ALL") {
-      const selectedEmp = employees.find(e => e.id === empId);
-      if (selectedEmp && selectedEmp.department) {
-        // Try to find the quota for this department (assuming FY26 as current year)
-        const master = leaveMasters.find(lm => lm.department === selectedEmp.department && lm.fiscalYear === "FY26");
+    const lmList = Array.isArray(leaveMasters?.data) ? leaveMasters.data : (Array.isArray(leaveMasters) ? leaveMasters : []);
+    const empList = rawEmpList;
+
+    if (isEmployee || (effectiveEmpId && effectiveEmpId !== "ALL")) {
+      const selectedEmp = myEmployee || empList.find(e => 
+        String(e.id) === String(effectiveEmpId) || 
+        String(e.employeeId) === String(effectiveEmpId) ||
+        (user?.email && e.email?.toLowerCase() === user.email.toLowerCase())
+      );
+      const deptName = typeof selectedEmp?.department === 'object' ? selectedEmp?.department?.name : selectedEmp?.department;
+      if (deptName) {
+        const master = lmList.find(lm => {
+          const mDept = typeof lm.department === 'object' ? lm.department?.name : lm.department;
+          return mDept && mDept.toLowerCase() === deptName.toLowerCase();
+        });
         if (master) {
-          quotas = { Casual: master.casualLeave, Sick: master.sickLeave, Earned: master.earnedLeave };
-        } else {
-          quotas = { Casual: 12, Sick: 10, Earned: 15 }; // Default fallback
+          quotas = { Casual: master.casualLeave || 12, Sick: master.sickLeave || 10, Earned: master.earnedLeave || 15 };
         }
-      } else {
-        quotas = { Casual: 12, Sick: 10, Earned: 15 };
       }
     } else {
-      // Aggregate for ALL employees
-      employees.forEach(emp => {
-        const master = leaveMasters.find(lm => lm.department === emp.department && lm.fiscalYear === "FY26");
+      // Admin viewing "ALL" employees aggregate
+      quotas = { Casual: 0, Sick: 0, Earned: 0 };
+      empList.forEach(emp => {
+        const deptName = typeof emp.department === 'object' ? emp.department?.name : emp.department;
+        const master = lmList.find(lm => {
+          const mDept = typeof lm.department === 'object' ? lm.department?.name : lm.department;
+          return mDept && deptName && mDept.toLowerCase() === deptName.toLowerCase();
+        });
         if (master) {
-          quotas.Casual += master.casualLeave;
-          quotas.Sick += master.sickLeave;
-          quotas.Earned += master.earnedLeave;
+          quotas.Casual += master.casualLeave || 12;
+          quotas.Sick += master.sickLeave || 10;
+          quotas.Earned += master.earnedLeave || 15;
         } else {
           quotas.Casual += 12;
           quotas.Sick += 10;
           quotas.Earned += 15;
         }
       });
-      if (employees.length === 0) quotas = { Casual: 12, Sick: 10, Earned: 15 };
+      if (empList.length === 0) quotas = { Casual: 12, Sick: 10, Earned: 15 };
     }
 
     const used = { Casual: 0, Sick: 0, Earned: 0 };
+    const leavesList = Array.isArray(leaves?.data) ? leaves.data : (Array.isArray(leaves) ? leaves : []);
 
-    leaves.forEach((l) => {
-      const lEmpId = l.employeeId || l.employee?.id;
-      const matchesEmp = !empId || empId === "ALL" || lEmpId === empId;
+    leavesList.forEach((l) => {
+      const lEmpId = String(l.employeeId || l.employee?.id || "");
+      const lEmpCode = String(l.employee?.employeeId || "");
+      const lEmpEmail = String(l.employee?.email || "").toLowerCase();
+      const userEmail = String(user?.email || "").toLowerCase();
+      const userName = String(user?.name || "").toLowerCase();
+      const empName = `${l.employee?.firstName || ""} ${l.employee?.lastName || ""}`.toLowerCase();
+
+      let matchesEmp = false;
+      if (isEmployee) {
+        matchesEmp =
+          (myEmployeeId && lEmpId === String(myEmployeeId)) ||
+          (myEmployee?.employeeId && (lEmpCode === String(myEmployee.employeeId) || lEmpId === String(myEmployee.employeeId))) ||
+          (user?.id && lEmpId === String(user.id)) ||
+          (userEmail && lEmpEmail === userEmail) ||
+          (userName && (empName.includes(userName) || userName.includes(l.employee?.firstName?.toLowerCase() || "")));
+      } else {
+        matchesEmp = !effectiveEmpId || effectiveEmpId === "ALL" || lEmpId === String(effectiveEmpId) || lEmpCode === String(effectiveEmpId);
+      }
+
       if (matchesEmp && l.status === "APPROVED") {
         const days = getLeaveDays(l.startDate, l.endDate);
         const typeKey = l.leaveType?.toLowerCase().includes("casual") ? "Casual"
@@ -1546,7 +2261,7 @@ export default function AttendanceLeavePage() {
   const currentBalances = getComputedBalances(balanceEmpId);
 
   // DataTable column definitions
-  const attendanceColumns = [
+  const baseAttendanceColumns = [
     {
       key: "date",
       label: "Date",
@@ -1694,12 +2409,13 @@ export default function AttendanceLeavePage() {
                 targetEmployeeCode: row.employee?.employeeId || '',
                 targetDepartment: row.employee?.department?.name || '',
                 incidentDate: row.date ? new Date(row.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-                breakType: "LUNCH_BREAK",
-                excessMinutes: 30,
-                deductionHours: 0.5,
-                severity: "WARNING",
+                breakType: "",
+                excessTime: "",
+                excessMinutes: 0,
+                deductionHours: "",
+                severity: "",
                 complaintDetails: "",
-                reportedByName: "Department HOD",
+                reportedByName: user?.name || "",
               });
               setShowBreakIncidentModal(true);
             }}
@@ -1753,6 +2469,10 @@ export default function AttendanceLeavePage() {
       )
     },
   ];
+
+  const attendanceColumns = isEmployee
+    ? baseAttendanceColumns.filter(c => c.key !== "actions")
+    : baseAttendanceColumns;
 
   const rosterColumns = [
     {
@@ -1932,7 +2652,7 @@ export default function AttendanceLeavePage() {
       sortable: false,
       render: (row) => (
         <div className="flex gap-1.5 items-center">
-          {row.status === "PENDING" && (
+          {row.status === "PENDING" && !isEmployee && (
             <>
               <button
                 onClick={() => handleUpdateLeaveStatus(row.id, "APPROVED")}
@@ -1942,36 +2662,40 @@ export default function AttendanceLeavePage() {
               </button>
               <button
                 onClick={() => handleUpdateLeaveStatus(row.id, "REJECTED")}
-        className="bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg text-[9px] px-2 py-1 transition-all"
+                className="bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg text-[9px] px-2 py-1 transition-all"
               >
                 Reject
               </button>
             </>
           )}
-          <button
-            onClick={() => {
-              setNewLeave({
-                id: row.id,
-                employeeId: row.employeeId,
-                leaveType: row.leaveType,
-                startDate: row.startDate ? new Date(row.startDate).toISOString().split('T')[0] : "",
-                endDate: row.endDate ? new Date(row.endDate).toISOString().split('T')[0] : "",
-                reason: row.reason || ""
-              });
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
-            title="Edit"
-          >
-            <Edit className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setDeleteTarget({ id: row.id, name: `${row.leaveType} leave for ${row.employee?.firstName || 'employee'}`, type: "leave", label: "Leave Application" })}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
-            title="Delete"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {row.status === "PENDING" && (
+            <>
+              <button
+                onClick={() => {
+                  setNewLeave({
+                    id: row.id,
+                    employeeId: row.employeeId || myEmployeeId,
+                    leaveType: row.leaveType,
+                    startDate: row.startDate ? new Date(row.startDate).toISOString().split('T')[0] : "",
+                    endDate: row.endDate ? new Date(row.endDate).toISOString().split('T')[0] : "",
+                    reason: row.reason || ""
+                  });
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+                title="Edit"
+              >
+                <Edit className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setDeleteTarget({ id: row.id, name: `${row.leaveType} leave application`, type: "leave", label: "Leave Application" })}
+                className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
+                title="Cancel / Delete Request"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
       ),
     },
@@ -2122,36 +2846,169 @@ export default function AttendanceLeavePage() {
 
   return (
     <div className="space-y-6">
-      {/* Navigation tabs */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 gap-6 overflow-x-auto">
-        {[
-          { id: "attendance", label: "Attendance Logs", icon: Clock },
-          { id: "rosters", label: "Shift Schedule (HOD)", icon: CalendarRange },
-          { id: "leaves", label: "Leave Requests", icon: FileCheck },
-          { id: "holidays", label: "Holiday Configuration", icon: CalendarDays },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 pb-3 font-semibold text-sm cursor-pointer whitespace-nowrap transition-all border-b-2 ${
-                activeTab === tab.id
-                  ? "border-sky-500 text-sky-600 dark:text-sky-400 font-bold"
-                  : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-200"
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* Navigation tabs (Admin only - Employee navigates directly via sidebar) */}
+      {!isEmployee && (
+        <div className="flex border-b border-slate-200 dark:border-slate-800 gap-6 overflow-x-auto">
+          {[
+            { id: "attendance", label: "Attendance Logs", icon: Clock },
+            { id: "rosters", label: "Shift Schedule (HOD)", icon: CalendarRange },
+            { id: "leaves", label: "Leave Requests", icon: FileCheck },
+            { id: "holidays", label: "Holiday Configuration", icon: CalendarDays },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 pb-3 font-semibold text-sm cursor-pointer whitespace-nowrap transition-all border-b-2 ${
+                  activeTab === tab.id
+                    ? "border-sky-500 text-sky-600 dark:text-sky-400 font-bold"
+                    : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-200"
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="space-y-6">
           {/* TAB 1: ATTENDANCE */}
           {activeTab === "attendance" && (
             <div className="space-y-6">
+              {/* TOP 3-CARD INTERACTIVE DASHBOARD: TODAY'S TIME UTILIZATION, UPCOMING HOLIDAYS, ATTENDANCE REPORT */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                {/* 1. TODAY'S TIME UTILIZATION CARD */}
+                <TodayTimeUtilizationCard
+                  className="h-full"
+                  showProfileHeader={true}
+                  onAttendanceChanged={() => {
+                    dispatch(
+                      fetchAttendance({
+                        page: attPage,
+                        limit: attViewMode === "matrix" ? 1000 : attRows,
+                        search: attSearch,
+                        sortBy: attSortBy,
+                        sortOrder: attSortOrder,
+                        month: attMonth !== "ALL" ? attMonth : undefined,
+                        year: attYear,
+                        employeeId: isEmployee ? (myEmployeeId || undefined) : undefined,
+                      })
+                    );
+                  }}
+                />
+
+                {/* 2. UPCOMING COMPANY HOLIDAYS SHOWCASE */}
+                <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-5 shadow-sm flex flex-col justify-between space-y-3">
+                  <div className="flex items-center justify-between border-b pb-3 border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                        <CalendarDays className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-extrabold text-slate-800 dark:text-white">Upcoming Holidays</h3>
+                        <p className="text-[10px] text-slate-400">Official company holiday calendar</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800">
+                      {upcomingHolidaysList.length} Upcoming
+                    </Badge>
+                  </div>
+
+                  <div className="space-y-2 max-h-[165px] overflow-y-auto pr-1">
+                    {upcomingHolidaysList.slice(0, 3).map((h, i) => (
+                      <div key={h.id || i} className="flex items-center justify-between p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800/80 hover:border-indigo-200 transition-all">
+                        <div className="flex items-center gap-2.5">
+                          <div className="size-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center shadow-xs">
+                            <span className="text-[9px] font-black uppercase text-indigo-600 dark:text-indigo-400 leading-none">{h.monthShort}</span>
+                            <span className="text-sm font-black text-slate-800 dark:text-white leading-none mt-0.5">{h.dayNum}</span>
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100 block">{h.name}</span>
+                            <span className="text-[10px] text-slate-400 font-medium">{h.dayName} • {h.type || "Gazetted Holiday"}</span>
+                          </div>
+                        </div>
+                        <Badge className="bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[9.5px] font-extrabold">
+                          {h.countdown}
+                        </Badge>
+                      </div>
+                    ))}
+                    {upcomingHolidaysList.length === 0 && (
+                      <div className="text-center py-4 text-xs text-slate-400">
+                        No upcoming holidays scheduled in the immediate period.
+                      </div>
+                    )}
+                  </div>
+
+                  {!isEmployee && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("holidays")}
+                      className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center justify-center gap-1 pt-1 cursor-pointer"
+                    >
+                      Manage Company Holidays <Sparkles className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* 3. ATTENDANCE LOG REPORT SUMMARY & LAUNCHER */}
+                <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-5 shadow-sm flex flex-col justify-between space-y-3">
+                  <div className="flex items-center justify-between border-b pb-3 border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-2xl bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400">
+                        <FileSpreadsheet className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-extrabold text-slate-800 dark:text-white">Attendance Log Report</h3>
+                        <p className="text-[10px] text-slate-400">{attendanceReportStats.monthName} {attendanceReportStats.year} Summary</p>
+                      </div>
+                    </div>
+                    <Badge className="bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 text-[10px] font-bold">
+                      {attendanceReportStats.paidDays} Paid Days
+                    </Badge>
+                  </div>
+
+                  {/* 4 Stat Mini Tiles */}
+                  <div className="grid grid-cols-2 gap-2 py-1">
+                    <div className="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-2xl border border-slate-100 dark:border-slate-800">
+                      <span className="text-[10px] text-slate-400 block font-semibold">Days Present</span>
+                      <span className="text-base font-black text-emerald-600 dark:text-emerald-400">
+                        {attendanceReportStats.presentCount} <span className="text-[10px] font-normal text-slate-400">/ {attendanceReportStats.totalDaysInMonth}</span>
+                      </span>
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-2xl border border-slate-100 dark:border-slate-800">
+                      <span className="text-[10px] text-slate-400 block font-semibold">Active Work Hrs</span>
+                      <span className="text-base font-black text-sky-600 dark:text-sky-400">
+                        {attendanceReportStats.totalWorkHours}h
+                      </span>
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-2xl border border-slate-100 dark:border-slate-800">
+                      <span className="text-[10px] text-slate-400 block font-semibold">Overtime (OT)</span>
+                      <span className="text-base font-black text-indigo-600 dark:text-indigo-400">
+                        +{attendanceReportStats.totalOtHours}h
+                      </span>
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-2xl border border-slate-100 dark:border-slate-800">
+                      <span className="text-[10px] text-slate-400 block font-semibold">Approved Leaves</span>
+                      <span className="text-base font-black text-amber-600 dark:text-amber-400">
+                        {attendanceReportStats.approvedLeavesCount}
+                      </span>
+                    </div>
+                  </div>
+
+                  <Button
+                    type="button"
+                    onClick={() => setShowReportModal(true)}
+                    className="w-full bg-slate-900 hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-700 text-white font-bold text-xs rounded-2xl h-10 shadow-md gap-2 cursor-pointer transition-all active:scale-95"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-sky-400 dark:text-white" />
+                    View Detailed Attendance Report
+                  </Button>
+                </div>
+              </div>
+
               {/* Header Action & Filter Bar */}
               <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-5 shadow-sm space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-4">
@@ -2197,47 +3054,62 @@ export default function AttendanceLeavePage() {
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => {
-                        setShowBulkAttModal(true);
-                        setImportResult(null);
-                      }}
-                      className="border-emerald-500 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer"
+                      onClick={() => setShowReportModal(true)}
+                      className="border-sky-500 text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/50 rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer"
                     >
-                      <Upload className="w-3.5 h-3.5 text-emerald-500" />
-                      Bulk Excel / CSV Import
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-sky-500" />
+                      Attendance Log Report
                     </Button>
 
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setShowIncidentsReviewModal(true)}
-                      className="border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer"
-                    >
-                      <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
-                      Break Incidents ({breakIncidentsList.length})
-                    </Button>
+                    {!isEmployee && (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setShowBulkAttModal(true);
+                            setImportResult(null);
+                          }}
+                          className="border-emerald-500 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer"
+                        >
+                          <Upload className="w-3.5 h-3.5 text-emerald-500" />
+                          Bulk Excel / CSV Import
+                        </Button>
 
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        setBreakIncidentForm({
-                          employeeId: "",
-                          incidentDate: new Date().toISOString().split("T")[0],
-                          breakType: "LUNCH_BREAK",
-                          excessMinutes: 30,
-                          deductionHours: 0.5,
-                          severity: "WARNING",
-                          complaintDetails: "",
-                          reportedByName: "Department HOD",
-                        });
-                        setShowBreakIncidentModal(true);
-                      }}
-                      className="border-rose-300 bg-rose-50/50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 hover:bg-rose-100 rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer"
-                    >
-                      <Coffee className="w-3.5 h-3.5 text-rose-500" />
-                      Report Break Misuse
-                    </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setShowIncidentsReviewModal(true)}
+                          className="border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer"
+                        >
+                          <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+                          Break Incidents ({breakIncidentsList.length})
+                        </Button>
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setBreakIncidentForm({
+                              employeeId: "",
+                              incidentDate: new Date().toISOString().split("T")[0],
+                              breakType: "",
+                              excessTime: "",
+                              excessMinutes: 0,
+                              deductionHours: "",
+                              severity: "",
+                              complaintDetails: "",
+                              reportedByName: user?.name || "",
+                            });
+                            setShowBreakIncidentModal(true);
+                          }}
+                          className="border-rose-300 bg-rose-50/50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 hover:bg-rose-100 rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer"
+                        >
+                          <Coffee className="w-3.5 h-3.5 text-rose-500" />
+                          Report Break Misuse
+                        </Button>
+                      </>
+                    )}
 
                     <Button
                       type="button"
@@ -2249,39 +3121,41 @@ export default function AttendanceLeavePage() {
                       Export CSV
                     </Button>
 
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        const empList = Array.isArray(employees?.data) ? employees.data : (Array.isArray(employees) ? employees : []);
-                        const initialEmpId = empList[0]?.id ? String(empList[0].id) : "";
-                        const todayStr = new Date().toISOString().split("T")[0];
-                        setNewAtt({
-                          employeeId: initialEmpId,
-                          shiftId: "",
-                          date: todayStr,
-                          checkIn: "",
-                          checkOut: "",
-                          otHours: "",
-                          isHalfDay: false,
-                          lateHours: "",
-                          earlyGoingHours: "",
-                          presentDay: "1",
-                          isSundayPresent: false,
-                          isFullNightPresent: false,
-                          isHolidayPresent: false,
-                          captureMethod: "MANUAL_ADMIN",
-                          breakMinutes: "60",
-                          onDutyMinutes: "0",
-                          status: "PRESENT",
-                        });
-                        setFormErrors({});
-                        setShowManualAttModal(true);
-                      }}
-                      className="bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-2xl h-9 px-4 text-xs gap-1.5 shadow-md cursor-pointer"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Add Daily Attendance
-                    </Button>
+                    {!isEmployee && (
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          const empList = Array.isArray(employees?.data) ? employees.data : (Array.isArray(employees) ? employees : []);
+                          const initialEmpId = empList[0]?.id ? String(empList[0].id) : "";
+                          const todayStr = new Date().toISOString().split("T")[0];
+                          setNewAtt({
+                            employeeId: initialEmpId,
+                            shiftId: "",
+                            date: todayStr,
+                            checkIn: "",
+                            checkOut: "",
+                            otHours: "",
+                            isHalfDay: false,
+                            lateHours: "",
+                            earlyGoingHours: "",
+                            presentDay: "1",
+                            isSundayPresent: false,
+                            isFullNightPresent: false,
+                            isHolidayPresent: false,
+                            captureMethod: "MANUAL_ADMIN",
+                            breakMinutes: "60",
+                            onDutyMinutes: "0",
+                            status: "PRESENT",
+                          });
+                          setFormErrors({});
+                          setShowManualAttModal(true);
+                        }}
+                        className="bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-2xl h-9 px-4 text-xs gap-1.5 shadow-md cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add Daily Attendance
+                      </Button>
+                    )}
                   </div>
                 </div>
 
@@ -2408,15 +3282,15 @@ export default function AttendanceLeavePage() {
                         } else if (st === "HALFDAY" || rec.isHalfDay) {
                           badgeColor = "bg-amber-500 text-white";
                           label = "HD";
-                        } else if (st === "LEAVE" || st === "CASUAL_LEAVE" || st === "SICK_LEAVE") {
+                        } else if (st === "LEAVE" || st === "CASUAL_LEAVE" || st === "SICK_LEAVE" || st === "ON_LEAVE" || rec.isLeave) {
                           badgeColor = "bg-indigo-500 text-white";
-                          label = "CL";
+                          label = rec.leaveBadge || "CL";
                         } else if (rec.isSundayPresent || rec.isHolidayPresent || rec.isFullNightPresent) {
                           badgeColor = "bg-teal-600 text-white";
                           label = "SP";
                         }
 
-                        const hasMisuse = rec.hasBreakComplaint || rec.breakMisuseMinutes > 0;
+                        const hasMisuse = rec.hasBreakComplaint || rec.breakMisuseMinutes > 0 || rec.isBreakIncident;
 
                         return (
                           <div className="relative flex items-center justify-center">
@@ -2479,29 +3353,38 @@ export default function AttendanceLeavePage() {
                 <div className="flex items-center gap-2">
                   <FileCheck className="w-5 h-5 text-sky-500" />
                   <span className="font-extrabold text-slate-800 dark:text-white text-sm">
-                    Leave Balance Tracking & Quota Summary
+                    {isEmployee ? "My Leave Balance Tracking & Quota Summary" : "Leave Balance Tracking & Quota Summary"}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Label className="text-xs font-bold text-slate-500 whitespace-nowrap">Filter Employee Balance:</Label>
-                  <div className="w-64">
-                    <SearchableSelect
-                      options={[
-                        { value: "ALL", label: "All Employees Aggregate" },
-                        ...employees.map((e) => ({
-                          value: String(e.id),
-                          label: `${e.firstName} ${e.lastName} (${e.employeeId || e.id})`,
-                          subLabel: `${e.designation || "Staff"} • ${e.department?.name || e.department || "General"}`
-                        }))
-                      ]}
-                      value={balanceEmpId}
-                      onValueChange={(val) => setBalanceEmpId(val)}
-                      placeholder="Select Employee..."
-                      searchPlaceholder="Search employee name or ID..."
-                      className="h-10 text-xs"
-                    />
+                {!isEmployee ? (
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs font-bold text-slate-500 whitespace-nowrap">Filter Employee Balance:</Label>
+                    <div className="w-64">
+                      <SearchableSelect
+                        options={[
+                          { value: "ALL", label: "All Employees Aggregate" },
+                          ...employees.map((e) => ({
+                            value: String(e.id),
+                            label: `${e.firstName} ${e.lastName} (${e.employeeId || e.id})`,
+                            subLabel: `${e.designation || "Staff"} • ${e.department?.name || e.department || "General"}`
+                          }))
+                        ]}
+                        value={balanceEmpId}
+                        onValueChange={(val) => setBalanceEmpId(val)}
+                        placeholder="Select Employee..."
+                        searchPlaceholder="Search employee name or ID..."
+                        className="h-10 text-xs"
+                      />
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-500">Employee:</span>
+                    <Badge className="bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 font-bold px-3 py-1 border border-sky-200 dark:border-sky-800">
+                      {myEmployee ? `${myEmployee.firstName} ${myEmployee.lastName} (${myEmployee.employeeId || myEmployee.id})` : (user?.name || "Logged In Employee")}
+                    </Badge>
+                  </div>
+                )}
               </div>
 
               {/* Dynamic Leave Balance Summary Cards */}
@@ -2542,28 +3425,50 @@ export default function AttendanceLeavePage() {
               <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
                 <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
                   <Plus className="w-5 h-5 text-sky-500" />
-                  Apply Leave (Employee behalf)
+                  {isEmployee ? "Apply for Leave" : "Apply Leave (Employee behalf)"}
                 </h3>
                 <form onSubmit={handleSubmitLeave} className="space-y-3" noValidate>
                   <div className="space-y-1">
                     <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Employee *</Label>
-                    <div className="mt-1">
-                      <SearchableSelect
-                        options={employees.map((e) => ({
-                          value: String(e.id),
-                          label: `${e.firstName} ${e.lastName} (${e.employeeId || ""})`,
-                          subLabel: e.department?.name ? `Department: ${e.department.name}` : undefined
-                        }))}
-                        value={newLeave.employeeId}
-                        onValueChange={(val) => {
-                          setNewLeave({ ...newLeave, employeeId: val });
-                          if (formErrors.employeeId) setFormErrors({ ...formErrors, employeeId: null });
-                        }}
-                        placeholder="Search & choose employee..."
-                        searchPlaceholder="Type employee name, code, or department..."
-                        className={formErrors.employeeId ? "border-rose-500 border-2" : ""}
-                      />
-                    </div>
+                    {isEmployee ? (
+                      <div className="mt-1 flex items-center justify-between p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                        <div className="flex items-center gap-2.5 truncate">
+                          <div className="w-8 h-8 rounded-lg bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-300 flex items-center justify-center font-extrabold text-xs shrink-0">
+                            {(myEmployee?.firstName || user?.name || "E")[0]}
+                          </div>
+                          <div className="truncate">
+                            <span className="block font-bold text-slate-900 dark:text-white text-xs truncate">
+                              {myEmployee ? `${myEmployee.firstName} ${myEmployee.lastName}` : (user?.name || "My Account")}
+                            </span>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">
+                              {myEmployee?.employeeId || user?.employeeCode || ""} {myEmployee?.department?.name ? `• ${myEmployee.department.name}` : ""}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-200/80 dark:bg-slate-700/80 text-[10px] font-bold text-slate-600 dark:text-slate-300 shrink-0 select-none">
+                          <Lock className="w-3 h-3 text-slate-500" />
+                          Locked
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-1">
+                        <SearchableSelect
+                          options={employees.map((e) => ({
+                            value: String(e.id),
+                            label: `${e.firstName} ${e.lastName} (${e.employeeId || ""})`,
+                            subLabel: e.department?.name ? `Department: ${e.department.name}` : undefined
+                          }))}
+                          value={newLeave.employeeId}
+                          onValueChange={(val) => {
+                            setNewLeave({ ...newLeave, employeeId: val });
+                            if (formErrors.employeeId) setFormErrors({ ...formErrors, employeeId: null });
+                          }}
+                          placeholder="Search & choose employee..."
+                          searchPlaceholder="Type employee name, code, or department..."
+                          className={formErrors.employeeId ? "border-rose-500 border-2" : ""}
+                        />
+                      </div>
+                    )}
                     {formErrors.employeeId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.employeeId}</span>}
                   </div>
                   <div className="space-y-1">
@@ -2638,10 +3543,10 @@ export default function AttendanceLeavePage() {
               {/* Leave Applications DataTable */}
               <div className="lg:col-span-2">
                 <DataTable
-                  title="Leave Requests"
-                  lazy
-                  value={leaves}
-                  totalRecords={totalLeaves}
+                  title={isEmployee ? "My Leave Requests" : "Leave Requests"}
+                  lazy={!isEmployee}
+                  data={displayedLeaves}
+                  totalRecords={isEmployee ? displayedLeaves.length : totalLeaves}
                   page={leavePage}
                   rows={leaveRows}
                   loading={leaveTableLoading}
@@ -2814,13 +3719,13 @@ export default function AttendanceLeavePage() {
                       <TableRow>
                         <TableHead className="font-bold text-slate-700 dark:text-slate-300">#</TableHead>
                         <TableHead className="font-bold text-slate-700 dark:text-slate-300">Employee ID / Code</TableHead>
-                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Date</TableHead>
-                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">First In</TableHead>
-                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Last Out</TableHead>
-                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Auto Break Detected</TableHead>
-                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Net Work Hrs</TableHead>
+                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Date & Shift</TableHead>
+                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Punches (In / Out)</TableHead>
+                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Break & On-Duty</TableHead>
+                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Work Hrs / Credit</TableHead>
                         <TableHead className="font-bold text-slate-700 dark:text-slate-300">Status</TableHead>
-                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">OT Hrs</TableHead>
+                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">OT / Late / Early</TableHead>
+                        <TableHead className="font-bold text-slate-700 dark:text-slate-300">Override Flags</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -2828,36 +3733,48 @@ export default function AttendanceLeavePage() {
                         <TableRow key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                           <TableCell className="font-mono text-slate-400">{idx + 1}</TableCell>
                           <TableCell className="font-bold text-slate-800 dark:text-slate-200">{row.employeeCodeOrId || "—"}</TableCell>
-                          <TableCell>{row.date || "—"}</TableCell>
-                          <TableCell className="font-mono font-medium text-emerald-600 dark:text-emerald-400">{row.checkIn || "—"}</TableCell>
-                          <TableCell className="font-mono font-medium text-sky-600 dark:text-sky-400">{row.checkOut || "—"}</TableCell>
                           <TableCell>
-                            {row.breakDurationMinutes > 0 ? (
-                              <div className="space-y-0.5">
-                                {row.breakDurationMinutes > 60 ? (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200/80 dark:border-rose-800">
-                                    <AlertTriangle className="w-3 h-3 text-rose-600" />
-                                    {row.breakDurationMinutes}m ({row.breakDurationMinutes - 60}m Excess Not Allowed!)
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800">
-                                    <Coffee className="w-3 h-3 text-amber-600" />
-                                    {row.breakDurationMinutes}m (Allowed ≤1h)
-                                  </span>
-                                )}
-                                {row.breakIntervals && row.breakIntervals.length > 0 && (
-                                  <div className="text-[9.5px] text-slate-400 font-mono">
-                                    {row.breakIntervals.map(b => `${b.start}→${b.end}`).join(", ")}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-slate-400 text-[10px]">No break</span>
-                            )}
+                            <div>
+                              <span className="font-bold block text-slate-800 dark:text-slate-200">{row.date || "—"}</span>
+                              <span className="text-[10px] font-medium text-slate-400 block">{row.shiftName || "General Shift"}</span>
+                            </div>
                           </TableCell>
                           <TableCell>
-                            <span className="font-extrabold text-slate-800 dark:text-slate-100">
+                            <div className="font-mono text-xs space-y-0.5">
+                              <span className="text-emerald-600 dark:text-emerald-400 block">In: {row.checkIn || "—"}</span>
+                              <span className="text-sky-600 dark:text-sky-400 block">Out: {row.checkOut || "—"}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-0.5">
+                              {row.breakDurationMinutes > 0 ? (
+                                row.breakDurationMinutes > 60 ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200">
+                                    <AlertTriangle className="w-3 h-3 text-rose-600" />
+                                    {row.breakDurationMinutes}m ({row.breakDurationMinutes - 60}m Excess!)
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200">
+                                    <Coffee className="w-3 h-3 text-amber-600" />
+                                    {row.breakDurationMinutes}m Break
+                                  </span>
+                                )
+                              ) : (
+                                <span className="text-slate-400 text-[10px] block">0m Break</span>
+                              )}
+                              {row.onDutyMinutes > 0 && (
+                                <span className="text-[9.5px] font-bold text-sky-600 dark:text-sky-400 block">
+                                  🏢 {row.onDutyMinutes}m On-Duty
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="font-extrabold text-slate-800 dark:text-slate-100 block">
                               {row.totalWorkHours} hrs
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-semibold block">
+                              Credit: {row.presentDay} Day
                             </span>
                           </TableCell>
                           <TableCell>
@@ -2865,7 +3782,25 @@ export default function AttendanceLeavePage() {
                               {row.status}
                             </Badge>
                           </TableCell>
-                          <TableCell>{row.otHours || 0}</TableCell>
+                          <TableCell>
+                            <div className="text-[10.5px] space-y-0.5">
+                              {row.otHours > 0 && <span className="text-emerald-600 font-bold block">+{row.otHours}h OT</span>}
+                              {row.lateHours > 0 && <span className="text-amber-600 font-semibold block">Late: {row.lateHours}h</span>}
+                              {row.earlyGoingHours > 0 && <span className="text-rose-500 font-semibold block">Early: {row.earlyGoingHours}h</span>}
+                              {!row.otHours && !row.lateHours && !row.earlyGoingHours && <span className="text-slate-400">—</span>}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1 max-w-[120px]">
+                              {row.isHalfDay && <span className="text-[9px] font-bold px-1 rounded bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">HD</span>}
+                              {row.isSundayPresent && <span className="text-[9px] font-bold px-1 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300">Sun</span>}
+                              {row.isFullNightPresent && <span className="text-[9px] font-bold px-1 rounded bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300">Night</span>}
+                              {row.isHolidayPresent && <span className="text-[9px] font-bold px-1 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">Hol</span>}
+                              {!row.isHalfDay && !row.isSundayPresent && !row.isFullNightPresent && !row.isHolidayPresent && (
+                                <span className="text-[10px] text-slate-400">Regular</span>
+                              )}
+                            </div>
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -3434,6 +4369,8 @@ export default function AttendanceLeavePage() {
                       type="date"
                       date={breakIncidentForm.incidentDate}
                       setDate={(val) => setBreakIncidentForm({ ...breakIncidentForm, incidentDate: val })}
+                      disableFuture={true}
+                      maxDate={new Date()}
                     />
                   </div>
                 </div>
@@ -3442,7 +4379,7 @@ export default function AttendanceLeavePage() {
               {/* Row 2: Break Type & Disciplinary Severity */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Break Type</Label>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Break Type *</Label>
                   <Select
                     value={breakIncidentForm.breakType}
                     onValueChange={(val) => setBreakIncidentForm({ ...breakIncidentForm, breakType: val })}
@@ -3459,7 +4396,7 @@ export default function AttendanceLeavePage() {
                 </div>
 
                 <div>
-                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Disciplinary Severity</Label>
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Disciplinary Severity *</Label>
                   <Select
                     value={breakIncidentForm.severity}
                     onValueChange={(val) => setBreakIncidentForm({ ...breakIncidentForm, severity: val })}
@@ -3478,22 +4415,21 @@ export default function AttendanceLeavePage() {
               {/* Row 3: Excess Time & Penalty Hours */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Excess Time (Minutes)</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    className="rounded-xl mt-1.5 h-11"
-                    placeholder="e.g. 30"
-                    value={breakIncidentForm.excessMinutes}
-                    onChange={(e) => {
-                      const mins = Number(e.target.value) || 0;
-                      setBreakIncidentForm({
-                        ...breakIncidentForm,
-                        excessMinutes: mins,
-                        deductionHours: Number((mins / 60).toFixed(2)),
-                      });
-                    }}
-                  />
+                  <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Excess Duration *</Label>
+                  <div className="mt-1.5">
+                    <DurationPicker
+                      totalMinutes={breakIncidentForm.excessMinutes || 0}
+                      placeholder="Select duration..."
+                      onChange={(mins, timeStr) => {
+                        setBreakIncidentForm({
+                          ...breakIncidentForm,
+                          excessTime: timeStr,
+                          excessMinutes: mins,
+                          deductionHours: mins > 0 ? Number((mins / 60).toFixed(2)) : "",
+                        });
+                      }}
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -3505,7 +4441,7 @@ export default function AttendanceLeavePage() {
                     className="rounded-xl mt-1.5 h-11"
                     placeholder="e.g. 0.5"
                     value={breakIncidentForm.deductionHours}
-                    onChange={(e) => setBreakIncidentForm({ ...breakIncidentForm, deductionHours: Number(e.target.value) })}
+                    onChange={(e) => setBreakIncidentForm({ ...breakIncidentForm, deductionHours: e.target.value === "" ? "" : Number(e.target.value) })}
                   />
                 </div>
               </div>
@@ -3515,7 +4451,7 @@ export default function AttendanceLeavePage() {
                 <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Reported By (HOD Name)</Label>
                 <Input
                   className="rounded-xl mt-1.5 h-11"
-                  placeholder="Department HOD"
+                  placeholder="e.g. Department HOD Name"
                   value={breakIncidentForm.reportedByName}
                   onChange={(e) => setBreakIncidentForm({ ...breakIncidentForm, reportedByName: e.target.value })}
                 />
@@ -3745,6 +4681,23 @@ export default function AttendanceLeavePage() {
                     )}
                   </div>
                 </div>
+                {selectedMatrixRecord.rec?.hasBreakComplaint && (
+                  <div className="p-3 bg-rose-50/80 dark:bg-rose-950/50 rounded-xl border border-rose-200 dark:border-rose-900/60 space-y-1">
+                    <span className="text-[11px] font-bold text-rose-800 dark:text-rose-300 flex items-center gap-1">
+                      <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                      HOD Break Misuse Complaint Logged
+                    </span>
+                    <p className="text-xs text-rose-900 dark:text-rose-200">
+                      {selectedMatrixRecord.rec.breakComplaintDetails || `${selectedMatrixRecord.rec.breakMisuseMinutes}m excess break reported.`}
+                    </p>
+                    <div className="flex items-center gap-3 pt-1 text-[10.5px] font-semibold text-rose-700 dark:text-rose-400">
+                      <span>Type: {(selectedMatrixRecord.rec.breakType || 'LUNCH_BREAK').replace(/_/g, ' ')}</span>
+                      {selectedMatrixRecord.rec.breakDeductionHours > 0 && (
+                        <span>Penalty: -{selectedMatrixRecord.rec.breakDeductionHours} hrs</span>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-100 dark:border-slate-800">
                   <span className="text-slate-500">Net Active Work Hours</span>
                   <span className="font-extrabold text-sky-600 dark:text-sky-400 text-sm">
@@ -3766,6 +4719,202 @@ export default function AttendanceLeavePage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* DETAILED ATTENDANCE LOG REPORT MODAL */}
+      <Dialog open={showReportModal} onOpenChange={setShowReportModal}>
+        <DialogContent className="max-w-4xl border-0 shadow-2xl rounded-3xl p-0 overflow-hidden bg-slate-50 dark:bg-slate-950">
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-slate-900 via-sky-950 to-indigo-950 p-6 text-white flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-sky-500/20 rounded-2xl text-sky-400 border border-sky-400/30">
+                <FileSpreadsheet className="size-6" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-extrabold tracking-tight">Attendance Log Report</DialogTitle>
+                <DialogDescription className="text-slate-300 text-xs mt-0.5">
+                  Monthly executive attendance breakdown for {attendanceReportStats.monthName} {attendanceReportStats.year} • {isEmployee ? (myEmployee ? `${myEmployee.firstName} ${myEmployee.lastName} (${myEmployee.employeeId})` : "Employee Log") : "Comprehensive Organization Log"}
+                </DialogDescription>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => window.print()}
+                className="bg-white/10 hover:bg-white/20 border-white/20 text-white text-xs font-bold rounded-xl h-9 gap-1.5 cursor-pointer"
+              >
+                <Printer className="w-4 h-4 text-sky-300" />
+                Print Report
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleExportAttendanceCsv}
+                className="bg-white/10 hover:bg-white/20 border-white/20 text-white text-xs font-bold rounded-xl h-9 gap-1.5 cursor-pointer"
+              >
+                <Download className="w-4 h-4 text-emerald-300" />
+                Export CSV
+              </Button>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+            {/* KPI Summary Tiles */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Days</span>
+                <div className="text-xl font-black text-slate-800 dark:text-white mt-0.5">
+                  {attendanceReportStats.totalDaysInMonth} Days
+                </div>
+                <span className="text-[10px] text-slate-500 font-medium">In {attendanceReportStats.monthName}</span>
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Paid Days Credit</span>
+                <div className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
+                  {attendanceReportStats.paidDays} Days
+                </div>
+                <span className="text-[10px] text-emerald-600 font-medium">{attendanceReportStats.presentCount} Full + {attendanceReportStats.halfDayCount} Half</span>
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Active Work Hours</span>
+                <div className="text-xl font-black text-sky-600 dark:text-sky-400 mt-0.5">
+                  {attendanceReportStats.totalWorkHours} hrs
+                </div>
+                <span className="text-[10px] text-sky-600 font-medium">+{attendanceReportStats.totalOtHours} hrs Overtime</span>
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Approved Leaves</span>
+                <div className="text-xl font-black text-amber-600 dark:text-amber-400 mt-0.5">
+                  {attendanceReportStats.approvedLeavesCount} Leaves
+                </div>
+                <span className="text-[10px] text-amber-600 font-medium">Deducted from Quota</span>
+              </div>
+            </div>
+
+            {/* Attendance Logs Table */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
+              <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/30">
+                <h4 className="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-sky-500" />
+                  Detailed Daily Attendance Log & Timings
+                </h4>
+                <Badge variant="outline" className="text-[10px]">
+                  {attendanceReportStats.records.length} Recorded Entries
+                </Badge>
+              </div>
+
+              <div className="overflow-x-auto max-h-[380px]">
+                <Table>
+                  <TableHeader className="bg-slate-50 dark:bg-slate-800/80 sticky top-0">
+                    <TableRow className="text-[11px] font-extrabold text-slate-600 dark:text-slate-300">
+                      <TableHead className="w-24">Date</TableHead>
+                      {!isEmployee && <TableHead>Employee</TableHead>}
+                      <TableHead>Shift</TableHead>
+                      <TableHead>In Time</TableHead>
+                      <TableHead>Out Time</TableHead>
+                      <TableHead>Break</TableHead>
+                      <TableHead>Work Hrs</TableHead>
+                      <TableHead>OT</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {attendanceReportStats.records.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={isEmployee ? 8 : 9} className="text-center py-8 text-xs text-slate-400">
+                          No attendance records found for this period.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      attendanceReportStats.records.map((rec, idx) => {
+                        const inStr = rec.checkIn ? new Date(rec.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "—";
+                        const outStr = rec.checkOut ? new Date(rec.checkOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "—";
+                        const st = (rec.status || "PRESENT").toUpperCase();
+                        return (
+                          <TableRow key={rec.id || idx} className="text-xs hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                            <TableCell className="font-bold text-slate-800 dark:text-slate-200">
+                              {formatDateDDMMYYYY(rec.date)}
+                            </TableCell>
+                            {!isEmployee && (
+                              <TableCell>
+                                <span className="font-bold block text-slate-800 dark:text-slate-200">
+                                  {rec.employee ? `${rec.employee.firstName} ${rec.employee.lastName}` : (rec.employeeId || "—")}
+                                </span>
+                                <span className="text-[10px] text-slate-400">{rec.employee?.employeeId}</span>
+                              </TableCell>
+                            )}
+                            <TableCell className="text-slate-600 dark:text-slate-400 text-[11px]">
+                              {rec.shiftName || rec.shift?.name || "General Shift"}
+                            </TableCell>
+                            <TableCell className="font-mono text-slate-700 dark:text-slate-300 font-semibold">{inStr}</TableCell>
+                            <TableCell className="font-mono text-slate-700 dark:text-slate-300 font-semibold">{outStr}</TableCell>
+                            <TableCell>
+                              {rec.hasBreakComplaint || rec.breakMisuseMinutes > 0 ? (
+                                <span className="text-rose-600 font-bold text-[10px]">
+                                  {rec.breakMisuseMinutes}m Excess
+                                </span>
+                              ) : rec.breakMinutes > 0 ? (
+                                <span className="text-slate-600 dark:text-slate-400 text-[11px] font-medium">
+                                  {rec.breakMinutes}m
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 text-[11px]">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="font-extrabold text-sky-600 dark:text-sky-400">
+                              {rec.totalWorkHours || 8.0}h
+                            </TableCell>
+                            <TableCell>
+                              {rec.otHours > 0 ? (
+                                <span className="font-bold text-emerald-600 text-[10px] bg-emerald-50 dark:bg-emerald-950 px-1.5 py-0.5 rounded">
+                                  +{rec.otHours}h
+                                </span>
+                              ) : "—"}
+                            </TableCell>
+                            <TableCell>
+                              <span className={`px-2 py-0.5 rounded text-[9.5px] font-black uppercase ${
+                                st === "PRESENT" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400"
+                                : st === "HALFDAY" ? "bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400"
+                                : st === "ABSENT" ? "bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400"
+                                : "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400"
+                              }`}>
+                                {st}
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+
+            {/* Footer Sign-off info */}
+            <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-200 dark:border-slate-800">
+              <span>Report Generated by Aspino HRMS Automated Attendance Module</span>
+              <span>Confidential & Internal Verification Document</span>
+            </div>
+          </div>
+
+          <div className="p-4 bg-slate-100 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowReportModal(false)}
+              className="rounded-xl h-9 text-xs font-semibold px-4"
+            >
+              Close
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

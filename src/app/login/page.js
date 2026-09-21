@@ -50,9 +50,16 @@ export default function HRLoginPage() {
 
   const roleConfigs = [
     {
+      id: "admin",
+      label: "Super Admin",
+      icon: ShieldCheck,
+      demoEmail: "admin@aspino.com",
+      demoPass: "admin123",
+    },
+    {
       id: "hr",
       label: "HR Manager",
-      icon: ShieldCheck,
+      icon: Shield,
       demoEmail: "hr@aspino.com",
       demoPass: "Hr@123",
     },
@@ -67,6 +74,8 @@ export default function HRLoginPage() {
 
   const handleRoleSelect = (role) => {
     setSelectedRole(role.id);
+    setEmail(role.demoEmail);
+    setPassword(role.demoPass);
     setEmailError("");
     setPasswordError("");
     setApiError("");
@@ -93,8 +102,8 @@ export default function HRLoginPage() {
     if (!password) {
       setPasswordError("Password is required.");
       isValid = false;
-    } else if (password.length < 6) {
-      setPasswordError("Password must be at least 6 characters long.");
+    } else if (password.length < 4) {
+      setPasswordError("Password must be at least 4 characters long.");
       isValid = false;
     }
 
@@ -107,12 +116,6 @@ export default function HRLoginPage() {
     setSuccessMsg("");
 
     if (!validateForm()) {
-      return;
-    }
-
-    // Role-specific credential validation check
-    if (selectedRole !== "hr") {
-      setApiError(`Invalid login: You cannot use credentials under the '${selectedRole.toUpperCase()}' role selection on this HR Portal. Please select the 'HR Manager' role.`);
       return;
     }
 
@@ -138,27 +141,32 @@ export default function HRLoginPage() {
         throw new Error(data.message || "Invalid email or password");
       }
 
-      // Check if user is HR role
       const user = data.user || data.admin;
-      if (!user || user.role !== "hr") {
-        throw new Error("Access denied: Only users with the HR role can access this portal.");
+      if (!user) {
+        throw new Error("Invalid login response: user data missing.");
       }
 
-      // Store Auth Token and User Details in Cookies
+      // Store Auth Token and User Details in Cookies and localStorage
       if (typeof window !== "undefined") {
         const token = data.access_token;
-        const userObj = JSON.stringify(user);
+        const userObj = JSON.stringify({
+          ...user,
+          permissions: data.permissions || user.permissions || [],
+          role: data.role?.name || (typeof data.role === "string" ? data.role : user.role),
+        });
 
-        // Save hrToken in cookie (Valid for 1 day)
+        // Save hrToken in cookie and localStorage (Valid for 1 day)
         document.cookie = `hrToken=${token}; path=/; max-age=86400; SameSite=Lax`;
         document.cookie = `hrUser=${encodeURIComponent(userObj)}; path=/; max-age=86400; SameSite=Lax`;
+        localStorage.setItem("hrToken", token);
+        localStorage.setItem("hrUser", userObj);
       }
 
       setSuccessMsg("Login successful! Redirecting to Dashboard...");
 
       setTimeout(() => {
         router.push("/dashboard");
-      }, 800);
+      }, 500);
     } catch (err) {
       if (err.name === "TypeError" && (err.message === "Failed to fetch" || err.message.includes("fetch"))) {
         setApiError("Unable to connect to backend server at http://localhost:5000. Please ensure the backend server is running.");

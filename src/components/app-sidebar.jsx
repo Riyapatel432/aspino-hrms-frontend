@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { AspinoLogo, AspinoIcon } from "@/components/aspino-logo";
+import { usePermissions } from "@/context/PermissionContext";
 import {
   Sidebar,
   SidebarContent,
@@ -36,6 +37,9 @@ import {
   FileText,
   FileCheck,
   Landmark,
+  ListChecks,
+  KeyRound,
+  Users,
 } from "lucide-react";
 
 const menuItems = [
@@ -46,6 +50,20 @@ const menuItems = [
         title: "Dashboard",
         href: "/dashboard",
         icon: LayoutDashboard,
+        sidebarPermission: "sidebar-dashboard",
+      },
+    ],
+  },
+  {
+    group: "Administration",
+    items: [
+      {
+        title: "Roles & Permissions",
+        href: "/dashboard/roles",
+        icon: KeyRound,
+        subject: "roles",
+        action: "read",
+        sidebarPermission: "sidebar-roles",
       },
     ],
   },
@@ -56,24 +74,42 @@ const menuItems = [
         title: "Department Master",
         href: "/dashboard/departments",
         icon: Building2,
+        subject: "department",
+        action: "read",
+        sidebarPermission: "sidebar-departments",
       },
       {
         title: "Financial Year Master",
         href: "/dashboard/financial-year",
         icon: Calendar,
+        subject: "department",
+        action: "read",
+        sidebarPermission: "sidebar-financial-year",
       },
       {
         title: "Training Type",
         href: "/dashboard/training-type",
         icon: GraduationCap,
+        subject: "training",
+        action: "read",
+        sidebarPermission: "sidebar-training-type",
       },
       {
         title: "Leave Master",
         href: "/dashboard/leave-master",
         icon: CalendarOff,
+        subject: "leave",
+        action: "read",
+        sidebarPermission: "sidebar-leave-master",
       },
-      
-     
+      {
+        title: "Interview Round Master",
+        href: "/dashboard/interview-rounds",
+        icon: ListChecks,
+        subject: "recruitment",
+        action: "read",
+        sidebarPermission: "sidebar-interview-rounds",
+      },
     ],
   },
   {
@@ -83,16 +119,25 @@ const menuItems = [
         title: "Recruitment",
         href: "/dashboard/recruitment",
         icon: Briefcase,
+        subject: "recruitment",
+        action: "read",
+        sidebarPermission: "sidebar-recruitment",
       },
       {
         title: "Onboarding",
         href: "/dashboard/onboarding",
         icon: UserCheck,
+        subject: "onboarding",
+        action: "read",
+        sidebarPermission: "sidebar-onboarding",
       },
       {
         title: "Exit Process",
         href: "/dashboard/exit",
         icon: UserMinus,
+        subject: "exit",
+        action: "read",
+        sidebarPermission: "sidebar-exit",
       },
     ],
   },
@@ -100,14 +145,28 @@ const menuItems = [
     group: "Operations",
     items: [
       {
-        title: "Attendance & Leave",
-        href: "/dashboard/attendance-leave",
+        title: "Attendance & Logs",
+        href: "/dashboard/attendance-leave?tab=attendance",
         icon: Clock,
+        subject: "attendance",
+        action: "read",
+        sidebarPermission: "sidebar-attendance-leave",
+      },
+      {
+        title: "Apply Leave",
+        href: "/dashboard/attendance-leave?tab=leaves",
+        icon: FileCheck,
+        subject: "leave",
+        action: "read",
+        sidebarPermission: "sidebar-attendance-leave",
       },
       {
         title: "Performance & Training",
         href: "/dashboard/performance-training",
         icon: Award,
+        subject: "performance",
+        action: "read",
+        sidebarPermission: "sidebar-performance-training",
       },
     ],
   },
@@ -118,41 +177,62 @@ const menuItems = [
         title: "Salary Structures",
         href: "/dashboard/payroll/salary-structures",
         icon: Calculator,
+        subject: "payroll",
+        action: "read",
+        sidebarPermission: "sidebar-salary-structures",
       },
       {
         title: "HRA & Tax Exemption",
         href: "/dashboard/payroll/hra-tax",
         icon: ShieldCheck,
+        subject: "payroll",
+        action: "read",
+        sidebarPermission: "sidebar-hra-tax",
       },
       {
         title: "Loans & Advances",
         href: "/dashboard/payroll/loans",
         icon: Landmark,
+        subject: "payroll",
+        action: "read",
+        sidebarPermission: "sidebar-loans",
       },
       {
         title: "Monthly Payroll Run",
         href: "/dashboard/payroll/monthly-run",
         icon: RefreshCw,
+        subject: "payroll",
+        action: "read",
+        sidebarPermission: "sidebar-monthly-run",
       },
       {
         title: "Payslips & Self-Service",
         href: "/dashboard/payroll/payslips",
         icon: FileText,
+        subject: "payroll",
+        action: "read",
+        sidebarPermission: "sidebar-payslips",
       },
       {
         title: "Reports & Form 16",
         href: "/dashboard/payroll/reports",
         icon: FileCheck,
+        subject: "payroll",
+        action: "read",
+        sidebarPermission: "sidebar-reports",
       },
     ],
   },
-    {
+  {
     group: "Logs",
     items: [
       {
         title: "Activity Logs",
         href: "/dashboard/activity-logs",
         icon: History,
+        subject: "audit",
+        action: "read",
+        sidebarPermission: "sidebar-activity-logs",
       },
     ],
   },
@@ -160,6 +240,33 @@ const menuItems = [
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const currentTab = searchParams ? searchParams.get("tab") : null;
+  const { can, isSuperAdmin } = usePermissions();
+
+  // Filter menu items based on CASL ability and sidebar permissions
+  const filteredMenuItems = menuItems
+    .map((group) => {
+      const visibleItems = group.items.filter((item) => {
+        if (isSuperAdmin) return true;
+
+        if (item.sidebarPermission) {
+          const mod = item.sidebarPermission.replace(/^sidebar-/, "");
+          if (
+            can("sidebar", mod) ||
+            can("read", item.sidebarPermission) ||
+            can("sidebar", item.sidebarPermission) ||
+            can("view", item.sidebarPermission)
+          ) {
+            return true;
+          }
+        }
+        if (!item.subject) return true;
+        return can(item.action || "read", item.subject);
+      });
+      return { ...group, items: visibleItems };
+    })
+    .filter((group) => group.items.length > 0);
 
   return (
     <Sidebar collapsible="icon" className="border-r print:hidden">
@@ -182,7 +289,7 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="px-2 py-3 group-data-[collapsible=icon]:px-1 group-data-[collapsible=icon]:py-2">
-        {menuItems.map((group) => (
+        {filteredMenuItems.map((group) => (
           <SidebarGroup key={group.group} className="px-0 py-1 group-data-[collapsible=icon]:py-1">
             <SidebarGroupLabel className="text-[10px] uppercase tracking-widest font-extrabold text-slate-400 dark:text-slate-500 px-3 py-1 mb-0.5 group-data-[collapsible=icon]:hidden">
               {group.group}
@@ -190,7 +297,18 @@ export function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu className="gap-0.5 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:gap-1">
                 {group.items.map((item) => {
-                  const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                  let isActive = false;
+                  if (pathname === "/dashboard/attendance-leave") {
+                    if (item.href.includes("tab=leaves")) {
+                      isActive = currentTab === "leaves";
+                    } else if (item.href.includes("tab=attendance")) {
+                      isActive = !currentTab || currentTab === "attendance";
+                    } else {
+                      isActive = false;
+                    }
+                  } else {
+                    isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`));
+                  }
                   return (
                     <SidebarMenuItem key={item.href} className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center">
                       <SidebarMenuButton
@@ -236,3 +354,4 @@ export function AppSidebar() {
     </Sidebar>
   );
 }
+

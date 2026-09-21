@@ -9,55 +9,47 @@ import { Label } from "@/components/ui/label";
 import { DataTable } from "@/components/ui/data-table";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 import { Switch } from "@/components/ui/switch";
-import { RouteGuard } from "@/context/PermissionContext";
 import {
-  FolderTree,
+  ListChecks,
   Plus,
   Trash2,
   Edit,
   Loader2,
+  Calendar,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Validation helper
 // ---------------------------------------------------------------------------
-const DEPT_NAME_MIN_LENGTH = 2;
+const ROUND_NAME_MIN_LENGTH = 2;
 
-function validateDepartmentName(name) {
-  if (!name?.trim()) return "Department name is required.";
-  if (/\d/.test(name)) return "Numbers are not allowed in Department name.";
-  if (!/^[a-zA-Z\s&/().,'"-]+$/.test(name.trim()))
-    return "Department name can only contain letters and standard symbols (&, -, /, etc.).";
-  if (name.trim().length < DEPT_NAME_MIN_LENGTH)
-    return `Department name must be at least ${DEPT_NAME_MIN_LENGTH} characters.`;
+function validateRoundName(name) {
+  if (!name?.trim()) return "Interview round name is required.";
+  if (name.trim() === "0" || /^0+$/.test(name.trim())) return "Round name cannot be 0.";
+  if (name.trim().length < ROUND_NAME_MIN_LENGTH)
+    return `Round name must be at least ${ROUND_NAME_MIN_LENGTH} characters.`;
   return null;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
-export default function DepartmentsPage() {
-  return (
-    <RouteGuard subject="department" action="read">
-      <DepartmentsContent />
-    </RouteGuard>
-  );
-}
-
-function DepartmentsContent() {
-  const [departments, setDepartments] = useState([]);
+export default function InterviewRoundsPage() {
+  const [rounds, setRounds] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Server-side Data Handling state
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState(10);
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState("name");
+  const [sortBy, setSortBy] = useState("order");
   const [sortOrder, setSortOrder] = useState("asc");
   const [totalRecords, setTotalRecords] = useState(0);
 
-  // Form state
+  // Form state — unified for both create and edit
   const [formName, setFormName] = useState("");
+  const [formDescription, setFormDescription] = useState("");
+  const [formOrder, setFormOrder] = useState(1);
   const [formIsActive, setFormIsActive] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [nameError, setNameError] = useState(null);
@@ -67,6 +59,7 @@ function DepartmentsContent() {
   const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
   const [deleting, setDeleting] = useState(false);
 
+  // ---------------------------------------------------------------------------
   // Data fetching
   // ---------------------------------------------------------------------------
   async function fetchData() {
@@ -80,21 +73,19 @@ function DepartmentsContent() {
       if (sortBy) params.append("sortBy", sortBy);
       if (sortOrder) params.append("sortOrder", sortOrder);
 
-      const deptRes = await apiFetch(`${API_URL}/staff-hrms/recruitment/departments?${params.toString()}`);
-      const deptData = await deptRes.json();
+      const res = await apiFetch(`${API_URL}/staff-hrms/recruitment/interview-rounds?${params.toString()}`);
+      const data = await res.json();
 
-      if (deptData && deptData.data) {
-        setDepartments(Array.isArray(deptData.data) ? deptData.data : []);
-        setTotalRecords(deptData.pagination?.total ?? deptData.total ?? (Array.isArray(deptData.data) ? deptData.data.length : 0));
-        setPage(deptData.pagination?.page || page);
-        setRows(deptData.pagination?.limit || rows);
+      if (data && data.data) {
+        setRounds(Array.isArray(data.data) ? data.data : []);
+        setTotalRecords(data.pagination?.total ?? data.total ?? (Array.isArray(data.data) ? data.data.length : 0));
       } else {
-        const list = Array.isArray(deptData) ? deptData : [];
-        setDepartments(list);
+        const list = Array.isArray(data) ? data : [];
+        setRounds(list);
         setTotalRecords(list.length);
       }
     } catch (e) {
-      console.error("Error loading department data:", e);
+      console.error("Error loading interview rounds:", e);
     } finally {
       setLoading(false);
     }
@@ -104,20 +95,23 @@ function DepartmentsContent() {
     fetchData();
   }, [page, rows, search, sortBy, sortOrder]);
 
-
   // ---------------------------------------------------------------------------
   // Form helpers
   // ---------------------------------------------------------------------------
-  function startEditing(dept) {
-    setEditingId(dept.id);
-    setFormName(dept.name);
-    setFormIsActive(dept.isActive !== false);
+  function startEditing(round) {
+    setEditingId(round.id);
+    setFormName(round.name || "");
+    setFormDescription(round.description || "");
+    setFormOrder(round.order || 1);
+    setFormIsActive(round.isActive !== false);
     setNameError(null);
   }
 
   function cancelEdit() {
     setEditingId(null);
     setFormName("");
+    setFormDescription("");
+    setFormOrder((rounds.length || 0) + 1);
     setFormIsActive(true);
     setNameError(null);
   }
@@ -127,7 +121,7 @@ function DepartmentsContent() {
   // ---------------------------------------------------------------------------
   async function handleSubmit(e) {
     e.preventDefault();
-    const error = validateDepartmentName(formName);
+    const error = validateRoundName(formName);
     if (error) {
       setNameError(error);
       return;
@@ -136,26 +130,31 @@ function DepartmentsContent() {
     setSubmitting(true);
     try {
       const url = editingId
-        ? `${API_URL}/staff-hrms/recruitment/departments/${editingId}`
-        : `${API_URL}/staff-hrms/recruitment/departments`;
+        ? `${API_URL}/staff-hrms/recruitment/interview-rounds/${editingId}`
+        : `${API_URL}/staff-hrms/recruitment/interview-rounds`;
       const method = editingId ? "PATCH" : "POST";
 
       const res = await apiFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: formName.trim(), isActive: formIsActive }),
+        body: JSON.stringify({
+          name: formName.trim(),
+          description: formDescription?.trim() || null,
+          order: Number(formOrder) || 1,
+          isActive: formIsActive,
+        }),
       });
 
       if (res.ok) {
-        toast.success(editingId ? "Department updated successfully" : "Department created successfully");
+        toast.success(editingId ? "Interview round updated successfully" : "Interview round created successfully");
         cancelEdit();
         fetchData();
       } else {
-        const msg = await getErrorMessage(res, "Department save failed");
+        const msg = await getErrorMessage(res, "Interview round save failed");
         toast.error(msg);
       }
     } catch (err) {
-      console.error("Department save error:", err);
+      console.error("Interview round save error:", err);
       toast.error("An unexpected error occurred");
     } finally {
       setSubmitting(false);
@@ -166,21 +165,21 @@ function DepartmentsContent() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      const res = await apiFetch(`${API_URL}/staff-hrms/recruitment/departments/${deleteTarget.id}`, {
+      const res = await apiFetch(`${API_URL}/staff-hrms/recruitment/interview-rounds/${deleteTarget.id}`, {
         method: "DELETE",
       });
       if (res.ok) {
-        toast.success("Department deleted successfully");
+        toast.success("Interview round deleted successfully");
         cancelEdit();
         setDeleteTarget(null);
         fetchData();
       } else {
-        const msg = await getErrorMessage(res, "Failed to delete department");
+        const msg = await getErrorMessage(res, "Failed to delete interview round");
         toast.error(msg);
       }
     } catch (err) {
-      console.error("Department delete error:", err);
-      toast.error("Failed to delete department");
+      console.error("Interview round delete error:", err);
+      toast.error("Failed to delete interview round");
     } finally {
       setDeleting(false);
     }
@@ -189,13 +188,13 @@ function DepartmentsContent() {
   async function handleToggleStatus(row) {
     const nextStatus = row.isActive !== false ? false : true;
     try {
-      const res = await apiFetch(`${API_URL}/staff-hrms/recruitment/departments/${row.id}`, {
+      const res = await apiFetch(`${API_URL}/staff-hrms/recruitment/interview-rounds/${row.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: nextStatus }),
       });
       if (res.ok) {
-        toast.success(`Department "${row.name}" set to ${nextStatus ? 'Active' : 'Inactive'}`);
+        toast.success(`Round "${row.name}" set to ${nextStatus ? "Active" : "Inactive"}`);
         fetchData();
       } else {
         toast.error("Failed to update status");
@@ -212,14 +211,19 @@ function DepartmentsContent() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-          <FolderTree className="w-6 h-6 text-sky-500" aria-hidden="true" />
-          Department Master
-        </h2>
+        <div>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+            <ListChecks className="w-6 h-6 text-sky-500" aria-hidden="true" />
+            Interview Round Master
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Configure standardized interview stages, round names, and sequences for recruitment.
+          </p>
+        </div>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center items-center py-20" aria-label="Loading departments">
+      {loading && rounds.length === 0 ? (
+        <div className="flex justify-center items-center py-20" aria-label="Loading interview rounds">
           <Loader2 className="w-8 h-8 text-sky-500 animate-spin" />
         </div>
       ) : (
@@ -228,37 +232,57 @@ function DepartmentsContent() {
           <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
             <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
               <Plus className="w-5 h-5 text-sky-500" aria-hidden="true" />
-              {editingId ? "Edit Department" : "Create Department"}
+              {editingId ? "Edit Interview Round" : "Create Interview Round"}
             </h3>
             <form onSubmit={handleSubmit} className="space-y-3" noValidate>
               <div className="space-y-1">
-                <Label htmlFor="dept-name" className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                  Department Name
+                <Label htmlFor="round-name" className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  Round Name <span className="text-rose-500">*</span>
                 </Label>
                 <Input
-                  id="dept-name"
-                  placeholder="e.g. Quality Control"
+                  id="round-name"
+                  placeholder="e.g. Technical Round 1, HR Round"
                   value={formName}
                   aria-invalid={!!nameError}
-                  aria-describedby={nameError ? "dept-name-error" : undefined}
-                  onKeyDown={(e) => {
-                    // Prevent typing numeric characters
-                    if (e.key >= "0" && e.key <= "9") {
-                      e.preventDefault();
-                    }
-                  }}
+                  aria-describedby={nameError ? "round-name-error" : undefined}
                   onChange={(e) => {
-                    const cleaned = e.target.value.replace(/[0-9]/g, "");
-                    setFormName(cleaned);
+                    setFormName(e.target.value);
                     if (nameError) setNameError(null);
                   }}
                 />
                 {nameError && (
-                  <span id="dept-name-error" className="text-rose-500 text-[10.5px] font-bold block mt-0.5" role="alert">
+                  <span id="round-name-error" className="text-rose-500 text-[10.5px] font-bold block mt-0.5" role="alert">
                     {nameError}
                   </span>
                 )}
               </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="round-desc" className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  Description / Focus Area
+                </Label>
+                <Input
+                  id="round-desc"
+                  placeholder="e.g. Assessment of algorithms & problem solving"
+                  value={formDescription}
+                  onChange={(e) => setFormDescription(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="round-order" className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  Sequence / Order
+                </Label>
+                <Input
+                  id="round-order"
+                  type="number"
+                  min="1"
+                  placeholder="1"
+                  value={formOrder}
+                  onChange={(e) => setFormOrder(e.target.value)}
+                />
+              </div>
+
               <div className="space-y-1">
                 <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
                   Status
@@ -273,13 +297,14 @@ function DepartmentsContent() {
                   </span>
                 </div>
               </div>
+
               <div className="flex gap-2 pt-2">
                 <Button
                   type="submit"
                   disabled={submitting}
                   className="flex-1 bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl"
                 >
-                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : editingId ? "Update" : "Save"}
+                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : editingId ? "Update Round" : "Save Round"}
                 </Button>
                 {editingId && (
                   <Button
@@ -298,9 +323,9 @@ function DepartmentsContent() {
           {/* List Card */}
           <div className="lg:col-span-2">
             <DataTable
-              title="All Departments"
+              title="Configured Interview Rounds"
               lazy
-              value={departments}
+              value={rounds}
               totalRecords={totalRecords}
               page={page}
               rows={rows}
@@ -312,22 +337,41 @@ function DepartmentsContent() {
               onRowsChange={(r) => { setRows(r); setPage(1); }}
               onSortChange={(k, dir) => { setSortBy(k); setSortOrder(dir); setPage(1); }}
               onSearchChange={(s) => { setSearch(s); setPage(1); }}
-              emptyMessage="No departments registered."
+              emptyMessage="No interview rounds configured."
               columns={[
                 {
-                  key: "name",
-                  label: "Department Name",
+                  key: "order",
+                  label: "Seq",
                   render: (row) => (
-                    <span className="text-sm font-black text-slate-800 dark:text-white">{row.name}</span>
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                      #{row.order || 1}
+                    </span>
                   ),
                 },
                 {
-                  key: "requisitions",
-                  label: "Active Requisitions",
+                  key: "name",
+                  label: "Round Name",
+                  render: (row) => (
+                    <div>
+                      <span className="text-sm font-black text-slate-800 dark:text-white block">
+                        {row.name}
+                      </span>
+                      {row.description && (
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 block truncate max-w-[220px]">
+                          {row.description}
+                        </span>
+                      )}
+                    </div>
+                  ),
+                },
+                {
+                  key: "activeInterviews",
+                  label: "Scheduled",
                   sortable: false,
                   render: (row) => (
-                    <span className="text-xs font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 border border-sky-100 dark:border-sky-500/20 px-2.5 py-1 rounded-full">
-                      {row.activeRequisitions || 0}
+                    <span className="text-xs font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 border border-sky-100 dark:border-sky-500/20 px-2.5 py-1 rounded-full flex items-center gap-1 w-fit">
+                      <Calendar className="w-3 h-3" />
+                      {row.activeInterviews || 0}
                     </span>
                   ),
                 },
@@ -336,13 +380,19 @@ function DepartmentsContent() {
                   label: "Status",
                   sortable: false,
                   render: (row) => (
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
-                      row.isActive !== false
-                        ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20"
-                        : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700"
-                    }`}>
-                      {row.isActive !== false ? "Active" : "Inactive"}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={row.isActive !== false}
+                        onCheckedChange={() => handleToggleStatus(row)}
+                      />
+                      <span className={`text-xs font-bold ${
+                        row.isActive !== false
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-slate-400"
+                      }`}>
+                        {row.isActive !== false ? "Active" : "Inactive"}
+                      </span>
+                    </div>
                   ),
                 },
                 {
@@ -354,16 +404,16 @@ function DepartmentsContent() {
                       <button
                         onClick={() => startEditing(row)}
                         className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all cursor-pointer"
-                        title={`Edit department ${row.name}`}
-                        aria-label={`Edit department ${row.name}`}
+                        title={`Edit round ${row.name}`}
+                        aria-label={`Edit round ${row.name}`}
                       >
                         <Edit className="w-4 h-4" aria-hidden="true" />
                       </button>
                       <button
                         onClick={() => setDeleteTarget({ id: row.id, name: row.name })}
                         className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all cursor-pointer"
-                        title={`Delete department ${row.name}`}
-                        aria-label={`Delete department ${row.name}`}
+                        title={`Delete round ${row.name}`}
+                        aria-label={`Delete round ${row.name}`}
                       >
                         <Trash2 className="w-4 h-4" aria-hidden="true" />
                       </button>
@@ -382,7 +432,7 @@ function DepartmentsContent() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
         loading={deleting}
-        title="Delete Department"
+        title="Delete Interview Round"
         description={
           deleteTarget
             ? `Are you sure you want to delete "${deleteTarget.name}"? This cannot be undone.`

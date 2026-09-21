@@ -5,6 +5,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Clock } from "lucide-react";
 
+export { DurationPicker } from "@/components/ui/duration-picker";
+
 export function TimePicker({ time, setTime }) {
   // Parse time "HH:MM"
   const [hours, setHours] = React.useState(time ? time.split(":")[0] : "");

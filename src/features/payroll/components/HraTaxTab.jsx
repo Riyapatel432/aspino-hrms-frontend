@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, useMemo, Suspense } from "react";
 import { apiFetch } from "@/lib/api";
 import { useDispatch, useSelector } from "react-redux";
+import { usePermissions } from "@/context/PermissionContext";
 import { useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import {
   fetchPayrollEmployees,
   fetchSalaryStructures,
@@ -67,7 +69,7 @@ import {
 
 
 export default function HraTaxTab() {
-
+  const { isEmployee, user } = usePermissions();
   const dispatch = useDispatch();
   const {
     employees = [],
@@ -80,6 +82,22 @@ export default function HraTaxTab() {
     loading = false,
     activeFinancialYear = "",
   } = useSelector((state) => state.payroll || {});
+
+  const rawEmpList = useMemo(
+    () => (Array.isArray(employees?.data) ? employees.data : Array.isArray(employees) ? employees : []),
+    [employees]
+  );
+  const myEmployee = useMemo(() => {
+    if (!user) return null;
+    if (user.employee) return user.employee;
+    return rawEmpList.find(
+      (e) =>
+        (user.id && (String(e.userId) === String(user.id) || String(e.id) === String(user.id))) ||
+        (user.employeeId && (String(e.id) === String(user.employeeId) || String(e.employeeId) === String(user.employeeId))) ||
+        (user.email && e.email?.toLowerCase() === user.email.toLowerCase())
+    );
+  }, [user, rawEmpList]);
+  const myEmployeeId = myEmployee?.id || user?.employeeId || user?.id || null;
 
   const activeTab = "hra";
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -122,6 +140,9 @@ export default function HraTaxTab() {
     financialYear: activeFinancialYear || "2026-2027",
     landlordName: "",
     landlordPan: "",
+    houseNo: "",
+    landmark: "",
+    city: "",
     landlordAddress: "",
     monthlyRent: "",
   });
@@ -220,9 +241,22 @@ export default function HraTaxTab() {
         search: rentSearch,
         month: rentFilterMonth && rentFilterMonth !== "ALL" ? Number(rentFilterMonth) : undefined,
         year: rentFilterYear && rentFilterYear !== "ALL" ? Number(rentFilterYear) : undefined,
+        employeeId: isEmployee ? (myEmployeeId || undefined) : undefined,
       })
     );
-  }, [dispatch, rentPage, rentLimit, rentSearch, rentFilterMonth, rentFilterYear]);
+  }, [dispatch, rentPage, rentLimit, rentSearch, rentFilterMonth, rentFilterYear, isEmployee, myEmployeeId]);
+
+  const filteredRentReceiptsData = useMemo(() => {
+    const list = Array.isArray(rentReceipts?.data) ? rentReceipts.data : Array.isArray(rentReceipts) ? rentReceipts : [];
+    if (!isEmployee || !myEmployeeId) return list;
+    return list.filter((rec) => {
+      const empId = String(rec.employeeId || rec.employee?.id || "");
+      const empCode = String(rec.employee?.employeeId || "");
+      const targetId = String(myEmployeeId);
+      const targetCode = String(myEmployee?.employeeId || "");
+      return empId === targetId || empCode === targetCode || empId === targetCode || empCode === targetId;
+    });
+  }, [rentReceipts, isEmployee, myEmployeeId, myEmployee]);
 
   // Calculations for Structure Modal Live Preview
   const calculatedHra = (Number(structForm.basicSalary) * Number(structForm.hraPercent)) / 100;
@@ -279,15 +313,46 @@ export default function HraTaxTab() {
     if (!rentForm.employeeId) errors.employeeId = "Employee is required.";
     if (!rentForm.financialYear) errors.financialYear = "Financial Year is required.";
     if (rentForm.monthlyRent === "" || Number(rentForm.monthlyRent) <= 0) errors.monthlyRent = "Valid monthly rent is required.";
-    if (!rentForm.landlordName) errors.landlordName = "Landlord name is required.";
-    if (!rentForm.landlordAddress) errors.landlordAddress = "Landlord address is required.";
+    if (!rentForm.landlordName?.trim()) errors.landlordName = "Landlord name is required.";
+    if (!rentForm.houseNo?.trim()) errors.houseNo = "House No. / Flat No. is required.";
+    if (!rentForm.landmark?.trim()) errors.landmark = "Landmark / Street is required.";
+    if (!rentForm.city?.trim()) errors.city = "City is required.";
+
+    const pan = String(rentForm.landlordPan || "").trim().toUpperCase();
+    const annualRent = (Number(rentForm.monthlyRent) || 0) * 12;
+
+    if (annualRent > 100000 && !pan) {
+      errors.landlordPan = "Landlord PAN is mandatory for annual rent exceeding ₹1,00,000.";
+    } else if (pan) {
+      if (pan.length !== 10) {
+        errors.landlordPan = `Landlord PAN must be exactly 10 characters (currently ${pan.length}).`;
+      } else if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan)) {
+        errors.landlordPan = "Invalid PAN format. Must be 5 letters + 4 digits + 1 letter (e.g. ABCDE1234F).";
+      }
+    }
 
     if (Object.keys(errors).length > 0) {
       setRentErrors(errors);
+      toast.error("Please resolve the validation errors before submitting.");
       return;
     }
+
+    const fullAddress = [
+      rentForm.houseNo?.trim(),
+      rentForm.landmark?.trim(),
+      rentForm.city?.trim(),
+    ].filter(Boolean).join(", ");
+
     setRentErrors({});
-    await dispatch(submitRentReceipt({...rentForm, monthlyRent: Number(rentForm.monthlyRent)}));
+    await dispatch(submitRentReceipt({
+      ...rentForm,
+      monthlyRent: Number(rentForm.monthlyRent),
+      landlordPan: pan,
+      houseNo: rentForm.houseNo?.trim(),
+      landmark: rentForm.landmark?.trim(),
+      city: rentForm.city?.trim(),
+      landlordAddress: fullAddress || rentForm.landlordAddress || "",
+    }));
     setIsRentOpen(false);
     dispatch(fetchRentReceipts());
   };
@@ -464,6 +529,11 @@ export default function HraTaxTab() {
         <div className="text-xs">
           <p className="font-medium text-slate-900 dark:text-slate-100">{row.landlordName}</p>
           <p className="text-slate-500">PAN: {row.landlordPan || "N/A"}</p>
+          {(row.landlordAddress || (row.houseNo && row.city)) && (
+            <p className="text-[11px] text-slate-400 truncate max-w-[200px]" title={row.landlordAddress || `${row.houseNo || ''}, ${row.landmark || ''}, ${row.city || ''}`}>
+              📍 {row.landlordAddress || `${row.houseNo || ''}, ${row.landmark || ''}, ${row.city || ''}`}
+            </p>
+          )}
         </div>
       )
     },
@@ -503,15 +573,36 @@ export default function HraTaxTab() {
             className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-sky-500 hover:text-white hover:border-sky-500 dark:hover:bg-sky-500 rounded-lg transition-all cursor-pointer"
             title="Edit Receipt"
             onClick={() => {
+              let houseNo = row.houseNo || "";
+              let landmark = row.landmark || "";
+              let city = row.city || "";
+              if (!houseNo && !landmark && !city && row.landlordAddress) {
+                const parts = row.landlordAddress.split(",").map(p => p.trim()).filter(Boolean);
+                if (parts.length >= 3) {
+                  houseNo = parts[0];
+                  city = parts[parts.length - 1];
+                  landmark = parts.slice(1, -1).join(", ");
+                } else if (parts.length === 2) {
+                  houseNo = parts[0];
+                  city = parts[1];
+                } else {
+                  houseNo = row.landlordAddress;
+                }
+              }
+
               setRentForm({
                 id: row.id,
                 employeeId: row.employeeId,
                 financialYear: row.financialYear,
                 landlordName: row.landlordName,
                 landlordPan: row.landlordPan || "",
-                landlordAddress: row.landlordAddress,
+                houseNo,
+                landmark,
+                city,
+                landlordAddress: row.landlordAddress || "",
                 monthlyRent: String(row.monthlyRent),
               });
+              setRentErrors({});
               setIsRentOpen(true);
             }}
           >
@@ -610,14 +701,20 @@ export default function HraTaxTab() {
               </div>
               <Dialog open={isRentOpen} onOpenChange={setIsRentOpen}>
                 <DialogTrigger asChild>
-                  <Button className="mt-4 bg-sky-600 hover:bg-sky-700 text-white rounded-xl gap-2 text-xs py-2.5 shadow-md" onClick={() => setRentForm({
-                    employeeId: employees[0]?.id || "",
-                    financialYear: activeFinancialYear || "2026-2027",
-                    landlordName: "",
-                    landlordPan: "",
-                    landlordAddress: "",
-                    monthlyRent: "",
-                  })}>
+                  <Button className="mt-4 bg-sky-600 hover:bg-sky-700 text-white rounded-xl gap-2 text-xs py-2.5 shadow-md" onClick={() => {
+                    setRentForm({
+                      employeeId: employees[0]?.id || "",
+                      financialYear: activeFinancialYear || "2026-2027",
+                      landlordName: "",
+                      landlordPan: "",
+                      houseNo: "",
+                      landmark: "",
+                      city: "",
+                      landlordAddress: "",
+                      monthlyRent: "",
+                    });
+                    setRentErrors({});
+                  }}>
                     <Plus className="size-4" /> Submit Rent Details
                   </Button>
                 </DialogTrigger>
@@ -642,7 +739,10 @@ export default function HraTaxTab() {
                               subLabel: `${emp.designation || "Staff"} • ${emp.department || "General"}`
                             }))}
                             value={rentForm.employeeId}
-                            onValueChange={(val) => setRentForm({ ...rentForm, employeeId: val })}
+                            onValueChange={(val) => {
+                              setRentForm({ ...rentForm, employeeId: val });
+                              if (rentErrors.employeeId) setRentErrors(prev => ({ ...prev, employeeId: undefined }));
+                            }}
                             placeholder="Search & choose employee..."
                             searchPlaceholder="Type employee name or ID..."
                             className={rentErrors.employeeId ? 'border-red-500 border-2' : ''}
@@ -660,7 +760,10 @@ export default function HraTaxTab() {
                           <Label className="text-xs font-semibold">Financial Year</Label>
                           <Select
                             value={rentForm.financialYear}
-                            onValueChange={(val) => setRentForm({ ...rentForm, financialYear: val })}
+                            onValueChange={(val) => {
+                              setRentForm({ ...rentForm, financialYear: val });
+                              if (rentErrors.financialYear) setRentErrors(prev => ({ ...prev, financialYear: undefined }));
+                            }}
                           >
                             <SelectTrigger className={`rounded-xl mt-1.5 h-11 ${rentErrors.financialYear ? 'border-red-500 border-2' : ''}`}>
                               <SelectValue placeholder="Select Financial Year" />
@@ -680,11 +783,15 @@ export default function HraTaxTab() {
                           )}
                         </div>
                         <div>
-                          <Label className="text-xs font-semibold">Monthly Rent Paid (₹)</Label>
+                          <Label className="text-xs font-semibold">Monthly Rent Paid (₹) *</Label>
                           <Input
                             type="number"
+                            placeholder="e.g. 15000"
                             value={rentForm.monthlyRent}
-                            onChange={(e) => setRentForm({ ...rentForm, monthlyRent: e.target.value })}
+                            onChange={(e) => {
+                              setRentForm({ ...rentForm, monthlyRent: e.target.value });
+                              if (rentErrors.monthlyRent) setRentErrors(prev => ({ ...prev, monthlyRent: undefined }));
+                            }}
                             className={`rounded-xl mt-1.5 h-11 ${rentErrors.monthlyRent ? 'border-red-500 border-2' : ''}`}
                           />
                           {rentErrors.monthlyRent && (
@@ -698,43 +805,125 @@ export default function HraTaxTab() {
 
                     <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border space-y-4">
                       <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400">Landlord Verification Info</h4>
-                      <div>
-                        <Label className="text-xs font-semibold">Landlord Full Name</Label>
-                        <Input
-                          placeholder="Landlord Name"
-                          value={rentForm.landlordName}
-                          onChange={(e) => setRentForm({ ...rentForm, landlordName: e.target.value.replace(/[0-9]/g, '') })}
-                          className={`rounded-xl mt-1.5 h-11 ${rentErrors.landlordName ? 'border-red-500 border-2' : ''}`}
-                        />
-                        {rentErrors.landlordName && (
-                          <div className="text-red-500 text-[11px] font-bold mt-1 pl-1">
-                            {rentErrors.landlordName}
-                          </div>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <Label className="text-xs font-semibold">Landlord PAN (Required if rent &gt; ₹1L/yr)</Label>
+                          <Label className="text-xs font-semibold">Landlord Full Name *</Label>
                           <Input
-                            placeholder="e.g. ABCDE1234F"
-                            value={rentForm.landlordPan}
-                            onChange={(e) => setRentForm({ ...rentForm, landlordPan: e.target.value })}
-                            className="rounded-xl mt-1.5 h-11"
+                            placeholder="Landlord Name"
+                            value={rentForm.landlordName}
+                            onKeyDown={(e) => {
+                              if (e.key >= "0" && e.key <= "9") e.preventDefault();
+                            }}
+                            onChange={(e) => {
+                              setRentForm({ ...rentForm, landlordName: e.target.value.replace(/[0-9]/g, '') });
+                              if (rentErrors.landlordName) setRentErrors(prev => ({ ...prev, landlordName: undefined }));
+                            }}
+                            className={`rounded-xl mt-1.5 h-11 ${rentErrors.landlordName ? 'border-red-500 border-2' : ''}`}
                           />
-                        </div>
-                        <div>
-                          <Label className="text-xs font-semibold">Rented Accommodation Address</Label>
-                          <Input
-                            placeholder="Rental Address"
-                            value={rentForm.landlordAddress}
-                            onChange={(e) => setRentForm({ ...rentForm, landlordAddress: e.target.value })}
-                            className={`rounded-xl mt-1.5 h-11 ${rentErrors.landlordAddress ? 'border-red-500 border-2' : ''}`}
-                          />
-                          {rentErrors.landlordAddress && (
+                          {rentErrors.landlordName && (
                             <div className="text-red-500 text-[11px] font-bold mt-1 pl-1">
-                              {rentErrors.landlordAddress}
+                              {rentErrors.landlordName}
                             </div>
                           )}
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs font-semibold">
+                              Landlord PAN {((Number(rentForm.monthlyRent) || 0) * 12 > 100000) ? (
+                                <span className="text-rose-500 font-bold">* (&gt; ₹1L/yr)</span>
+                              ) : (
+                                <span className="text-slate-400 font-normal">(&gt; ₹1L/yr)</span>
+                              )}
+                            </Label>
+                            <span className={`text-[10px] font-mono ${rentForm.landlordPan?.length === 10 && !rentErrors.landlordPan ? 'text-emerald-500 font-semibold' : 'text-slate-400'}`}>
+                              {rentForm.landlordPan ? `${rentForm.landlordPan.length}/10 chars` : "10 chars"}
+                            </span>
+                          </div>
+                          <Input
+                            placeholder="e.g. ABCDE1234F"
+                            value={rentForm.landlordPan || ""}
+                            maxLength={10}
+                            onChange={(e) => {
+                              const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+                              setRentForm({ ...rentForm, landlordPan: val });
+                              if (rentErrors.landlordPan) {
+                                setRentErrors((prev) => ({ ...prev, landlordPan: undefined }));
+                              }
+                            }}
+                            className={`rounded-xl mt-1.5 h-11 uppercase font-mono tracking-wider ${rentErrors.landlordPan ? 'border-red-500 border-2 focus-visible:ring-red-500' : ''}`}
+                          />
+                          {rentErrors.landlordPan && (
+                            <div className="text-red-500 text-[11px] font-bold mt-1 pl-1">
+                              {rentErrors.landlordPan}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Structured Address: House No, Landmark, City */}
+                      <div className="space-y-2 pt-2 border-t dark:border-slate-800">
+                        <Label className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                          Rented Accommodation Address *
+                        </Label>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <Label className="text-[11px] font-semibold text-slate-500">House No. / Flat No. *</Label>
+                            <Input
+                              placeholder="e.g. Flat 402, Wing B"
+                              value={rentForm.houseNo || ""}
+                              onChange={(e) => {
+                                setRentForm({ ...rentForm, houseNo: e.target.value });
+                                if (rentErrors.houseNo) setRentErrors(prev => ({ ...prev, houseNo: undefined }));
+                              }}
+                              className={`rounded-xl mt-1 h-10 text-xs ${rentErrors.houseNo ? 'border-red-500 border-2' : ''}`}
+                            />
+                            {rentErrors.houseNo && (
+                              <div className="text-red-500 text-[10.5px] font-bold mt-1 pl-1">
+                                {rentErrors.houseNo}
+                              </div>
+                            )}
+                          </div>
+
+                          <div>
+                            <Label className="text-[11px] font-semibold text-slate-500">Landmark / Street Address *</Label>
+                            <Input
+                              placeholder="e.g. Near City Mall, MG Road"
+                              value={rentForm.landmark || ""}
+                              onChange={(e) => {
+                                setRentForm({ ...rentForm, landmark: e.target.value });
+                                if (rentErrors.landmark) setRentErrors(prev => ({ ...prev, landmark: undefined }));
+                              }}
+                              className={`rounded-xl mt-1 h-10 text-xs ${rentErrors.landmark ? 'border-red-500 border-2' : ''}`}
+                            />
+                            {rentErrors.landmark && (
+                              <div className="text-red-500 text-[10.5px] font-bold mt-1 pl-1">
+                                {rentErrors.landmark}
+                              </div>
+                            )}
+                          </div>
+
+                          <div>
+                            <Label className="text-[11px] font-semibold text-slate-500">City *</Label>
+                            <Input
+                              placeholder="e.g. Mumbai"
+                              value={rentForm.city || ""}
+                              onKeyDown={(e) => {
+                                if (e.key >= "0" && e.key <= "9") e.preventDefault();
+                              }}
+                              onChange={(e) => {
+                                const cleanCity = e.target.value.replace(/[0-9]/g, "");
+                                setRentForm({ ...rentForm, city: cleanCity });
+                                if (rentErrors.city) setRentErrors(prev => ({ ...prev, city: undefined }));
+                              }}
+                              className={`rounded-xl mt-1 h-10 text-xs ${rentErrors.city ? 'border-red-500 border-2' : ''}`}
+                            />
+                            {rentErrors.city && (
+                              <div className="text-red-500 text-[10.5px] font-bold mt-1 pl-1">
+                                {rentErrors.city}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -930,11 +1119,11 @@ export default function HraTaxTab() {
               </div>
             </CardHeader>
             <DataTable
-              data={rentReceipts.data || []}
+              data={filteredRentReceiptsData}
               columns={rentReceiptColumns}
               emptyMessage="No rent receipts submitted yet."
-              lazy={true}
-              totalRecords={rentReceipts.total || 0}
+              lazy={!isEmployee}
+              totalRecords={isEmployee ? filteredRentReceiptsData.length : (rentReceipts.total || filteredRentReceiptsData.length)}
               page={rentPage}
               rows={rentLimit}
               search={rentSearch}

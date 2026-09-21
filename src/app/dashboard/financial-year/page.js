@@ -6,10 +6,19 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { YearPicker } from "@/components/ui/year-picker";
 import { DataTable } from "@/components/ui/data-table";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 import { Switch } from "@/components/ui/switch";
-import { Calendar, Plus, Trash2, Edit, Loader2 } from "lucide-react";
+import { Calendar, Plus, Trash2, Edit, Loader2, Sparkles } from "lucide-react";
+
+function extractStartYear(name) {
+  if (!name) return "";
+  const match = name.match(/20\d{2}/);
+  if (match) return match[0];
+  return "";
+}
 
 export default function FinancialYearPage() {
   const [fiscalYears, setFiscalYears] = useState([]);
@@ -24,7 +33,9 @@ export default function FinancialYearPage() {
   const [totalRecords, setTotalRecords] = useState(0);
 
   // Form state
+  const [selectedStartYear, setSelectedStartYear] = useState("");
   const [formName, setFormName] = useState("");
+  const [isCustomName, setIsCustomName] = useState(false);
   const [formIsActive, setFormIsActive] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [nameError, setNameError] = useState(null);
@@ -70,13 +81,18 @@ export default function FinancialYearPage() {
   function startEditing(item) {
     setEditingId(item.id);
     setFormName(item.name);
+    const matchedYear = extractStartYear(item.name);
+    setSelectedStartYear(matchedYear || "");
+    setIsCustomName(!matchedYear);
     setFormIsActive(item.isActive !== false);
     setNameError(null);
   }
 
   function cancelEdit() {
     setEditingId(null);
+    setSelectedStartYear("");
     setFormName("");
+    setIsCustomName(false);
     setFormIsActive(true);
     setNameError(null);
   }
@@ -84,7 +100,7 @@ export default function FinancialYearPage() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!formName.trim()) {
-      setNameError("Financial Year name is required (e.g. FY 2025-26).");
+      setNameError("Please pick a Financial Year.");
       return;
     }
 
@@ -182,26 +198,80 @@ export default function FinancialYearPage() {
               <Plus className="w-5 h-5 text-sky-500" aria-hidden="true" />
               {editingId ? "Edit Financial Year" : "Create Financial Year"}
             </h3>
-            <form onSubmit={handleSubmit} className="space-y-3" noValidate>
-              <div className="space-y-1">
-                <Label htmlFor="fy-name" className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                  Financial Year Name
-                </Label>
-                <Input
-                  id="fy-name"
-                  placeholder="e.g. FY 2025-26"
-                  value={formName}
-                  onChange={(e) => {
-                    setFormName(e.target.value);
-                    if (nameError) setNameError(null);
-                  }}
-                />
+            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    {isCustomName ? "Financial Year Name *" : "Financial Year Picker *"}
+                  </Label>
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomName(!isCustomName)}
+                    className="text-[11px] text-sky-600 hover:text-sky-700 dark:text-sky-400 font-semibold cursor-pointer hover:underline"
+                  >
+                    {isCustomName ? "Interactive Year Picker" : "Custom name"}
+                  </button>
+                </div>
+
+                {!isCustomName ? (
+                  <YearPicker
+                    value={formName}
+                    onChange={(fyName, info) => {
+                      setFormName(fyName);
+                      setSelectedStartYear(String(info.startYear));
+                      if (nameError) setNameError(null);
+                    }}
+                    error={!!nameError}
+                    placeholder="Click to pick Financial Year..."
+                  />
+                ) : (
+                  <Input
+                    id="fy-name"
+                    placeholder="e.g. FY 2025-26"
+                    value={formName}
+                    onChange={(e) => {
+                      setFormName(e.target.value);
+                      if (nameError) setNameError(null);
+                    }}
+                    className={`rounded-2xl h-11 text-xs font-semibold ${nameError ? 'border-red-500 border-2' : ''}`}
+                  />
+                )}
+
                 {nameError && (
-                  <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5" role="alert">
+                  <span className="text-rose-500 text-[10.5px] font-bold block pl-1" role="alert">
                     {nameError}
                   </span>
                 )}
               </div>
+
+              {/* Live Generated Financial Year Preview Card */}
+              {selectedStartYear && !isCustomName && (
+                <div className="bg-gradient-to-br from-sky-50 via-indigo-50/40 to-slate-50 dark:from-sky-950/30 dark:via-indigo-950/20 dark:to-slate-900/40 border border-sky-200/70 dark:border-sky-800/40 rounded-2xl p-3.5 space-y-2.5 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-sky-700 dark:text-sky-300 flex items-center gap-1.5">
+                      <Sparkles className="size-3.5 text-sky-500" /> Generated Financial Year
+                    </span>
+                    <Badge className="bg-sky-600 text-white font-extrabold text-xs px-2.5 py-0.5 shadow-sm">
+                      {formName}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs border-t border-sky-100 dark:border-slate-800 pt-2 font-medium text-slate-600 dark:text-slate-300">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-bold uppercase">Period</span>
+                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                        1 Apr {selectedStartYear} – 31 Mar {Number(selectedStartYear) + 1}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-bold uppercase">Assessment Year</span>
+                      <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 font-mono">
+                        AY {Number(selectedStartYear) + 1}-{String(Number(selectedStartYear) + 2).slice(-2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="space-y-1">
                 <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
                   Status

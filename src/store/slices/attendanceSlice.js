@@ -358,8 +358,22 @@ const attendanceSlice = createSlice({
       })
       .addCase(fetchAttendance.rejected, (state, action) => { state.attendanceLoading = false; state.error = action.payload; })
       .addCase(createAttendance.fulfilled, (state, action) => { 
-        state.attendance.push(action.payload); 
-        state.totalAttendance += 1;
+        const payload = action.payload?.data || action.payload;
+        if (!payload || !payload.id) return;
+        const currentList = Array.isArray(state.attendance) ? state.attendance : [];
+        const idx = currentList.findIndex(
+          (a) =>
+            a.id === payload.id ||
+            (a.employeeId === payload.employeeId &&
+              (a.date ? String(a.date).split("T")[0] : "") === (payload.date ? String(payload.date).split("T")[0] : ""))
+        );
+        if (idx !== -1) {
+          currentList[idx] = { ...currentList[idx], ...payload };
+          state.attendance = [...currentList];
+        } else {
+          state.attendance = [payload, ...currentList];
+          state.totalAttendance += 1;
+        }
       });
   }
 });

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { apiFetch } from "@/lib/api";
+import { usePermissions } from "@/context/PermissionContext";
 import { useDispatch, useSelector } from "react-redux";
 import { useSearchParams } from "next/navigation";
 import {
@@ -67,7 +68,7 @@ import {
 
 
 export default function PayslipsTab() {
-
+  const { isEmployee, user } = usePermissions();
   const dispatch = useDispatch();
   const {
     employees = [],
@@ -80,6 +81,10 @@ export default function PayslipsTab() {
     loading = false,
     activeFinancialYear = "",
   } = useSelector((state) => state.payroll || {});
+
+  const rawEmpList = Array.isArray(employees?.data) ? employees.data : (Array.isArray(employees) ? employees : []);
+  const myEmployee = user?.employee || rawEmpList.find(e => e.id === user?.employeeId || e.email === user?.email || (user?.id && e.userId === user?.id));
+  const myEmployeeId = myEmployee?.id || user?.employeeId || null;
 
   const activeTab = "payslips";
   const [selectedMonth, setSelectedMonth] = useState("ALL");
@@ -217,9 +222,10 @@ export default function PayslipsTab() {
         search: payslipSearch,
         month: selectedMonth && selectedMonth !== "ALL" ? Number(selectedMonth) : undefined,
         year: selectedYear && selectedYear !== "ALL" ? Number(selectedYear) : undefined,
+        employeeId: isEmployee ? (myEmployeeId || undefined) : undefined,
       })
     );
-  }, [dispatch, payslipPage, payslipLimit, payslipSearch, selectedMonth, selectedYear]);
+  }, [dispatch, payslipPage, payslipLimit, payslipSearch, selectedMonth, selectedYear, isEmployee, myEmployeeId]);
 
   // Calculations for Structure Modal Live Preview
   const calculatedHra = (Number(structForm.basicSalary) * Number(structForm.hraPercent)) / 100;
@@ -607,15 +613,23 @@ export default function PayslipsTab() {
     <div className="space-y-6">
           <div className="flex justify-between items-center">
             <div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Digital Payslips Portal</h2>
-              <p className="text-sm text-slate-500">Generate and view itemized digital payslips for employees.</p>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                {isEmployee ? "My Digital Payslips" : "Digital Payslips Portal"}
+              </h2>
+              <p className="text-sm text-slate-500">
+                {isEmployee
+                  ? "View itemized digital payslips, monthly earnings breakdown, deductions, and download PDF salary vouchers."
+                  : "Generate and view itemized digital payslips for employees."}
+              </p>
             </div>
           </div>
 
           <Card className="border rounded-2xl shadow-sm bg-white dark:bg-slate-900 p-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b">
               <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Disbursed Digital Payslips</h3>
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                  {isEmployee ? "My Disbursed Digital Payslips" : "Disbursed Digital Payslips"}
+                </h3>
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="w-40">
@@ -660,6 +674,7 @@ export default function PayslipsTab() {
                     search: payslipSearch,
                     month: selectedMonth && selectedMonth !== "ALL" ? Number(selectedMonth) : undefined,
                     year: selectedYear && selectedYear !== "ALL" ? Number(selectedYear) : undefined,
+                    employeeId: isEmployee ? (myEmployeeId || undefined) : undefined,
                   }))}
                   className="text-xs font-bold rounded-xl h-9 gap-1.5 cursor-pointer"
                 >
@@ -671,8 +686,8 @@ export default function PayslipsTab() {
             <div className="pt-4">
               <DataTable
                 columns={payslipColumns}
-                data={payslips?.data || []}
-                totalRecords={payslips?.total || 0}
+                data={isEmployee && myEmployeeId ? (Array.isArray(payslips?.data) ? payslips.data.filter(p => String(p.employeeId) === String(myEmployeeId) || String(p.employee?.id) === String(myEmployeeId)) : []) : (payslips?.data || [])}
+                totalRecords={isEmployee && myEmployeeId ? (Array.isArray(payslips?.data) ? payslips.data.filter(p => String(p.employeeId) === String(myEmployeeId) || String(p.employee?.id) === String(myEmployeeId)).length : 0) : (payslips?.total || 0)}
                 lazy={true}
                 loading={loading}
                 page={payslipPage}
