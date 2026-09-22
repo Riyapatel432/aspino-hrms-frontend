@@ -2050,12 +2050,7 @@ function RecruitmentPageContent() {
         })}
       </div>
 
-      {loading ? (
-        <div className="flex justify-center items-center py-20">
-          <Loader2 className="w-8 h-8 text-sky-500 animate-spin" />
-        </div>
-      ) : (
-        <div className="space-y-6">
+      <div className="space-y-6">
           {/* TAB 1: REQUISITIONS */}
           {activeTab === "requisitions" && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -4332,7 +4327,6 @@ function RecruitmentPageContent() {
             </div>
           )}
         </div>
-      )}
 
       {/* Delete Confirmation Dialog */}
       <DeleteConfirmDialog

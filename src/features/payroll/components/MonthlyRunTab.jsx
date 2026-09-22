@@ -89,11 +89,19 @@ export default function MonthlyRunTab() {
   const myEmployee = useMemo(() => {
     if (!user) return null;
     if (user.employee) return user.employee;
+    const userEmail = (user.email || "").toLowerCase().trim();
+    const userName = (user.name || "").toLowerCase().trim();
+    const userId = user.id ? String(user.id) : "";
+    const userEmpId = user.employeeId ? String(user.employeeId) : "";
+    const userEmpCode = user.employeeCode ? String(user.employeeCode) : "";
+
     return rawEmpList.find(
       (e) =>
-        (user.id && (String(e.userId) === String(user.id) || String(e.id) === String(user.id))) ||
-        (user.employeeId && (String(e.id) === String(user.employeeId) || String(e.employeeId) === String(user.employeeId))) ||
-        (user.email && e.email?.toLowerCase() === user.email.toLowerCase())
+        (userId && (String(e.userId) === userId || String(e.id) === userId)) ||
+        (userEmpId && (String(e.id) === userEmpId || String(e.employeeId) === userEmpId)) ||
+        (userEmpCode && (String(e.employeeId) === userEmpCode || String(e.id) === userEmpCode)) ||
+        (userEmail && e.email?.toLowerCase().trim() === userEmail) ||
+        (userName && `${e.firstName || ""} ${e.lastName || ""}`.toLowerCase().trim() === userName)
     );
   }, [user, rawEmpList]);
   const myEmployeeId = myEmployee?.id || user?.employeeId || user?.id || null;

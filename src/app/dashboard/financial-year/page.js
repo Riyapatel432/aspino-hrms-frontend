@@ -11,6 +11,7 @@ import { YearPicker } from "@/components/ui/year-picker";
 import { DataTable } from "@/components/ui/data-table";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 import { Switch } from "@/components/ui/switch";
+import { RouteGuard, usePermissions } from "@/context/PermissionContext";
 import { Calendar, Plus, Trash2, Edit, Loader2, Sparkles } from "lucide-react";
 
 function extractStartYear(name) {
@@ -21,8 +22,22 @@ function extractStartYear(name) {
 }
 
 export default function FinancialYearPage() {
+  return (
+    <RouteGuard subject="financial-year" action="read">
+      <FinancialYearContent />
+    </RouteGuard>
+  );
+}
+
+function FinancialYearContent() {
+  const { can, isSuperAdmin } = usePermissions();
   const [fiscalYears, setFiscalYears] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Permission guards
+  const canCreate = isSuperAdmin || can("create", "financial-year") || can("create", "financial_year") || can("create", "recruitment");
+  const canUpdate = isSuperAdmin || can("update", "financial-year") || can("update", "financial_year") || can("update", "recruitment");
+  const canDelete = isSuperAdmin || can("delete", "financial-year") || can("delete", "financial_year") || can("delete", "recruitment");
 
   // Server-side Data Handling state
   const [page, setPage] = useState(1);
@@ -44,6 +59,8 @@ export default function FinancialYearPage() {
   // Delete dialog state
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+
+  const showForm = canCreate || (editingId && canUpdate);
 
   async function fetchData() {
     setLoading(true);
@@ -79,6 +96,10 @@ export default function FinancialYearPage() {
   }, [page, rows, search, sortBy, sortOrder]);
 
   function startEditing(item) {
+    if (!canUpdate) {
+      toast.error("You do not have permission to edit financial years");
+      return;
+    }
     setEditingId(item.id);
     setFormName(item.name);
     const matchedYear = extractStartYear(item.name);
@@ -99,6 +120,10 @@ export default function FinancialYearPage() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (editingId ? !canUpdate : !canCreate) {
+      toast.error(`You do not have permission to ${editingId ? "update" : "create"} financial years.`);
+      return;
+    }
     if (!formName.trim()) {
       setNameError("Please pick a Financial Year.");
       return;
@@ -134,7 +159,10 @@ export default function FinancialYearPage() {
   }
 
   async function handleDelete() {
-    if (!deleteTarget) return;
+    if (!deleteTarget || !canDelete) {
+      toast.error("You do not have permission to delete financial years.");
+      return;
+    }
     setDeleting(true);
     try {
       const res = await apiFetch(`${API_URL}/staff-hrms/recruitment/fiscal-years/${deleteTarget.id}`, {
@@ -158,6 +186,10 @@ export default function FinancialYearPage() {
   }
 
   async function handleToggleStatus(row) {
+    if (!canUpdate) {
+      toast.error("You do not have permission to update status");
+      return;
+    }
     const nextStatus = row.isActive !== false ? false : true;
     try {
       const res = await apiFetch(`${API_URL}/staff-hrms/recruitment/fiscal-years/${row.id}`, {
@@ -186,130 +218,114 @@ export default function FinancialYearPage() {
         </h2>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center items-center py-20">
-          <Loader2 className="w-8 h-8 text-sky-500 animate-spin" />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className={showForm ? "grid grid-cols-1 lg:grid-cols-3 gap-6" : "space-y-6"}>
           {/* Form Card */}
-          <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
-            <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-              <Plus className="w-5 h-5 text-sky-500" aria-hidden="true" />
-              {editingId ? "Edit Financial Year" : "Create Financial Year"}
-            </h3>
-            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                    {isCustomName ? "Financial Year Name *" : "Financial Year Picker *"}
-                  </Label>
-                  <button
-                    type="button"
-                    onClick={() => setIsCustomName(!isCustomName)}
-                    className="text-[11px] text-sky-600 hover:text-sky-700 dark:text-sky-400 font-semibold cursor-pointer hover:underline"
-                  >
-                    {isCustomName ? "Interactive Year Picker" : "Custom name"}
-                  </button>
-                </div>
+          {showForm && (
+            <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
+              <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                <Plus className="w-5 h-5 text-sky-500" aria-hidden="true" />
+                {editingId ? "Edit Financial Year" : "Create Financial Year"}
+              </h3>
+              <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+                <div className="space-y-2">
+                  {!isCustomName ? (
+                    <YearPicker
+                      value={formName}
+                      onChange={(fyName, info) => {
+                        setFormName(fyName);
+                        setSelectedStartYear(String(info.startYear));
+                        if (nameError) setNameError(null);
+                      }}
+                      error={!!nameError}
+                      placeholder="Click to pick Financial Year..."
+                    />
+                  ) : (
+                    <Input
+                      id="fy-name"
+                      placeholder="e.g. FY 2025-26"
+                      value={formName}
+                      onChange={(e) => {
+                        setFormName(e.target.value);
+                        if (nameError) setNameError(null);
+                      }}
+                      className={`rounded-2xl h-11 text-xs font-semibold ${nameError ? 'border-red-500 border-2' : ''}`}
+                    />
+                  )}
 
-                {!isCustomName ? (
-                  <YearPicker
-                    value={formName}
-                    onChange={(fyName, info) => {
-                      setFormName(fyName);
-                      setSelectedStartYear(String(info.startYear));
-                      if (nameError) setNameError(null);
-                    }}
-                    error={!!nameError}
-                    placeholder="Click to pick Financial Year..."
-                  />
-                ) : (
-                  <Input
-                    id="fy-name"
-                    placeholder="e.g. FY 2025-26"
-                    value={formName}
-                    onChange={(e) => {
-                      setFormName(e.target.value);
-                      if (nameError) setNameError(null);
-                    }}
-                    className={`rounded-2xl h-11 text-xs font-semibold ${nameError ? 'border-red-500 border-2' : ''}`}
-                  />
-                )}
-
-                {nameError && (
-                  <span className="text-rose-500 text-[10.5px] font-bold block pl-1" role="alert">
-                    {nameError}
-                  </span>
-                )}
-              </div>
-
-              {/* Live Generated Financial Year Preview Card */}
-              {selectedStartYear && !isCustomName && (
-                <div className="bg-gradient-to-br from-sky-50 via-indigo-50/40 to-slate-50 dark:from-sky-950/30 dark:via-indigo-950/20 dark:to-slate-900/40 border border-sky-200/70 dark:border-sky-800/40 rounded-2xl p-3.5 space-y-2.5 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-sky-700 dark:text-sky-300 flex items-center gap-1.5">
-                      <Sparkles className="size-3.5 text-sky-500" /> Generated Financial Year
+                  {nameError && (
+                    <span className="text-rose-500 text-[10.5px] font-bold block pl-1" role="alert">
+                      {nameError}
                     </span>
-                    <Badge className="bg-sky-600 text-white font-extrabold text-xs px-2.5 py-0.5 shadow-sm">
-                      {formName}
-                    </Badge>
-                  </div>
+                  )}
+                </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-xs border-t border-sky-100 dark:border-slate-800 pt-2 font-medium text-slate-600 dark:text-slate-300">
-                    <div>
-                      <span className="text-[10px] text-slate-400 block font-bold uppercase">Period</span>
-                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                        1 Apr {selectedStartYear} – 31 Mar {Number(selectedStartYear) + 1}
+                {/* Live Generated Financial Year Preview Card */}
+                {selectedStartYear && !isCustomName && (
+                  <div className="bg-gradient-to-br from-sky-50 via-indigo-50/40 to-slate-50 dark:from-sky-950/30 dark:via-indigo-950/20 dark:to-slate-900/40 border border-sky-200/70 dark:border-sky-800/40 rounded-2xl p-3.5 space-y-2.5 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-sky-700 dark:text-sky-300 flex items-center gap-1.5">
+                        <Sparkles className="size-3.5 text-sky-500" /> Generated Financial Year
                       </span>
+                      <Badge className="bg-sky-600 text-white font-extrabold text-xs px-2.5 py-0.5 shadow-sm">
+                        {formName}
+                      </Badge>
                     </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 block font-bold uppercase">Assessment Year</span>
-                      <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 font-mono">
-                        AY {Number(selectedStartYear) + 1}-{String(Number(selectedStartYear) + 2).slice(-2)}
-                      </span>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs border-t border-sky-100 dark:border-slate-800 pt-2 font-medium text-slate-600 dark:text-slate-300">
+                      <div>
+                        <span className="text-[10px] text-slate-400 block font-bold uppercase">Period</span>
+                        <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                          1 Apr {selectedStartYear} – 31 Mar {Number(selectedStartYear) + 1}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block font-bold uppercase">Assessment Year</span>
+                        <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 font-mono">
+                          AY {Number(selectedStartYear) + 1}-{String(Number(selectedStartYear) + 2).slice(-2)}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                  Status
-                </Label>
-                <div className="flex items-center gap-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-2.5 rounded-xl">
-                  <Switch
-                    checked={formIsActive}
-                    onCheckedChange={setFormIsActive}
-                  />
-                  <span className={`text-xs font-bold ${formIsActive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`}>
-                    {formIsActive ? "Active" : "Inactive"}
-                  </span>
-                </div>
-              </div>
-              <div className="flex gap-2 pt-2">
-                <Button
-                  type="submit"
-                  disabled={submitting}
-                  className="flex-1 bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl"
-                >
-                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : editingId ? "Update" : "Save"}
-                </Button>
-                {editingId && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="rounded-xl font-bold"
-                    onClick={cancelEdit}
-                  >
-                    Cancel
-                  </Button>
                 )}
-              </div>
-            </form>
-          </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                    Status
+                  </Label>
+                  <div className="flex items-center gap-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-2.5 rounded-xl">
+                    <Switch
+                      checked={formIsActive}
+                      onCheckedChange={setFormIsActive}
+                    />
+                    <span className={`text-xs font-bold ${formIsActive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`}>
+                      {formIsActive ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    type="submit"
+                    disabled={submitting}
+                    className="flex-1 bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl"
+                  >
+                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : editingId ? "Update" : "Save"}
+                  </Button>
+                  {editingId && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-xl font-bold"
+                      onClick={cancelEdit}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+              </form>
+            </div>
+          )}
 
           {/* List Card */}
-          <div className="lg:col-span-2">
+          <div className={showForm ? "lg:col-span-2" : "w-full"}>
             <DataTable
               title="All Financial Years"
               lazy
@@ -364,20 +380,24 @@ export default function FinancialYearPage() {
                   sortable: false,
                   render: (row) => (
                     <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => startEditing(row)}
-                        className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all cursor-pointer"
-                        title={`Edit financial year ${row.name}`}
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setDeleteTarget({ id: row.id, name: row.name })}
-                        className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all cursor-pointer"
-                        title={`Delete financial year ${row.name}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {canUpdate && (
+                        <button
+                          onClick={() => startEditing(row)}
+                          className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all cursor-pointer"
+                          title={`Edit financial year ${row.name}`}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          onClick={() => setDeleteTarget({ id: row.id, name: row.name })}
+                          className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all cursor-pointer"
+                          title={`Delete financial year ${row.name}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   ),
                 },
@@ -385,7 +405,6 @@ export default function FinancialYearPage() {
             />
           </div>
         </div>
-      )}
 
       {/* Delete Confirmation Dialog */}
       <DeleteConfirmDialog

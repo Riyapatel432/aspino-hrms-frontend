@@ -226,12 +226,7 @@ export default function ExitPage() {
         })}
       </nav>
 
-      {loading ? (
-        <div className="flex justify-center items-center py-20 print:hidden" aria-label="Loading">
-          <Loader2 className="w-8 h-8 text-sky-500 animate-spin" />
-        </div>
-      ) : (
-        <div className="space-y-6">
+      <div className="space-y-6">
           {/* ================================================================
               TAB 1 — RESIGNATIONS & CLEARANCES
           ================================================================ */}
@@ -814,7 +809,6 @@ export default function ExitPage() {
             </div>
           )}
         </div>
-      )}
 
       {/* Delete Confirmation Dialog */}
       <DeleteConfirmDialog

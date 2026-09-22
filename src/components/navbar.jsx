@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { usePermissions } from "@/context/PermissionContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,7 +30,8 @@ import {
 export function Navbar({ user: initialUser = {} }) {
   const router = useRouter();
   const [searchOpen, setSearchOpen] = useState(false);
-  const currentUser = initialUser;
+  const { user: authUser, role: authRole } = usePermissions();
+  const currentUser = (authUser && Object.keys(authUser).length > 0) ? authUser : initialUser;
 
   const handleSignOut = () => {
     if (typeof window !== "undefined") {
@@ -45,9 +47,9 @@ export function Navbar({ user: initialUser = {} }) {
     router.push("/login");
   };
 
-  const displayName = currentUser?.name || currentUser?.displayName || "Aspino Admin";
-  const role = currentUser?.role || "Administrator";
-  const email = currentUser?.email || "admin@aspino.com";
+  const displayName = currentUser?.name || currentUser?.displayName || "Aspino User";
+  const role = typeof authRole === "string" ? authRole : (authRole?.name || currentUser?.role || "Staff");
+  const email = currentUser?.email || "user@aspino.com";
 
   const initials = displayName
     .split(" ")

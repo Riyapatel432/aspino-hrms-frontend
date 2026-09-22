@@ -102,8 +102,8 @@ export function DataTable({
   const debounceRef = useRef(null);
 
   useEffect(() => {
-    if (activeServerSearch !== undefined && activeServerSearch !== inputSearch) {
-      setInputSearch(activeServerSearch);
+    if (activeServerSearch === "" && inputSearch !== "") {
+      setInputSearch("");
     }
   }, [activeServerSearch]);
 
@@ -337,28 +337,6 @@ export function DataTable({
     return <ArrowDown className="h-3.5 w-3.5 text-aspino-primary" />;
   };
 
-  if (loading) {
-    return (
-      <div className="space-y-4 animate-fade-in">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-10 w-72" />
-          <Skeleton className="h-10 w-32" />
-        </div>
-        <div className="rounded-xl border bg-card overflow-hidden">
-          <div className="p-0">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="flex items-center gap-4 px-6 py-4 border-b last:border-0">
-                {effectiveColumns.map((_, j) => (
-                  <Skeleton key={j} className="h-5 flex-1" />
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const effectiveHeaderRight = headerRight || actions;
 
   return (
@@ -424,7 +402,17 @@ export function DataTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {paginatedData.length === 0 ? (
+            {loading ? (
+              [...Array(5)].map((_, i) => (
+                <TableRow key={`skeleton-${i}`} className="animate-pulse">
+                  {effectiveColumns.map((col, j) => (
+                    <TableCell key={`skeleton-cell-${j}`} className={`py-4 ${col.className || ""}`}>
+                      <Skeleton className="h-5 w-full rounded-md" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : paginatedData.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={effectiveColumns.length} className="h-48">
                   <div className="flex flex-col items-center justify-center gap-3 text-muted-foreground py-8">

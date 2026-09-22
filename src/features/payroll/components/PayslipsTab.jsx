@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, useMemo, Suspense } from "react";
 import { apiFetch } from "@/lib/api";
 import { usePermissions } from "@/context/PermissionContext";
 import { useDispatch, useSelector } from "react-redux";
@@ -83,8 +83,25 @@ export default function PayslipsTab() {
   } = useSelector((state) => state.payroll || {});
 
   const rawEmpList = Array.isArray(employees?.data) ? employees.data : (Array.isArray(employees) ? employees : []);
-  const myEmployee = user?.employee || rawEmpList.find(e => e.id === user?.employeeId || e.email === user?.email || (user?.id && e.userId === user?.id));
-  const myEmployeeId = myEmployee?.id || user?.employeeId || null;
+  const myEmployee = useMemo(() => {
+    if (!user) return null;
+    if (user.employee) return user.employee;
+    const userEmail = (user.email || "").toLowerCase().trim();
+    const userName = (user.name || "").toLowerCase().trim();
+    const userId = user.id ? String(user.id) : "";
+    const userEmpId = user.employeeId ? String(user.employeeId) : "";
+    const userEmpCode = user.employeeCode ? String(user.employeeCode) : "";
+
+    return rawEmpList.find(
+      (e) =>
+        (userId && (String(e.userId) === userId || String(e.id) === userId)) ||
+        (userEmpId && (String(e.id) === userEmpId || String(e.employeeId) === userEmpId)) ||
+        (userEmpCode && (String(e.employeeId) === userEmpCode || String(e.id) === userEmpCode)) ||
+        (userEmail && e.email?.toLowerCase().trim() === userEmail) ||
+        (userName && `${e.firstName || ""} ${e.lastName || ""}`.toLowerCase().trim() === userName)
+    );
+  }, [user, rawEmpList]);
+  const myEmployeeId = myEmployee?.id || user?.employeeId || user?.id || null;
 
   const activeTab = "payslips";
   const [selectedMonth, setSelectedMonth] = useState("ALL");

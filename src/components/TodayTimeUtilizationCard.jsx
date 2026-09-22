@@ -16,9 +16,28 @@ import {
   Sparkles,
   User,
   ShieldCheck,
+  AlertCircle,
+  HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 
 export default function TodayTimeUtilizationCard({
@@ -38,24 +57,46 @@ export default function TodayTimeUtilizationCard({
   const myEmployee = useMemo(() => {
     if (!user) return null;
     if (user.employee) return user.employee;
-    const found = rawEmpList.find(
-      (e) =>
-        (user.id && (String(e.userId) === String(user.id) || String(e.id) === String(user.id))) ||
-        (user.employeeId && (String(e.id) === String(user.employeeId) || String(e.employeeId) === String(user.employeeId))) ||
-        (user.email && e.email?.toLowerCase() === user.email.toLowerCase()) ||
-        (user.name &&
-          (`${e.firstName} ${e.lastName}`.toLowerCase().includes(user.name.toLowerCase()) ||
-            user.name.toLowerCase().includes(e.firstName?.toLowerCase())))
-    );
+    const userEmail = (user.email || "").toLowerCase().trim();
+    const userName = (user.name || "").toLowerCase().trim();
+    const userId = user.id ? String(user.id) : "";
+    const userEmpId = user.employeeId ? String(user.employeeId) : "";
+    const userEmpCode = user.employeeCode ? String(user.employeeCode) : "";
+
+    const found = rawEmpList.find((e) => {
+      const eUserId = e.userId ? String(e.userId) : "";
+      const eId = e.id ? String(e.id) : "";
+      const eEmpCode = e.employeeId ? String(e.employeeId) : "";
+      const eEmail = (e.email || "").toLowerCase().trim();
+      const eFullName = `${e.firstName || ""} ${e.lastName || ""}`.toLowerCase().trim();
+
+      // 1. Direct ID / UserID match
+      if (userId && (eUserId === userId || eId === userId)) return true;
+      // 2. Direct Employee ID match
+      if (userEmpId && (eId === userEmpId || eEmpCode === userEmpId)) return true;
+      // 3. Direct Employee Code match
+      if (userEmpCode && (eEmpCode === userEmpCode || eId === userEmpCode)) return true;
+      // 4. Exact Email match
+      if (userEmail && eEmail && eEmail === userEmail) return true;
+      // 5. Exact Full Name match
+      if (userName && eFullName && eFullName === userName) return true;
+
+      return false;
+    });
+
     if (found) return found;
+
+    // Strict isolated fallback for current session user (HR or Employee)
+    const nameParts = (user.name || (isEmployee ? "Aspino Employee" : "Aspino HR Manager")).trim().split(/\s+/);
     return {
-      id: user.employeeId || user.id || "EMP_CURRENT",
-      employeeId: user.employeeCode || user.employeeId || "EMP_CURRENT",
-      firstName: user.name?.split?.(" ")?.[0] || user.firstName || "Employee",
-      lastName: user.name?.split?.(" ")?.slice(1)?.join(" ") || user.lastName || "",
-      department: { name: user.department || "Operations & Staff" },
+      id: user.employeeId || user.id || (isEmployee ? "EMP_USER" : "HR_USER"),
+      employeeId: user.employeeCode || user.employeeId || (isEmployee ? "ASP-EMP-001" : "ASP-HR-001"),
+      firstName: nameParts[0] || (isEmployee ? "Employee" : "HR"),
+      lastName: nameParts.slice(1).join(" ") || (isEmployee ? "Staff" : "Manager"),
+      email: user.email || (isEmployee ? "employee@aspino.com" : "hr@aspino.com"),
+      department: { name: user.department || (isEmployee ? "Operations & Staff" : "Human Resources") },
     };
-  }, [user, rawEmpList]);
+  }, [user, rawEmpList, isEmployee]);
 
   const myEmployeeId = myEmployee?.id || user?.employeeId || user?.id || null;
 
@@ -67,13 +108,15 @@ export default function TodayTimeUtilizationCard({
     return `${year}-${month}-${day}`;
   }, []);
 
-  // Today's attendance record - strictly match target employee
+  // Today's attendance record - strictly match target employee or user
   const todayAttendance = useMemo(() => {
     const attList = Array.isArray(attendance?.data) ? attendance.data : Array.isArray(attendance) ? attendance : [];
-    const targetId = String(myEmployeeId || myEmployee?.id || "");
-    const targetCode = String(myEmployee?.employeeId || "");
+    const targetId = String(myEmployeeId || myEmployee?.id || user?.id || "");
+    const targetCode = String(myEmployee?.employeeId || user?.employeeCode || user?.employeeId || "");
+    const targetUserId = String(user?.id || user?.userId || "");
+    const targetEmail = String(user?.email || myEmployee?.email || "").toLowerCase().trim();
 
-    if (!targetId && !targetCode) return null;
+    if (!targetId && !targetCode && !targetUserId && !targetEmail) return null;
 
     const matching = attList.filter((rec) => {
       const recDate = rec.date
@@ -85,18 +128,20 @@ export default function TodayTimeUtilizationCard({
 
       const empId = String(rec.employeeId || rec.employee?.id || "");
       const empCode = String(rec.employee?.employeeId || "");
+      const empUserId = String(rec.employee?.userId || "");
+      const empEmail = String(rec.employee?.email || "").toLowerCase().trim();
 
       return (
-        (targetId && empId === targetId) ||
-        (targetCode && empCode === targetCode) ||
-        (targetId && empCode === targetId) ||
-        (targetCode && empId === targetCode)
+        (targetId && (empId === targetId || empCode === targetId || empUserId === targetId)) ||
+        (targetUserId && (empUserId === targetUserId || empId === targetUserId)) ||
+        (targetCode && (empCode === targetCode || empId === targetCode)) ||
+        (targetEmail && empEmail && empEmail === targetEmail)
       );
     });
 
     if (matching.length === 0) return null;
     return matching[0];
-  }, [attendance, todayStr, myEmployeeId, myEmployee]);
+  }, [attendance, todayStr, myEmployeeId, myEmployee, user]);
 
   // Ensure employees and attendance are fetched on mount
   useEffect(() => {
@@ -107,20 +152,33 @@ export default function TodayTimeUtilizationCard({
   // Live timer and optimistic session states
   const [breakStartTime, setBreakStartTime] = useState(null);
   const [breakElapsedSeconds, setBreakElapsedSeconds] = useState(0);
-  const [localBreakMins, setLocalBreakMins] = useState(0); // optimistic local accumulator
+  const [localBreakSeconds, setLocalBreakSeconds] = useState(0); // second-precision accumulator
+  const [lastBreakIn, setLastBreakIn] = useState(null);
+  const [lastBreakOut, setLastBreakOut] = useState(null);
+  const [breakCount, setBreakCount] = useState(0);
   const [liveElapsedSeconds, setLiveElapsedSeconds] = useState(0);
   const [punchLoading, setPunchLoading] = useState(false);
   const [localSessionState, setLocalSessionState] = useState(null);
   const [localCheckIn, setLocalCheckIn] = useState(null);
   const [localCheckOut, setLocalCheckOut] = useState(null);
 
-  // Recover break start time & persistent session state from localStorage
+  // Late / Missed Punch Out confirmation modal state
+  const [showLatePunchOutModal, setShowLatePunchOutModal] = useState(false);
+  const [customOutTime, setCustomOutTime] = useState("18:15");
+  const [punchOutReason, setPunchOutReason] = useState("Forgot to punch out yesterday");
+  const [customReasonNote, setCustomReasonNote] = useState("");
+
+  // Recover break start time, break stats & persistent session state from localStorage for today
   useEffect(() => {
-    if (!myEmployeeId) return;
-    const sessionKey = `hrms_session_${myEmployeeId}`;
-    const checkInKey = `hrms_checkin_${myEmployeeId}`;
-    const checkOutKey = `hrms_checkout_${myEmployeeId}`;
-    const breakKey = `hrms_break_${myEmployeeId}`;
+    if (!myEmployeeId || !todayStr) return;
+    const sessionKey = `hrms_${todayStr}_session_${myEmployeeId}`;
+    const checkInKey = `hrms_${todayStr}_checkin_${myEmployeeId}`;
+    const checkOutKey = `hrms_${todayStr}_checkout_${myEmployeeId}`;
+    const breakKey = `hrms_${todayStr}_break_${myEmployeeId}`;
+    const breakInKey = `hrms_${todayStr}_break_in_${myEmployeeId}`;
+    const breakOutKey = `hrms_${todayStr}_break_out_${myEmployeeId}`;
+    const breakCountKey = `hrms_${todayStr}_break_count_${myEmployeeId}`;
+    const breakSecsKey = `hrms_${todayStr}_break_secs_${myEmployeeId}`;
 
     const savedBreak = localStorage.getItem(breakKey);
     if (savedBreak) {
@@ -132,13 +190,30 @@ export default function TodayTimeUtilizationCard({
       }
     }
 
-    const savedBreakMins = localStorage.getItem(`hrms_break_mins_${myEmployeeId}`);
-    if (savedBreakMins) {
-      const mins = Number(savedBreakMins);
-      if (!isNaN(mins) && mins > 0) {
-        setLocalBreakMins(mins);
+    const savedBreakSecs = localStorage.getItem(breakSecsKey);
+    if (savedBreakSecs) {
+      const secs = Number(savedBreakSecs);
+      if (!isNaN(secs) && secs > 0) {
+        setLocalBreakSeconds(secs);
+      }
+    } else {
+      const savedBreakMins = localStorage.getItem(`hrms_${todayStr}_break_mins_${myEmployeeId}`);
+      if (savedBreakMins) {
+        const mins = Number(savedBreakMins);
+        if (!isNaN(mins) && mins > 0) {
+          setLocalBreakSeconds(mins * 60);
+        }
       }
     }
+
+    const savedBreakIn = localStorage.getItem(breakInKey);
+    if (savedBreakIn) setLastBreakIn(savedBreakIn);
+
+    const savedBreakOut = localStorage.getItem(breakOutKey);
+    if (savedBreakOut) setLastBreakOut(savedBreakOut);
+
+    const savedBreakCount = localStorage.getItem(breakCountKey);
+    if (savedBreakCount) setBreakCount(Number(savedBreakCount) || 0);
 
     const savedSession = localStorage.getItem(sessionKey);
     const savedCheckIn = localStorage.getItem(checkInKey);
@@ -153,10 +228,11 @@ export default function TodayTimeUtilizationCard({
     if (savedCheckOut) {
       setLocalCheckOut(savedCheckOut);
     }
-  }, [myEmployeeId]);
+  }, [myEmployeeId, todayStr]);
 
   // Sync with todayAttendance when fetched from API
   useEffect(() => {
+    if (!todayStr) return;
     if (todayAttendance) {
       const hasOut = todayAttendance.checkOut && String(todayAttendance.checkOut).trim() !== "" && todayAttendance.checkOut !== todayAttendance.checkIn;
       if (hasOut) {
@@ -164,22 +240,22 @@ export default function TodayTimeUtilizationCard({
         setLocalCheckIn(todayAttendance.checkIn);
         setLocalCheckOut(todayAttendance.checkOut);
         if (myEmployeeId) {
-          localStorage.setItem(`hrms_session_${myEmployeeId}`, "COMPLETED");
-          localStorage.setItem(`hrms_checkout_${myEmployeeId}`, String(todayAttendance.checkOut));
+          localStorage.setItem(`hrms_${todayStr}_session_${myEmployeeId}`, "COMPLETED");
+          localStorage.setItem(`hrms_${todayStr}_checkout_${myEmployeeId}`, String(todayAttendance.checkOut));
         }
       } else if (todayAttendance.checkIn) {
-        const isBreak = localStorage.getItem(`hrms_break_${myEmployeeId || "curr"}`);
+        const isBreak = localStorage.getItem(`hrms_${todayStr}_break_${myEmployeeId || "curr"}`);
         const state = isBreak ? "ON_BREAK" : "WORKING";
         setLocalSessionState(state);
         setLocalCheckIn(todayAttendance.checkIn);
         setLocalCheckOut(null);
         if (myEmployeeId) {
-          localStorage.setItem(`hrms_session_${myEmployeeId}`, state);
-          localStorage.setItem(`hrms_checkin_${myEmployeeId}`, String(todayAttendance.checkIn));
+          localStorage.setItem(`hrms_${todayStr}_session_${myEmployeeId}`, state);
+          localStorage.setItem(`hrms_${todayStr}_checkin_${myEmployeeId}`, String(todayAttendance.checkIn));
         }
       }
     }
-  }, [todayAttendance, myEmployeeId]);
+  }, [todayAttendance, myEmployeeId, todayStr]);
 
   // Effective check-in and check-out
   const effectiveCheckIn = localCheckIn !== null ? localCheckIn : todayAttendance?.checkIn;
@@ -196,13 +272,17 @@ export default function TodayTimeUtilizationCard({
     return "NOT_PUNCHED";
   }, [localSessionState, breakStartTime, effectiveCheckIn, effectiveCheckOut]);
 
-  // Sync localBreakMins upward whenever DB confirms a higher value
+  // Sync localBreakSeconds upward whenever DB confirms a higher value
   useEffect(() => {
     const dbMins = todayAttendance?.breakMinutes || 0;
     if (dbMins > 0) {
-      setLocalBreakMins((prev) => Math.max(prev, dbMins));
+      setLocalBreakSeconds((prev) => Math.max(prev, dbMins * 60));
     }
   }, [todayAttendance?.breakMinutes]);
+
+  // Effective break seconds accumulator
+  const effectiveTotalBreakSec = Math.max((todayAttendance?.breakMinutes || 0) * 60, localBreakSeconds);
+  const effectiveBreakMins = Math.ceil(effectiveTotalBreakSec / 60);
 
   // Live break timer ticker
   useEffect(() => {
@@ -229,22 +309,22 @@ export default function TodayTimeUtilizationCard({
       const updateWork = () => {
         const nowMs = Date.now();
         const totalSpanSec = Math.max(0, Math.floor((nowMs - checkInMs) / 1000));
-        const savedBreakSec = effectiveBreakMins * 60;
+        const savedBreakSec = effectiveTotalBreakSec;
         const currentBreakSec = breakStartTime ? Math.max(0, Math.floor((nowMs - breakStartTime) / 1000)) : 0;
-        const netWorkSec = Math.max(0, totalSpanSec - (savedBreakSec + currentBreakSec));
+        const netWorkSec = Math.min(24 * 3600, Math.max(0, totalSpanSec - (savedBreakSec + currentBreakSec)));
         setLiveElapsedSeconds(netWorkSec);
       };
       updateWork();
       workTimer = setInterval(updateWork, 1000);
     } else if (todayAttendance?.totalWorkHours) {
-      setLiveElapsedSeconds(Math.round(todayAttendance.totalWorkHours * 3600));
+      setLiveElapsedSeconds(Math.round(Math.min(24, todayAttendance.totalWorkHours) * 3600));
     } else {
       setLiveElapsedSeconds(0);
     }
     return () => {
       if (workTimer) clearInterval(workTimer);
     };
-  }, [effectiveCheckIn, effectiveCheckOut, todayAttendance, breakStartTime]);
+  }, [effectiveCheckIn, effectiveCheckOut, todayAttendance, breakStartTime, effectiveTotalBreakSec]);
 
   // Calculate formatted work hours: HH:MM
   const totalHoursFormatted = useMemo(() => {
@@ -255,17 +335,13 @@ export default function TodayTimeUtilizationCard({
   }, [effectiveCheckIn, liveElapsedSeconds]);
 
   // Calculate formatted break timer: HH:MM:SS
-  // Uses the higher of: DB-persisted breakMinutes vs local optimistic accumulator
-  // so the display never drops to 00:00:00 between optimistic clear and API response.
-  const effectiveBreakMins = Math.max(todayAttendance?.breakMinutes || 0, localBreakMins);
   const breakTimerFormatted = useMemo(() => {
-    const savedBreakSec = effectiveBreakMins * 60;
-    const totalBreakSec = savedBreakSec + (breakStartTime ? breakElapsedSeconds : 0);
+    const totalBreakSec = effectiveTotalBreakSec + (breakStartTime ? breakElapsedSeconds : 0);
     const hrs = Math.floor(totalBreakSec / 3600);
     const mins = Math.floor((totalBreakSec % 3600) / 60);
     const secs = totalBreakSec % 60;
     return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-  }, [effectiveBreakMins, breakStartTime, breakElapsedSeconds]);
+  }, [effectiveTotalBreakSec, breakStartTime, breakElapsedSeconds]);
 
   // Punch In formatted string
   const punchInTimeFormatted = useMemo(() => {
@@ -275,6 +351,15 @@ export default function TodayTimeUtilizationCard({
       minute: "2-digit",
     });
   }, [effectiveCheckIn]);
+
+  // Punch Out formatted string
+  const punchOutTimeFormatted = useMemo(() => {
+    if (!effectiveCheckOut || effectiveCheckOut === effectiveCheckIn) return "—";
+    return new Date(effectiveCheckOut).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }, [effectiveCheckOut, effectiveCheckIn]);
 
   // Shift Timing (Default 09:30 - 18:15 = 8h 45m = 525 minutes = 31500 sec)
   const shiftTargetSeconds = 8.75 * 3600; // 8 hours 45 mins
@@ -292,13 +377,24 @@ export default function TodayTimeUtilizationCard({
 
   // --- ACTIONS ---
   const handleStartWork = async () => {
-    // If currently on break, resume work!
+    // 1. Guard against punching in again on the same day if already completed
+    const isAlreadyCompletedToday = Boolean(
+      (todayAttendance?.checkOut && String(todayAttendance.checkOut).trim() !== "" && todayAttendance.checkOut !== todayAttendance.checkIn) ||
+      (localCheckOut && String(localCheckOut).trim() !== "") ||
+      localSessionState === "COMPLETED"
+    );
+
+    if (isAlreadyCompletedToday) {
+      toast.warning("You have already completed your shift for today. Punch in will be available tomorrow.");
+      return;
+    }
+
     if (breakStartTime) {
       await handleBreakOut();
       return;
     }
 
-    const empId = myEmployee?.id || myEmployeeId || rawEmpList[0]?.id;
+    const empId = myEmployee?.id || myEmployeeId || user?.employeeId || user?.id;
     if (!empId) {
       toast.error("Employee identification not found.");
       return;
@@ -312,16 +408,26 @@ export default function TodayTimeUtilizationCard({
     setLocalCheckOut(null);
     setLocalSessionState("WORKING");
     setBreakStartTime(null);
-    if (myEmployeeId) {
-      localStorage.setItem(`hrms_session_${myEmployeeId}`, "WORKING");
-      localStorage.setItem(`hrms_checkin_${myEmployeeId}`, nowIso);
-      localStorage.removeItem(`hrms_checkout_${myEmployeeId}`);
-      localStorage.removeItem(`hrms_break_${myEmployeeId}`);
+    setLastBreakIn(null);
+    setLastBreakOut(null);
+    setBreakCount(0);
+    setLocalBreakSeconds(0);
+
+    if (myEmployeeId && todayStr) {
+      localStorage.setItem(`hrms_${todayStr}_session_${myEmployeeId}`, "WORKING");
+      localStorage.setItem(`hrms_${todayStr}_checkin_${myEmployeeId}`, nowIso);
+      localStorage.removeItem(`hrms_${todayStr}_checkout_${myEmployeeId}`);
+      localStorage.removeItem(`hrms_${todayStr}_break_${myEmployeeId}`);
+      localStorage.removeItem(`hrms_${todayStr}_break_in_${myEmployeeId}`);
+      localStorage.removeItem(`hrms_${todayStr}_break_out_${myEmployeeId}`);
+      localStorage.removeItem(`hrms_${todayStr}_break_count_${myEmployeeId}`);
+      localStorage.removeItem(`hrms_${todayStr}_break_mins_${myEmployeeId}`);
+      localStorage.removeItem(`hrms_${todayStr}_break_secs_${myEmployeeId}`);
     }
 
     setPunchLoading(true);
     try {
-      await dispatch(
+      const result = await dispatch(
         createAttendance({
           id: todayAttendance?.id,
           employeeId: String(empId),
@@ -335,7 +441,15 @@ export default function TodayTimeUtilizationCard({
         })
       ).unwrap();
 
+      const savedAtt = result?.data || result;
+      if (savedAtt) {
+        setLocalCheckIn(savedAtt.checkIn || nowIso);
+        setLocalCheckOut(null);
+        setLocalSessionState("WORKING");
+      }
+
       toast.success(`🎉 Punched In at ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}!`);
+      dispatch(fetchEmployees());
       dispatch(fetchAttendance({ employeeId: isEmployee ? (myEmployeeId || undefined) : undefined }));
       if (onAttendanceChanged) onAttendanceChanged();
     } catch (err) {
@@ -351,126 +465,223 @@ export default function TodayTimeUtilizationCard({
       toast.warning("Please Punch In first before taking a break.");
       return;
     }
-    const now = Date.now();
-    setBreakStartTime(now);
+    const nowMs = Date.now();
+    const formattedIn = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+    setBreakStartTime(nowMs);
+    setLastBreakIn(formattedIn);
     setLocalSessionState("ON_BREAK");
-    if (myEmployeeId) {
-      localStorage.setItem(`hrms_session_${myEmployeeId}`, "ON_BREAK");
-      localStorage.setItem(`hrms_break_${myEmployeeId}`, String(now));
+
+    if (myEmployeeId && todayStr) {
+      localStorage.setItem(`hrms_${todayStr}_session_${myEmployeeId}`, "ON_BREAK");
+      localStorage.setItem(`hrms_${todayStr}_break_${myEmployeeId}`, String(nowMs));
+      localStorage.setItem(`hrms_${todayStr}_break_in_${myEmployeeId}`, formattedIn);
     }
-    toast.info("☕ Break started! Standard limit is 60 minutes.");
+    toast.info(`☕ Break started at ${formattedIn}! (Standard limit: 60 mins)`);
   };
 
   const handleBreakOut = async () => {
-    const elapsedMins = breakStartTime ? Math.max(0, Math.floor((Date.now() - breakStartTime) / 60000)) : 0;
-    
-    // Optimistic UI updates — update localBreakMins BEFORE clearing breakStartTime
-    // so breakTimerFormatted never drops to 00:00:00 while waiting for the API response
-    const prevBreakMins = effectiveBreakMins;
-    const newBreakMins = prevBreakMins + elapsedMins;
-    setLocalBreakMins(newBreakMins);
+    const elapsedSecs = breakStartTime ? Math.max(0, Math.floor((Date.now() - breakStartTime) / 1000)) : 0;
+    const formattedOut = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const prevBreakSecs = effectiveTotalBreakSec;
+    const newBreakSecs = prevBreakSecs + elapsedSecs;
+    const newBreakMins = Math.max(0, Math.ceil(newBreakSecs / 60));
+    const newBreakCount = (breakCount || 0) + 1;
+
+    setLocalBreakSeconds(newBreakSecs);
     setBreakStartTime(null);
+    setLastBreakOut(formattedOut);
+    setBreakCount(newBreakCount);
     setLocalSessionState("WORKING");
-    if (myEmployeeId) {
-      localStorage.setItem(`hrms_session_${myEmployeeId}`, "WORKING");
-      localStorage.removeItem(`hrms_break_${myEmployeeId}`);
-      localStorage.setItem(`hrms_break_mins_${myEmployeeId}`, String(newBreakMins));
+
+    if (myEmployeeId && todayStr) {
+      localStorage.setItem(`hrms_${todayStr}_session_${myEmployeeId}`, "WORKING");
+      localStorage.removeItem(`hrms_${todayStr}_break_${myEmployeeId}`);
+      localStorage.setItem(`hrms_${todayStr}_break_secs_${myEmployeeId}`, String(newBreakSecs));
+      localStorage.setItem(`hrms_${todayStr}_break_mins_${myEmployeeId}`, String(newBreakMins));
+      localStorage.setItem(`hrms_${todayStr}_break_out_${myEmployeeId}`, formattedOut);
+      localStorage.setItem(`hrms_${todayStr}_break_count_${myEmployeeId}`, String(newBreakCount));
     }
 
     setPunchLoading(true);
     try {
-      const empId = myEmployee?.id || myEmployeeId || todayAttendance?.employeeId;
-
-      let netWorkHours = todayAttendance?.totalWorkHours || 0;
-      if (effectiveCheckIn) {
-        const checkInDate = new Date(effectiveCheckIn);
-        const currentElapsedWorkMins = Math.max(0, Math.round((Date.now() - checkInDate.getTime()) / 60000) - newBreakMins);
-        netWorkHours = parseFloat((currentElapsedWorkMins / 60).toFixed(2));
+      const empId = myEmployee?.id || myEmployeeId || todayAttendance?.employeeId || user?.employeeId || user?.id;
+      if (!empId) {
+        toast.error("Employee identification not found.");
+        return;
       }
 
-      await dispatch(
+      let netWorkHours = todayAttendance?.totalWorkHours || 0;
+      let checkInToSend = new Date().toISOString();
+
+      if (effectiveCheckIn) {
+        const checkInDate = new Date(effectiveCheckIn);
+        if (!isNaN(checkInDate.getTime())) {
+          checkInToSend = checkInDate.toISOString();
+          const currentElapsedWorkMins = Math.max(0, Math.round((Date.now() - checkInDate.getTime()) / 60000) - (newBreakMins || 0));
+          const computedHours = parseFloat((currentElapsedWorkMins / 60).toFixed(2));
+          netWorkHours = !isNaN(computedHours) ? Math.min(24.0, computedHours) : 0;
+        }
+      }
+
+      const validStatuses = ["PRESENT", "ABSENT", "LATE", "HALFDAY", "ON_LEAVE", "HOLIDAY"];
+      const currentStatus = todayAttendance?.status?.toUpperCase();
+      const statusToSend = validStatuses.includes(currentStatus) ? currentStatus : "PRESENT";
+
+      const result = await dispatch(
         createAttendance({
           id: todayAttendance?.id,
           employeeId: String(empId),
           date: todayStr,
-          checkIn: effectiveCheckIn,
+          checkIn: checkInToSend,
           checkOut: null,
-          breakMinutes: newBreakMins,
-          totalWorkHours: netWorkHours,
-          status: todayAttendance?.status || "PRESENT",
+          breakMinutes: Number(newBreakMins) || 0,
+          totalWorkHours: Number(netWorkHours) || 0,
+          status: statusToSend,
           captureMethod: "WEB_CLOCK",
         })
       ).unwrap();
 
-      toast.success(`☕ Break ended (+${elapsedMins} mins). Resumed work!`);
+      const savedAtt = result?.data || result;
+      if (savedAtt) {
+        setLocalCheckIn(savedAtt.checkIn || checkInToSend);
+        setLocalSessionState("WORKING");
+      }
+
+      const elapsedDisplay = elapsedSecs >= 60 ? `+${Math.round(elapsedSecs / 60)} min` : `+${elapsedSecs}s`;
+      toast.success(`☕ Break ended at ${formattedOut} (${elapsedDisplay}). Total breaks: ${newBreakCount}. Resumed work!`);
+      dispatch(fetchEmployees());
       dispatch(fetchAttendance({ employeeId: isEmployee ? (myEmployeeId || undefined) : undefined }));
       if (onAttendanceChanged) onAttendanceChanged();
     } catch (err) {
       console.error(err);
-      toast.error("Failed to record break duration.");
+      toast.error(typeof err === "string" ? err : (err?.message || "Failed to record break duration."));
     } finally {
       setPunchLoading(false);
     }
   };
 
-  const handlePunchOut = async () => {
+  const handlePunchOutClick = () => {
     if (!effectiveCheckIn) {
       toast.warning("No active check-in record found for today.");
       return;
     }
 
+    const inDate = new Date(effectiveCheckIn);
     const now = new Date();
-    const nowIso = now.toISOString();
+    const diffHours = (now.getTime() - inDate.getTime()) / (1000 * 60 * 60);
+
+    // If check-in was from an earlier calendar date or elapsed duration is abnormal (>14 hours), prompt reason
+    if (inDate.toDateString() !== now.toDateString() || diffHours > 14) {
+      setShowLatePunchOutModal(true);
+      return;
+    }
+
+    executePunchOut();
+  };
+
+  const executePunchOut = async (overrideOutIso, reasonText) => {
+    const now = new Date();
+    let finalOutIso = overrideOutIso || now.toISOString();
+    let outDate = new Date(finalOutIso);
 
     // Optimistic UI updates
-    setLocalCheckOut(nowIso);
+    setLocalCheckOut(finalOutIso);
     setLocalSessionState("COMPLETED");
     setBreakStartTime(null);
-    if (myEmployeeId) {
-      localStorage.setItem(`hrms_session_${myEmployeeId}`, "COMPLETED");
-      localStorage.setItem(`hrms_checkout_${myEmployeeId}`, nowIso);
-      localStorage.removeItem(`hrms_break_${myEmployeeId}`);
+    if (myEmployeeId && todayStr) {
+      localStorage.setItem(`hrms_${todayStr}_session_${myEmployeeId}`, "COMPLETED");
+      localStorage.setItem(`hrms_${todayStr}_checkout_${myEmployeeId}`, finalOutIso);
+      localStorage.removeItem(`hrms_${todayStr}_break_${myEmployeeId}`);
     }
 
     setPunchLoading(true);
+    setShowLatePunchOutModal(false);
+
     try {
-      const empId = myEmployee?.id || myEmployeeId || todayAttendance?.employeeId;
-      const inDate = new Date(effectiveCheckIn);
-      const diffMs = now.getTime() - inDate.getTime();
+      const empId = myEmployee?.id || myEmployeeId || todayAttendance?.employeeId || user?.employeeId || user?.id;
+      if (!empId) {
+        toast.error("Employee identification not found.");
+        return;
+      }
+
+      let validCheckIn = new Date(now.getTime() - 8 * 3600000).toISOString();
+      if (effectiveCheckIn) {
+        const testDate = new Date(effectiveCheckIn);
+        if (!isNaN(testDate.getTime())) {
+          validCheckIn = testDate.toISOString();
+        }
+      }
+
+      const inDate = new Date(validCheckIn);
+      const diffMs = Math.max(0, outDate.getTime() - inDate.getTime());
       const totalSpanMins = Math.max(0, Math.round(diffMs / 60000));
-      const breakMins = effectiveBreakMins + (breakStartTime ? Math.floor((Date.now() - breakStartTime) / 60000) : 0);
+      const additionalBreakSecs = breakStartTime ? Math.max(0, Math.floor((Date.now() - breakStartTime) / 1000)) : 0;
+      const breakSecs = (Number(effectiveTotalBreakSec) || 0) + additionalBreakSecs;
+      const breakMins = Math.max(0, Math.ceil(breakSecs / 60));
       const netWorkMins = Math.max(0, totalSpanMins - breakMins);
-      const netHours = parseFloat((netWorkMins / 60).toFixed(2));
+      const computedNetHours = parseFloat((netWorkMins / 60).toFixed(2));
+      let netHours = !isNaN(computedNetHours) ? Math.min(24.0, computedNetHours) : 0;
+
+      const standardShiftHours = 8.75;
+      const earlyGoingHours = netHours < standardShiftHours ? parseFloat(Math.max(0, standardShiftHours - netHours).toFixed(2)) : 0;
       const otHours = netHours > 8.0 ? parseFloat((netHours - 8.0).toFixed(2)) : 0;
       const isHalfDay = netHours < 4.5;
       const status = isHalfDay ? "HALFDAY" : "PRESENT";
       const presentDay = isHalfDay ? 0.5 : 1.0;
 
-      await dispatch(
+      const recordDate = todayAttendance?.date
+        ? (typeof todayAttendance.date === "string" ? todayAttendance.date.split("T")[0] : new Date(todayAttendance.date).toISOString().split("T")[0])
+        : (inDate && !isNaN(inDate.getTime()) ? inDate.toISOString().split("T")[0] : todayStr);
+
+      const result = await dispatch(
         createAttendance({
           id: todayAttendance?.id,
           employeeId: String(empId),
-          date: todayStr,
-          checkIn: effectiveCheckIn,
-          checkOut: nowIso,
-          breakMinutes: breakMins,
-          totalWorkHours: netHours,
-          otHours,
+          date: recordDate,
+          checkIn: validCheckIn,
+          checkOut: finalOutIso,
+          breakMinutes: Number(breakMins) || 0,
+          totalWorkHours: Number(netHours) || 0,
+          otHours: Number(otHours) || 0,
+          earlyGoingHours: Number(earlyGoingHours) || 0,
+          isHalfDay: Boolean(isHalfDay),
           status,
-          presentDay,
+          presentDay: Number(presentDay) || 1.0,
           captureMethod: "WEB_CLOCK",
         })
       ).unwrap();
 
-      toast.success(`👋 Punched Out! Shift duration: ${netHours} hrs${otHours > 0 ? ` (+${otHours} hrs OT)` : ""}`);
+      const savedAtt = result?.data || result;
+      if (savedAtt) {
+        setLocalCheckIn(savedAtt.checkIn || validCheckIn);
+        setLocalCheckOut(savedAtt.checkOut || finalOutIso);
+        setLocalSessionState("COMPLETED");
+      }
+
+      const outTimeDisplay = outDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      const earlyMsg = earlyGoingHours > 0 ? ` (Early Out: ${earlyGoingHours}h early)` : "";
+      const otMsg = otHours > 0 ? ` (+${otHours}h OT)` : "";
+      toast.success(`👋 Punched Out at ${outTimeDisplay}! Work duration: ${netHours} hrs${otMsg}${earlyMsg}${reasonText ? ` • Reason: ${reasonText}` : ""}`);
+      dispatch(fetchEmployees());
       dispatch(fetchAttendance({ employeeId: isEmployee ? (myEmployeeId || undefined) : undefined }));
       if (onAttendanceChanged) onAttendanceChanged();
     } catch (err) {
-      console.error(err);
-      toast.error(typeof err === "string" ? err : "Failed to punch out");
+      console.error("Error in executePunchOut:", err);
+      toast.error(typeof err === "string" ? err : (err?.message || "Failed to punch out"));
     } finally {
       setPunchLoading(false);
     }
+  };
+
+  const handleConfirmLatePunchOut = () => {
+    const inDate = new Date(effectiveCheckIn);
+    const [hrs, mins] = customOutTime.split(":").map(Number);
+    const targetOutDate = new Date(inDate);
+    targetOutDate.setHours(hrs || 18, mins || 15, 0, 0);
+
+    const reasonSummary = customReasonNote ? `${punchOutReason} - ${customReasonNote}` : punchOutReason;
+    executePunchOut(targetOutDate.toISOString(), reasonSummary);
   };
 
   return (
@@ -517,19 +728,46 @@ export default function TodayTimeUtilizationCard({
 
       {/* 3. Outer Utilization Container */}
       <div className="bg-sky-50/40 dark:bg-slate-800/40 border border-sky-100 dark:border-slate-700/60 rounded-2xl p-4 space-y-4">
-        {/* Top Mini Tiles: Punch In & Total Hours */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200/80 dark:border-slate-800 shadow-2xs">
-            <span className="text-[11px] font-semibold text-slate-400 block leading-tight">Punch In:</span>
-            <span className="text-sm font-black text-slate-800 dark:text-white mt-1 block">
+        {/* Top Mini Tiles: Punch In, Out & Hours */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+          <div className="bg-white dark:bg-slate-900 rounded-xl p-2.5 border border-slate-200/80 dark:border-slate-800 shadow-2xs">
+            <span className="text-[10px] font-semibold text-slate-400 block leading-tight">Punch In:</span>
+            <span className="text-xs sm:text-sm font-black text-slate-800 dark:text-white mt-1 block truncate">
               {punchInTimeFormatted}
             </span>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200/80 dark:border-slate-800 shadow-2xs">
-            <span className="text-[11px] font-semibold text-slate-400 block leading-tight">Total Hours:</span>
-            <span className="text-sm font-black font-mono text-slate-800 dark:text-white mt-1 block">
+          <div className="bg-white dark:bg-slate-900 rounded-xl p-2.5 border border-slate-200/80 dark:border-slate-800 shadow-2xs">
+            <span className="text-[10px] font-semibold text-slate-400 block leading-tight">Punch Out:</span>
+            <span className={`text-xs sm:text-sm font-black mt-1 block truncate ${punchOutTimeFormatted !== "—" ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`}>
+              {punchOutTimeFormatted}
+            </span>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 rounded-xl p-2.5 border border-slate-200/80 dark:border-slate-800 shadow-2xs col-span-2 sm:col-span-1">
+            <span className="text-[10px] font-semibold text-slate-400 block leading-tight">Total Hours:</span>
+            <span className="text-xs sm:text-sm font-black font-mono text-sky-600 dark:text-sky-400 mt-1 block">
               {totalHoursFormatted}
+            </span>
+          </div>
+        </div>
+
+        {/* Break Details Metric Strip */}
+        <div className="grid grid-cols-2 gap-2.5 bg-white dark:bg-slate-900/90 rounded-xl p-2.5 border border-slate-200/80 dark:border-slate-800">
+          <div>
+            <span className="text-[10px] font-semibold text-slate-400 flex items-center gap-1">
+              <Coffee className="size-3 text-amber-500" /> Last Break:
+            </span>
+            <span className="text-xs font-bold text-slate-700 dark:text-slate-200 mt-0.5 block truncate">
+              {lastBreakIn ? `${lastBreakIn}${lastBreakOut ? ` - ${lastBreakOut}` : " (Active)"}` : "—"}
+            </span>
+          </div>
+          <div>
+            <span className="text-[10px] font-semibold text-slate-400 flex items-center gap-1">
+              <Clock className="size-3 text-indigo-500" /> Total Break Time:
+            </span>
+            <span className="text-xs font-bold text-slate-700 dark:text-slate-200 mt-0.5 block font-mono">
+              {breakTimerFormatted} <span className="text-[10px] font-normal text-slate-400">({breakCount} {breakCount === 1 ? "break" : "breaks"})</span>
             </span>
           </div>
         </div>
@@ -624,7 +862,7 @@ export default function TodayTimeUtilizationCard({
               <Button
                 type="button"
                 disabled={punchLoading}
-                onClick={handlePunchOut}
+                onClick={handlePunchOutClick}
                 className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl h-11 shadow-sm gap-1.5 cursor-pointer transition-all hover:scale-[1.01] active:scale-95"
               >
                 {punchLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-3.5 h-3.5 fill-current" />}
@@ -649,7 +887,7 @@ export default function TodayTimeUtilizationCard({
               <Button
                 type="button"
                 disabled={punchLoading}
-                onClick={handlePunchOut}
+                onClick={handlePunchOutClick}
                 className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl h-11 shadow-sm gap-1.5 cursor-pointer transition-all hover:scale-[1.01] active:scale-95"
               >
                 {punchLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-3.5 h-3.5 fill-current" />}
@@ -658,39 +896,98 @@ export default function TodayTimeUtilizationCard({
             </div>
           )}
 
-          {/* STATE 4: SHIFT COMPLETED -> SHOW COMPLETED STATUS & START NEW PUNCH OPTION */}
+          {/* STATE 4: SHIFT COMPLETED -> LOCKED FOR TODAY (NEXT PUNCH IN AVAILABLE TOMORROW) */}
           {currentSessionState === "COMPLETED" && (
-            <div className="space-y-2">
-              <div className="w-full py-2.5 px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-center font-bold text-xs flex items-center justify-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                <span>Shift Completed ({todayAttendance?.totalWorkHours || 8} hrs logged)</span>
+            <div className="space-y-2 animate-in fade-in zoom-in-95 duration-200">
+              <div className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 border border-emerald-200 dark:border-emerald-800/80 text-emerald-800 dark:text-emerald-300 text-center font-bold text-xs flex flex-col items-center justify-center gap-1 shadow-sm">
+                <div className="flex items-center gap-1.5 font-extrabold text-sm text-emerald-700 dark:text-emerald-300">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>Shift Completed for Today</span>
+                </div>
+                <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400/90">
+                  {todayAttendance?.totalWorkHours || totalHoursFormatted || "0"} hrs logged • Next Punch In will be available tomorrow
+                </p>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={punchLoading}
-                onClick={handleStartWork}
-                className="w-full border-dashed border-emerald-400 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-xs font-bold rounded-xl h-9 gap-1.5 cursor-pointer"
-              >
-                <Play className="w-3.5 h-3.5 fill-current" />
-                Start New Session / Re-Punch
-              </Button>
             </div>
           )}
         </div>
 
-        {/* Live Break Duration Timer */}
-        <div className="text-center pt-1 border-t border-slate-200/60 dark:border-slate-800">
-          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-            Break: <strong className="font-mono text-slate-800 dark:text-white font-bold">{breakTimerFormatted}</strong>
-          </span>
-          {breakStartTime && (
-            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold block mt-0.5 animate-pulse">
-              ☕ Currently on break (Limit: 60 mins)
+        {/* Live Break Status */}
+        {breakStartTime && (
+          <div className="text-center pt-1 border-t border-slate-200/60 dark:border-slate-800">
+            <span className="text-[10.5px] text-amber-600 dark:text-amber-400 font-bold block animate-pulse">
+              ☕ Currently on break (Started: {lastBreakIn || "Now"} • Limit: 60 mins)
             </span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
+
+      {/* Delayed / Missed Punch Out Reason Modal */}
+      <Dialog open={showLatePunchOutModal} onOpenChange={setShowLatePunchOutModal}>
+        <DialogContent className="max-w-md border-0 shadow-2xl rounded-3xl p-0 overflow-hidden bg-white dark:bg-slate-950">
+          <div className="bg-gradient-to-r from-amber-600 to-rose-700 p-5 text-white">
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <AlertCircle className="size-5 text-amber-200" /> Record Shift Punch Out & Reason
+            </DialogTitle>
+            <DialogDescription className="text-amber-100 text-xs mt-1">
+              Your punch-in was recorded at {punchInTimeFormatted}. Please confirm the punch out time and reason for late punchout.
+            </DialogDescription>
+          </div>
+
+          <div className="p-5 space-y-4 text-xs">
+            <div className="space-y-1.5">
+              <Label className="font-bold text-slate-700 dark:text-slate-300">Punch Out Time *</Label>
+              <Input
+                type="time"
+                value={customOutTime}
+                onChange={(e) => setCustomOutTime(e.target.value)}
+                className="rounded-xl h-10 bg-slate-50 dark:bg-slate-900"
+              />
+              <span className="text-[10px] text-slate-400">Default is regular shift departure (18:15).</span>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="font-bold text-slate-700 dark:text-slate-300">Reason for Late Punch Out *</Label>
+              <Select value={punchOutReason} onValueChange={setPunchOutReason}>
+                <SelectTrigger className="rounded-xl h-10 bg-slate-50 dark:bg-slate-900">
+                  <SelectValue placeholder="Select Reason" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Forgot to punch out yesterday">Forgot to punch out yesterday</SelectItem>
+                  <SelectItem value="Outdoor / Field assignment">Outdoor / Field assignment</SelectItem>
+                  <SelectItem value="System / Network downtime">System / Network downtime</SelectItem>
+                  <SelectItem value="Worked continuous late shift">Worked continuous late shift</SelectItem>
+                  <SelectItem value="Other">Other reason</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="font-bold text-slate-700 dark:text-slate-300">Additional Remarks (Optional)</Label>
+              <Input
+                placeholder="e.g. Worked at client site till 6:30 PM"
+                value={customReasonNote}
+                onChange={(e) => setCustomReasonNote(e.target.value)}
+                className="rounded-xl h-10 bg-slate-50 dark:bg-slate-900"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="p-5 pt-0 gap-2">
+            <Button variant="outline" className="rounded-xl" onClick={() => setShowLatePunchOutModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold gap-2 shadow-md"
+              disabled={punchLoading}
+              onClick={handleConfirmLatePunchOut}
+            >
+              {punchLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-3.5 h-3.5 fill-current" />}
+              Confirm Punch Out
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -65,6 +65,7 @@ import {
   changeEmployeeShift,
   fetchShiftAuditLogs,
 } from "@/store/slices/attendanceSlice";
+import { usePermissions } from "@/context/PermissionContext";
 import { toast } from "sonner";
 
 const DAYS_OF_WEEK = [
@@ -104,6 +105,7 @@ export default function HodShiftScheduleHub({
   currentUser = null,
 }) {
   const dispatch = useDispatch();
+  const { can, isEmployee } = usePermissions();
 
   const {
     shifts = [],
@@ -853,24 +855,28 @@ export default function HodShiftScheduleHub({
       sortable: false,
       render: (row) => (
         <div className="flex items-center gap-1.5">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => handleOpenChangeModal(row)}
-            className="h-8 px-2.5 text-xs font-bold gap-1 rounded-xl border-sky-300 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/50"
-            title="Change Shift with Reason"
-          >
-            <RotateCcw className="w-3 h-3 text-sky-500" />
-            Change Shift
-          </Button>
-          <button
-            onClick={() => setDeleteTarget({ id: row.id, name: `roster on ${formatDateDDMMYYYY(row.date)}`, type: "roster", label: "Shift Roster" })}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
-            title="Delete Roster"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          {!isEmployee && (can("update", "shift_roster") || can("update", "attendance")) && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleOpenChangeModal(row)}
+              className="h-8 px-2.5 text-xs font-bold gap-1 rounded-xl border-sky-300 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/50"
+              title="Change Shift with Reason"
+            >
+              <RotateCcw className="w-3 h-3 text-sky-500" />
+              Change Shift
+            </Button>
+          )}
+          {!isEmployee && (can("delete", "shift_roster") || can("delete", "attendance")) && (
+            <button
+              onClick={() => setDeleteTarget({ id: row.id, name: `roster on ${formatDateDDMMYYYY(row.date)}`, type: "roster", label: "Shift Roster" })}
+              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
+              title="Delete Roster"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       ),
     },
@@ -879,60 +885,70 @@ export default function HodShiftScheduleHub({
   const shiftMasterColumns = [
     {
       key: "name",
-      label: "Shift Name",
+      label: "Shift Name & Timing",
+      render: (row) => (
+        <div className="flex items-center gap-2">
+          <span
+            className="w-3 h-3 rounded-full shrink-0"
+            style={{ backgroundColor: row.color || "#0284c7" }}
+          />
+          <div>
+            <span className="font-extrabold text-slate-800 dark:text-slate-100 text-xs block">
+              {row.name}
+            </span>
+            <span className="text-[10px] text-slate-400 font-mono">
+              {row.startTime} — {row.endTime}
+            </span>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "duration",
+      label: "Work Hours",
       render: (row) => {
-        const color = row.color || "#0284c7";
+        const [sh, sm] = (row.startTime || "09:00").split(":").map(Number);
+        const [eh, em] = (row.endTime || "17:30").split(":").map(Number);
+        let diff = (eh * 60 + em) - (sh * 60 + sm);
+        if (diff < 0) diff += 24 * 60;
+        const netMin = Math.max(0, diff - (row.breakDurationMinutes || 60));
         return (
-          <div className="flex items-center gap-2">
-            <span
-              className="w-3 h-3 rounded-full shrink-0 border"
-              style={{ backgroundColor: color, borderColor: `${color}80` }}
-            />
-            <div>
-              <span className="font-extrabold text-slate-800 dark:text-slate-100 text-xs block flex items-center gap-1.5">
-                {row.name}
-                {row.isNightShift && (
-                  <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-indigo-400 text-indigo-500 gap-0.5">
-                    <Moon className="w-2.5 h-2.5" /> Night
-                  </Badge>
-                )}
-              </span>
-              {row.description && <span className="text-[10px] text-slate-400">{row.description}</span>}
-            </div>
+          <div>
+            <span className="font-bold text-xs">{(diff / 60).toFixed(1)} hrs</span>
+            <span className="text-[10px] text-slate-400 block">Net: {(netMin / 60).toFixed(1)}h</span>
           </div>
         );
       },
     },
     {
-      key: "startTime",
-      label: "Timing",
-      render: (row) => (
-        <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-200">
-          {row.startTime} - {row.endTime}
-        </span>
-      ),
-    },
-    {
       key: "graceTimeMinutes",
-      label: "Grace Time",
+      label: "Grace / Break",
       render: (row) => (
-        <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-          {row.graceTimeMinutes || 15} mins
-        </span>
-      ),
-    },
-    {
-      key: "breakRules",
-      label: "Break Rules & Duration",
-      render: (row) => (
-        <div>
-          <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block flex items-center gap-1">
-            <Coffee className="w-3 h-3 text-amber-500" />
-            {row.breakDurationMinutes || 60} mins total
+        <div className="text-xs">
+          <span className="font-bold text-slate-700 dark:text-slate-200">
+            {row.graceTimeMinutes || 15} min
           </span>
-          <span className="text-[10px] text-slate-400">{row.breakRules || "Standard 1hr lunch break"}</span>
+          <span className="text-[10px] text-slate-400 block">
+            {row.breakDurationMinutes || 60}m break
+          </span>
         </div>
       ),
+    },
+    {
+      key: "type",
+      label: "Shift Type",
+      render: (row) =>
+        row.isNightShift ? (
+          <Badge className="bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800 text-[10px] font-extrabold gap-1">
+            <Moon className="w-3 h-3 text-indigo-500" />
+            Night Shift
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800 text-[10px] font-extrabold gap-1">
+            <Sun className="w-3 h-3 text-amber-500" />
+            Day Shift
+          </Badge>
+        ),
     },
     {
       key: "actions",
@@ -940,35 +956,39 @@ export default function HodShiftScheduleHub({
       sortable: false,
       render: (row) => (
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => {
-              setShiftForm({
-                id: row.id,
-                name: row.name,
-                startTime: row.startTime,
-                endTime: row.endTime,
-                graceTimeMinutes: row.graceTimeMinutes || 15,
-                breakDurationMinutes: row.breakDurationMinutes || 60,
-                breakRules: row.breakRules || "45 min Lunch + 15 min Tea break",
-                isNightShift: !!row.isNightShift,
-                color: row.color || "#0284c7",
-                description: row.description || "",
-              });
-              setSubTab("masters");
-              window.scrollTo({ top: 0, behavior: "smooth" });
-            }}
-            className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-950/40 rounded-lg transition-all"
-            title="Edit Shift"
-          >
-            <Edit className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => setDeleteTarget({ id: row.id, name: `shift "${row.name}"`, type: "shift", label: "Shift Master" })}
-            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-all"
-            title="Delete Shift"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          {!isEmployee && (can("update", "shift") || can("update", "attendance")) && (
+            <button
+              onClick={() => {
+                setShiftForm({
+                  id: row.id,
+                  name: row.name,
+                  startTime: row.startTime,
+                  endTime: row.endTime,
+                  graceTimeMinutes: row.graceTimeMinutes || 15,
+                  breakDurationMinutes: row.breakDurationMinutes || 60,
+                  breakRules: row.breakRules || "45 min Lunch + 15 min Tea break",
+                  isNightShift: !!row.isNightShift,
+                  color: row.color || "#0284c7",
+                  description: row.description || "",
+                });
+                setSubTab("masters");
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+              className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-950/40 rounded-lg transition-all"
+              title="Edit Shift"
+            >
+              <Edit className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {!isEmployee && (can("delete", "shift") || can("delete", "attendance")) && (
+            <button
+              onClick={() => setDeleteTarget({ id: row.id, name: `shift "${row.name}"`, type: "shift", label: "Shift Master" })}
+              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-all"
+              title="Delete Shift"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       ),
     },
@@ -1445,15 +1465,17 @@ export default function HodShiftScheduleHub({
                   {livePlannerPreview.length} Total Shift Slots
                 </Badge>
 
-                <Button
-                  type="button"
-                  onClick={handleExecuteBulkAssignment}
-                  disabled={plannerSubmitting || plannerEmployeeIds.length === 0 || !plannerShiftId || livePlannerPreview.length === 0}
-                  className="bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white font-extrabold rounded-2xl h-10 px-5 shadow-md gap-2 cursor-pointer transition-all disabled:opacity-50"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  {plannerSubmitting ? "Allocating Shifts..." : `Confirm & Allocate Shifts (${livePlannerPreview.length} slots)`}
-                </Button>
+                {!isEmployee && (can("create", "shift_roster") || can("create", "attendance")) && (
+                  <Button
+                    type="button"
+                    onClick={handleExecuteBulkAssignment}
+                    disabled={plannerSubmitting || plannerEmployeeIds.length === 0 || !plannerShiftId || livePlannerPreview.length === 0}
+                    className="bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white font-extrabold rounded-2xl h-10 px-5 shadow-md gap-2 cursor-pointer transition-all disabled:opacity-50"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    {plannerSubmitting ? "Allocating Shifts..." : `Confirm & Allocate Shifts (${livePlannerPreview.length} slots)`}
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -2549,135 +2571,137 @@ export default function HodShiftScheduleHub({
       {subTab === "masters" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Shift Master Form */}
-          <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4 h-fit">
-            <h3 className="font-extrabold text-slate-800 dark:text-white text-base flex items-center gap-2">
-              <Plus className="w-5 h-5 text-sky-500" />
-              {shiftForm.id ? "Edit Shift Master" : "Define Shift Master"}
-            </h3>
-            <form onSubmit={handleSubmitShiftForm} className="space-y-3.5" noValidate>
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Shift Name</Label>
-                <Input
-                  placeholder="e.g. Morning Shift, Night Shift, General Shift"
-                  value={shiftForm.name}
-                  onChange={(e) => setShiftForm({ ...shiftForm, name: e.target.value })}
-                  className="h-10 text-xs rounded-xl"
-                />
-                {shiftFormErrors.name && <span className="text-rose-500 text-[10.5px] font-bold">{shiftFormErrors.name}</span>}
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+          {!isEmployee && (can("create", "shift") || can("create", "attendance")) && (
+            <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4 h-fit">
+              <h3 className="font-extrabold text-slate-800 dark:text-white text-base flex items-center gap-2">
+                <Plus className="w-5 h-5 text-sky-500" />
+                {shiftForm.id ? "Edit Shift Master" : "Define Shift Master"}
+              </h3>
+              <form onSubmit={handleSubmitShiftForm} className="space-y-3.5" noValidate>
                 <div className="space-y-1">
-                  <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Start Time</Label>
-                  <DateTimePicker type="time" date={shiftForm.startTime} setDate={(val) => setShiftForm({ ...shiftForm, startTime: val })} />
-                  {shiftFormErrors.startTime && <span className="text-rose-500 text-[10.5px] font-bold">{shiftFormErrors.startTime}</span>}
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">End Time</Label>
-                  <DateTimePicker type="time" date={shiftForm.endTime} setDate={(val) => setShiftForm({ ...shiftForm, endTime: val })} />
-                  {shiftFormErrors.endTime && <span className="text-rose-500 text-[10.5px] font-bold">{shiftFormErrors.endTime}</span>}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Grace Time (mins)</Label>
+                  <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Shift Name</Label>
                   <Input
-                    type="number"
-                    min="0"
-                    placeholder="15"
-                    value={shiftForm.graceTimeMinutes}
-                    onChange={(e) => setShiftForm({ ...shiftForm, graceTimeMinutes: Number(e.target.value) })}
+                    placeholder="e.g. Morning Shift, Night Shift, General Shift"
+                    value={shiftForm.name}
+                    onChange={(e) => setShiftForm({ ...shiftForm, name: e.target.value })}
                     className="h-10 text-xs rounded-xl"
                   />
+                  {shiftFormErrors.name && <span className="text-rose-500 text-[10.5px] font-bold">{shiftFormErrors.name}</span>}
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Break Duration (mins)</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    placeholder="60"
-                    value={shiftForm.breakDurationMinutes}
-                    onChange={(e) => setShiftForm({ ...shiftForm, breakDurationMinutes: Number(e.target.value) })}
-                    className="h-10 text-xs rounded-xl"
-                  />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Start Time</Label>
+                    <DateTimePicker type="time" date={shiftForm.startTime} setDate={(val) => setShiftForm({ ...shiftForm, startTime: val })} />
+                    {shiftFormErrors.startTime && <span className="text-rose-500 text-[10.5px] font-bold">{shiftFormErrors.startTime}</span>}
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">End Time</Label>
+                    <DateTimePicker type="time" date={shiftForm.endTime} setDate={(val) => setShiftForm({ ...shiftForm, endTime: val })} />
+                    {shiftFormErrors.endTime && <span className="text-rose-500 text-[10.5px] font-bold">{shiftFormErrors.endTime}</span>}
+                  </div>
                 </div>
-              </div>
 
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Break Rules</Label>
-                <Input
-                  placeholder="e.g. 45 min Lunch + 15 min Tea break"
-                  value={shiftForm.breakRules}
-                  onChange={(e) => setShiftForm({ ...shiftForm, breakRules: e.target.value })}
-                  className="h-10 text-xs rounded-xl"
-                />
-              </div>
-
-              {/* Color Tag Selector */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Calendar Color Tag</Label>
-                <div className="flex items-center gap-2">
-                  {PRESET_COLORS.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => setShiftForm({ ...shiftForm, color: c })}
-                      className={`w-6 h-6 rounded-full border transition-transform ${
-                        shiftForm.color === c ? "scale-125 ring-2 ring-sky-500 ring-offset-2" : ""
-                      }`}
-                      style={{ backgroundColor: c }}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Grace Time (mins)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder="15"
+                      value={shiftForm.graceTimeMinutes}
+                      onChange={(e) => setShiftForm({ ...shiftForm, graceTimeMinutes: Number(e.target.value) })}
+                      className="h-10 text-xs rounded-xl"
                     />
-                  ))}
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Break Duration (mins)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder="60"
+                      value={shiftForm.breakDurationMinutes}
+                      onChange={(e) => setShiftForm({ ...shiftForm, breakDurationMinutes: Number(e.target.value) })}
+                      className="h-10 text-xs rounded-xl"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              {/* Night Shift Toggle */}
-              <div className="flex items-center gap-2 pt-1">
-                <Checkbox
-                  id="nightShiftCheck"
-                  checked={shiftForm.isNightShift}
-                  onCheckedChange={(checked) => setShiftForm({ ...shiftForm, isNightShift: !!checked })}
-                />
-                <Label htmlFor="nightShiftCheck" className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer flex items-center gap-1">
-                  <Moon className="w-3.5 h-3.5 text-indigo-500" />
-                  Is Full Night Shift
-                </Label>
-              </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Break Rules</Label>
+                  <Input
+                    placeholder="e.g. 45 min Lunch + 15 min Tea break"
+                    value={shiftForm.breakRules}
+                    onChange={(e) => setShiftForm({ ...shiftForm, breakRules: e.target.value })}
+                    className="h-10 text-xs rounded-xl"
+                  />
+                </div>
 
-              <div className="flex gap-2 pt-2">
-                <Button type="submit" className="flex-1 bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl h-10">
-                  {shiftForm.id ? "Update Shift" : "Save Shift Master"}
-                </Button>
-                {shiftForm.id && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      setShiftForm({
-                        id: null,
-                        name: "",
-                        startTime: "09:00",
-                        endTime: "17:30",
-                        graceTimeMinutes: 15,
-                        breakDurationMinutes: 60,
-                        breakRules: "45 min Lunch + 15 min Tea break",
-                        isNightShift: false,
-                        color: "#0284c7",
-                        description: "",
-                      })
-                    }
-                    className="rounded-xl h-10"
-                  >
-                    Cancel
+                {/* Color Tag Selector */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Calendar Color Tag</Label>
+                  <div className="flex items-center gap-2">
+                    {PRESET_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setShiftForm({ ...shiftForm, color: c })}
+                        className={`w-6 h-6 rounded-full border transition-transform ${
+                          shiftForm.color === c ? "scale-125 ring-2 ring-sky-500 ring-offset-2" : ""
+                        }`}
+                        style={{ backgroundColor: c }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Night Shift Toggle */}
+                <div className="flex items-center gap-2 pt-1">
+                  <Checkbox
+                    id="nightShiftCheck"
+                    checked={shiftForm.isNightShift}
+                    onCheckedChange={(checked) => setShiftForm({ ...shiftForm, isNightShift: !!checked })}
+                  />
+                  <Label htmlFor="nightShiftCheck" className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer flex items-center gap-1">
+                    <Moon className="w-3.5 h-3.5 text-indigo-500" />
+                    Is Full Night Shift
+                  </Label>
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <Button type="submit" className="flex-1 bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl h-10">
+                    {shiftForm.id ? "Update Shift" : "Save Shift Master"}
                   </Button>
-                )}
-              </div>
-            </form>
-          </div>
+                  {shiftForm.id && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        setShiftForm({
+                          id: null,
+                          name: "",
+                          startTime: "09:00",
+                          endTime: "17:30",
+                          graceTimeMinutes: 15,
+                          breakDurationMinutes: 60,
+                          breakRules: "45 min Lunch + 15 min Tea break",
+                          isNightShift: false,
+                          color: "#0284c7",
+                          description: "",
+                        })
+                      }
+                      className="rounded-xl h-10"
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+              </form>
+            </div>
+          )}
 
           {/* Shift Master DataTable */}
-          <div className="lg:col-span-2 space-y-4">
+          <div className={(!isEmployee && (can("create", "shift") || can("create", "attendance"))) ? "lg:col-span-2 space-y-4" : "lg:col-span-3 space-y-4"}>
             <DataTable
               title="Shift Master Catalog"
               lazy

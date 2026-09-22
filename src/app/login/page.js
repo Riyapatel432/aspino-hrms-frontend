@@ -30,7 +30,6 @@ export default function HRLoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
-  const [selectedRole, setSelectedRole] = useState("hr");
   const [loading, setLoading] = useState(false);
 
   // Forgot Password Modal State
@@ -47,39 +46,6 @@ export default function HRLoginPage() {
   const [passwordError, setPasswordError] = useState("");
   const [apiError, setApiError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
-
-  const roleConfigs = [
-    {
-      id: "admin",
-      label: "Super Admin",
-      icon: ShieldCheck,
-      demoEmail: "admin@aspino.com",
-      demoPass: "admin123",
-    },
-    {
-      id: "hr",
-      label: "HR Manager",
-      icon: Shield,
-      demoEmail: "hr@aspino.com",
-      demoPass: "Hr@123",
-    },
-    {
-      id: "employee",
-      label: "Employee",
-      icon: UserCheck,
-      demoEmail: "employee@aspino.com",
-      demoPass: "employee123",
-    },
-  ];
-
-  const handleRoleSelect = (role) => {
-    setSelectedRole(role.id);
-    setEmail(role.demoEmail);
-    setPassword(role.demoPass);
-    setEmailError("");
-    setPasswordError("");
-    setApiError("");
-  };
 
   // Real-time validation
   const validateForm = () => {
@@ -165,8 +131,8 @@ export default function HRLoginPage() {
       setSuccessMsg("Login successful! Redirecting to Dashboard...");
 
       setTimeout(() => {
-        router.push("/dashboard");
-      }, 500);
+        window.location.href = "/dashboard";
+      }, 400);
     } catch (err) {
       if (err.name === "TypeError" && (err.message === "Failed to fetch" || err.message.includes("fetch"))) {
         setApiError("Unable to connect to backend server at http://localhost:5000. Please ensure the backend server is running.");
@@ -337,10 +303,10 @@ export default function HRLoginPage() {
               </div>
               <div className="space-y-0.5">
                 <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800 tracking-tight">
-                  Secure HR Access
+                  Secure HRMS Access
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-500 font-medium">
-                  Enter your HRMS credentials
+                  Enter your enterprise credentials
                 </p>
               </div>
             </div>
@@ -434,32 +400,6 @@ export default function HRLoginPage() {
                 )}
               </div>
 
-              {/* Remember Me & Forgot Password */}
-              {/* <div className="flex items-center justify-between pt-1">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="rememberMe"
-                    checked={rememberMe}
-                    onCheckedChange={(val) => setRememberMe(!!val)}
-                    className="rounded-md border-slate-300 data-[state=checked]:bg-[#0ea5e9] data-[state=checked]:border-[#00a896]"
-                  />
-                  <Label
-                    htmlFor="rememberMe"
-                    className="text-xs font-semibold text-slate-600 cursor-pointer select-none"
-                  >
-                    Remember Me
-                  </Label>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowForgotModal(true)}
-                  className="text-xs font-bold text-[#0284c7] hover:text-sky-700 hover:underline transition-all cursor-pointer"
-                >
-                  Forgot Password?
-                </button>
-              </div> */}
-
               {/* Submit Button */}
               <Button
                 type="submit"
@@ -474,42 +414,11 @@ export default function HRLoginPage() {
                 ) : (
                   <div className="flex items-center justify-center gap-2">
                     <LockKeyhole className="h-4 w-4" />
-                    <span>Secure HR Login</span>
+                    <span>Sign In</span>
                   </div>
                 )}
               </Button>
             </form>
-
-            {/* Login As Divider */}
-            <div className="relative flex items-center justify-center my-3">
-              <div className="border-t border-slate-200/80 w-full" />
-              <span className="bg-white px-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider absolute">
-                Quick Select Role
-              </span>
-            </div>
-
-            {/* Role Selectors */}
-            <div className="grid grid-cols-2 gap-3">
-              {roleConfigs.map((role) => {
-                const Icon = role.icon;
-                const isSelected = selectedRole === role.id;
-                return (
-                  <button
-                    key={role.id}
-                    type="button"
-                    onClick={() => handleRoleSelect(role)}
-                    className={`flex flex-col items-center justify-center p-3 rounded-xl border transition-all cursor-pointer gap-2 ${
-                      isSelected
-                        ? "border-[#0284c7] bg-sky-50/80 text-[#0284c7] font-bold shadow-xs ring-2 ring-sky-500/20"
-                        : "border-slate-200/90 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 font-medium"
-                    }`}
-                  >
-                    <Icon className={`h-5 w-5 ${isSelected ? "text-[#0284c7]" : "text-slate-500"}`} />
-                    <span className="text-xs leading-none">{role.label}</span>
-                  </button>
-                );
-              })}
-            </div>
           </div>
         </div>
       </div>

@@ -168,7 +168,8 @@ export default function PerformanceTrainingPage() {
     else if (newGoal.title.trim().length < 3) errs.goalTitle = "Goal title must be at least 3 characters.";
     if (!newGoal.description?.trim()) errs.goalDesc = "Goal description / key results are required.";
     else if (newGoal.description.trim().length < 10) errs.goalDesc = "Goal description must be at least 10 characters.";
-    if (newGoal.weightage === undefined || newGoal.weightage === null || newGoal.weightage < 1 || newGoal.weightage > 100) {
+    const weightageNum = Number(newGoal.weightage);
+    if (newGoal.weightage === "" || newGoal.weightage === undefined || newGoal.weightage === null || isNaN(weightageNum) || weightageNum < 1 || weightageNum > 100) {
       errs.weightage = "Weightage must be between 1% and 100%.";
     }
     setFormErrors(errs);
@@ -179,10 +180,12 @@ export default function PerformanceTrainingPage() {
     const errs = {};
     if (!newReview.employeeId) errs.employeeId = "Please select an employee.";
     if (!newReview.cycleId) errs.cycleId = "Please select an appraisal cycle.";
-    if (newReview.selfRating === "" || newReview.selfRating == null || Number(newReview.selfRating) < 1 || Number(newReview.selfRating) > 10) {
+    const selfRatingNum = Number(newReview.selfRating);
+    if (newReview.selfRating === "" || newReview.selfRating == null || isNaN(selfRatingNum) || selfRatingNum < 1 || selfRatingNum > 10) {
       errs.selfRating = "Self rating must be between 1 and 10.";
     }
-    if (newReview.managerRating === "" || newReview.managerRating == null || Number(newReview.managerRating) < 1 || Number(newReview.managerRating) > 10) {
+    const managerRatingNum = Number(newReview.managerRating);
+    if (newReview.managerRating === "" || newReview.managerRating == null || isNaN(managerRatingNum) || managerRatingNum < 1 || managerRatingNum > 10) {
       errs.managerRating = "Manager rating must be between 1 and 10.";
     }
     if (!newReview.status) errs.status = "Please select review status.";
@@ -247,10 +250,17 @@ export default function PerformanceTrainingPage() {
       const url = isUpdate 
         ? `${backendUrl}/staff-hrms/performance/goals/${newGoal.id}`
         : `${backendUrl}/staff-hrms/performance/goals`;
+      const payload = {
+        employeeId: newGoal.employeeId,
+        cycleId: newGoal.cycleId,
+        title: newGoal.title,
+        description: newGoal.description,
+        weightage: Number(newGoal.weightage),
+      };
       const res = await apiFetch(url, {
         method: isUpdate ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newGoal),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         setNewGoal({ id: null, employeeId: "", cycleId: "", title: "", description: "", weightage: "" });
@@ -693,12 +703,7 @@ export default function PerformanceTrainingPage() {
         })}
       </div>
 
-      {loading ? (
-        <div className="flex justify-center items-center py-20">
-          <Loader2 className="w-8 h-8 text-sky-500 animate-spin" />
-        </div>
-      ) : (
-        <div className="space-y-6">
+      <div className="space-y-6">
           {/* TAB 1: APPRAISAL */}
           {activeTab === "appraisal" && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -833,9 +838,20 @@ export default function PerformanceTrainingPage() {
                       <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Weightage (%)</Label>
                       <Input
                         type="number"
+                        min="1"
+                        max="100"
+                        placeholder="1 - 100"
                         value={newGoal.weightage}
+                        onKeyDown={(e) => {
+                          if (["-", "+", "e", "E"].includes(e.key)) {
+                            e.preventDefault();
+                          }
+                        }}
                         onChange={(e) => {
-                          setNewGoal({ ...newGoal, weightage: e.target.value });
+                          const val = e.target.value;
+                          if (val === "" || (Number(val) >= 0 && Number(val) <= 100)) {
+                            setNewGoal({ ...newGoal, weightage: val });
+                          }
                           if (formErrors.weightage) setFormErrors({ ...formErrors, weightage: null });
                         }}
                       />
@@ -850,7 +866,7 @@ export default function PerformanceTrainingPage() {
                           type="button"
                           variant="outline"
                           onClick={() => {
-                            setNewGoal({ id: null, employeeId: "", cycleId: "", title: "", description: "", weightage: 50 });
+                            setNewGoal({ id: null, employeeId: "", cycleId: "", title: "", description: "", weightage: "" });
                             setFormErrors({});
                           }}
                           className="rounded-xl border-slate-200 dark:border-slate-700"
@@ -910,9 +926,20 @@ export default function PerformanceTrainingPage() {
                         <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Self Rating (1-10)</Label>
                         <Input
                           type="number"
+                          min="1"
+                          max="10"
+                          placeholder="1 - 10"
                           value={newReview.selfRating}
+                          onKeyDown={(e) => {
+                            if (["-", "+", "e", "E"].includes(e.key)) {
+                              e.preventDefault();
+                            }
+                          }}
                           onChange={(e) => {
-                            setNewReview({ ...newReview, selfRating: e.target.value });
+                            const val = e.target.value;
+                            if (val === "" || (Number(val) >= 0 && Number(val) <= 10)) {
+                              setNewReview({ ...newReview, selfRating: val });
+                            }
                             if (formErrors.selfRating) setFormErrors({ ...formErrors, selfRating: null });
                           }}
                         />
@@ -922,9 +949,20 @@ export default function PerformanceTrainingPage() {
                         <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Manager Rating</Label>
                         <Input
                           type="number"
+                          min="1"
+                          max="10"
+                          placeholder="1 - 10"
                           value={newReview.managerRating}
+                          onKeyDown={(e) => {
+                            if (["-", "+", "e", "E"].includes(e.key)) {
+                              e.preventDefault();
+                            }
+                          }}
                           onChange={(e) => {
-                            setNewReview({ ...newReview, managerRating: e.target.value });
+                            const val = e.target.value;
+                            if (val === "" || (Number(val) >= 0 && Number(val) <= 10)) {
+                              setNewReview({ ...newReview, managerRating: val });
+                            }
                             if (formErrors.managerRating) setFormErrors({ ...formErrors, managerRating: null });
                           }}
                         />
@@ -956,7 +994,7 @@ export default function PerformanceTrainingPage() {
                           type="button"
                           variant="outline"
                           onClick={() => {
-                            setNewReview({ id: null, employeeId: "", cycleId: "", selfRating: 8, selfComments: "", managerRating: 8, managerComments: "", finalRating: 8, status: "COMPLETED" });
+                            setNewReview({ id: null, employeeId: "", cycleId: "", selfRating: "", selfComments: "", managerRating: "", managerComments: "", finalRating: "", status: "" });
                             setFormErrors({});
                           }}
                           className="rounded-xl border-slate-200 dark:border-slate-700"
@@ -1150,7 +1188,6 @@ export default function PerformanceTrainingPage() {
             </div>
           )}
         </div>
-      )}
 
       {/* Certificate Modal */}
       {certificateData && (

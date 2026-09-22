@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { apiFetch, getErrorMessage } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -283,7 +283,7 @@ function OnboardingPageContent() {
     return [fileUrl];
   };
 
-  const onboardingColumns = [
+  const onboardingColumns = useMemo(() => [
     {
       key: "employeeId",
       label: "Employee ID",
@@ -339,7 +339,7 @@ function OnboardingPageContent() {
             ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
             : "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
         }`}>
-          {row.bankName && row.accountNumber && row.ifscCode && row.panNumber ? "Filled" : "Pending"}
+          {row.bankName && row.accountNumber && row.ifscCode && row.panNumber ? "Verified" : "Pending"}
         </span>
       ),
     },
@@ -386,17 +386,12 @@ function OnboardingPageContent() {
         </div>
       ),
     },
-  ];
+  ], [selectedEmp?.id]);
 
   return (
     <div className="space-y-6">
-      {loading ? (
-        <div className="flex justify-center items-center py-20">
-          <Loader2 className="w-8 h-8 text-sky-500 animate-spin" />
-        </div>
-      ) : (
-        <div className="space-y-8">
-          {/* Top Section: Onboarding Employees DataTable */}
+      <div className="space-y-8">
+        {/* Top Section: Onboarding Employees DataTable */}
           <DataTable
             title="Onboarding Employees"
             lazy
@@ -737,7 +732,6 @@ function OnboardingPageContent() {
             )}
           </div>
         </div>
-      )}
 
       {/* Delete Confirmation Dialog */}
       <DeleteConfirmDialog

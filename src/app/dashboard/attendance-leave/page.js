@@ -101,15 +101,28 @@ export const formatDateDDMMYYYY = (dateVal) => {
 export default function AttendanceLeavePage() {
   const searchParams = useSearchParams();
   const tabParam = searchParams ? searchParams.get("tab") : null;
-  const { isEmployee, user } = usePermissions();
+  const { isEmployee, user, can } = usePermissions();
   const [activeTab, setActiveTab] = useState(tabParam || "attendance");
   const [activeLeaveTab, setActiveLeaveTab] = useState("requests");
 
+  const availableTabs = useMemo(() => {
+    if (isEmployee) return [{ id: "attendance", label: "Attendance Logs", icon: Clock }];
+    const tabs = [
+      { id: "attendance", label: "Attendance Logs", icon: Clock, permitted: can("read", "attendance") || can("attendance") },
+      { id: "rosters", label: "Shift Schedule (HOD)", icon: CalendarRange, permitted: can("read", "shift_roster") || can("read", "attendance") || can("shift_roster") || can("attendance") },
+      { id: "leaves", label: "Leave Requests", icon: FileCheck, permitted: can("read", "leave") || can("leave") },
+      { id: "holidays", label: "Holiday Configuration", icon: CalendarDays, permitted: can("read", "leave_master") || can("read", "holiday") || can("leave_master") || can("holiday") },
+    ];
+    return tabs.filter((t) => t.permitted);
+  }, [isEmployee, can]);
+
   useEffect(() => {
-    if (tabParam) {
+    if (tabParam && (!availableTabs.length || availableTabs.some((t) => t.id === tabParam))) {
       setActiveTab(tabParam);
+    } else if (!isEmployee && availableTabs.length > 0 && !availableTabs.some((t) => t.id === activeTab)) {
+      setActiveTab(availableTabs[0].id);
     }
-  }, [tabParam]);
+  }, [tabParam, availableTabs, activeTab, isEmployee]);
   
   const dispatch = useDispatch();
 
@@ -150,23 +163,39 @@ export default function AttendanceLeavePage() {
   const myEmployee = useMemo(() => {
     if (!user) return null;
     if (user.employee) return user.employee;
-    const found = rawEmpList.find(e => 
-      (user.id && (String(e.userId) === String(user.id) || String(e.id) === String(user.id))) ||
-      (user.employeeId && (String(e.id) === String(user.employeeId) || String(e.employeeId) === String(user.employeeId))) ||
-      (user.email && e.email?.toLowerCase() === user.email.toLowerCase()) ||
-      (user.name && (`${e.firstName} ${e.lastName}`.toLowerCase().includes(user.name.toLowerCase()) || user.name.toLowerCase().includes(e.firstName?.toLowerCase())))
-    );
+    const userEmail = (user.email || "").toLowerCase().trim();
+    const userName = (user.name || "").toLowerCase().trim();
+    const userId = user.id ? String(user.id) : "";
+    const userEmpId = user.employeeId ? String(user.employeeId) : "";
+    const userEmpCode = user.employeeCode ? String(user.employeeCode) : "";
+
+    const found = rawEmpList.find(e => {
+      const eUserId = e.userId ? String(e.userId) : "";
+      const eId = e.id ? String(e.id) : "";
+      const eEmpCode = e.employeeId ? String(e.employeeId) : "";
+      const eEmail = (e.email || "").toLowerCase().trim();
+      const eFullName = `${e.firstName || ""} ${e.lastName || ""}`.toLowerCase().trim();
+
+      if (userId && (eUserId === userId || eId === userId)) return true;
+      if (userEmpId && (eId === userEmpId || eEmpCode === userEmpId)) return true;
+      if (userEmpCode && (eEmpCode === userEmpCode || eId === userEmpCode)) return true;
+      if (userEmail && eEmail && eEmail === userEmail) return true;
+      if (userName && eFullName && eFullName === userName) return true;
+
+      return false;
+    });
+
     if (found) return found;
-    if (isEmployee) {
-      return {
-        id: user.id || user.employeeId || "EMP_CURRENT",
-        employeeId: user.employeeCode || user.employeeId || user.id || "EMP_CURRENT",
-        firstName: user.name || "Employee",
-        lastName: "",
-        department: { name: "Staff" }
-      };
-    }
-    return null;
+
+    const nameParts = (user.name || (isEmployee ? "Aspino Employee" : "Aspino HR Manager")).trim().split(/\s+/);
+    return {
+      id: user.employeeId || user.id || (isEmployee ? "EMP_USER" : "HR_USER"),
+      employeeId: user.employeeCode || user.employeeId || (isEmployee ? "ASP-EMP-001" : "ASP-HR-001"),
+      firstName: nameParts[0] || (isEmployee ? "Employee" : "HR"),
+      lastName: nameParts.slice(1).join(" ") || (isEmployee ? "Staff" : "Manager"),
+      email: user.email || (isEmployee ? "employee@aspino.com" : "hr@aspino.com"),
+      department: { name: user.department || (isEmployee ? "Operations & Staff" : "Human Resources") },
+    };
   }, [user, rawEmpList, isEmployee]);
 
   const myEmployeeId = myEmployee?.id || user?.employeeId || user?.id || null;
@@ -181,21 +210,22 @@ export default function AttendanceLeavePage() {
         myEmployee?.employeeId,
         user?.id,
         user?.employeeId,
+        user?.employeeCode,
       ].filter(Boolean).map(String));
 
       list = rawLeaves.filter((l) => {
         const empId = String(l.employeeId || l.employee?.id || "");
         const empCode = String(l.employee?.employeeId || "");
-        const empEmail = String(l.employee?.email || "").toLowerCase();
-        const userEmail = String(user?.email || "").toLowerCase();
-        const userName = String(user?.name || "").toLowerCase();
-        const empName = `${l.employee?.firstName || ""} ${l.employee?.lastName || ""}`.toLowerCase();
+        const empEmail = String(l.employee?.email || "").toLowerCase().trim();
+        const userEmail = String(user?.email || "").toLowerCase().trim();
+        const userName = String(user?.name || "").toLowerCase().trim();
+        const empName = `${l.employee?.firstName || ""} ${l.employee?.lastName || ""}`.toLowerCase().trim();
 
         return (
           myIds.has(empId) ||
           myIds.has(empCode) ||
-          (userEmail && empEmail === userEmail) ||
-          (userName && (empName.includes(userName) || userName.includes(l.employee?.firstName?.toLowerCase() || "")))
+          (userEmail && empEmail && empEmail === userEmail) ||
+          (userName && empName && empName === userName)
         );
       });
     }
@@ -283,10 +313,13 @@ export default function AttendanceLeavePage() {
     return `${year}-${month}-${day}`;
   }, []);
 
-  // Today's attendance for the logged in employee
+  // Today's attendance for the logged in user / employee
   const todayAttendance = useMemo(() => {
     const attList = Array.isArray(attendance?.data) ? attendance.data : (Array.isArray(attendance) ? attendance : []);
-    const targetEmpId = myEmployeeId;
+    const targetEmpId = String(myEmployeeId || myEmployee?.id || user?.id || "");
+    const targetEmpCode = String(myEmployee?.employeeId || user?.employeeCode || "");
+    if (!targetEmpId && !targetEmpCode) return null;
+
     return attList.find((rec) => {
       const recDate = rec.date ? (typeof rec.date === "string" ? rec.date.split("T")[0] : new Date(rec.date).toISOString().split("T")[0]) : "";
       const matchesDate = recDate === todayStr;
@@ -294,12 +327,12 @@ export default function AttendanceLeavePage() {
 
       const empId = String(rec.employeeId || rec.employee?.id || "");
       const empCode = String(rec.employee?.employeeId || "");
-      if (isEmployee && targetEmpId) {
-        return empId === String(targetEmpId) || empCode === String(targetEmpId);
-      }
-      return true;
+      return (
+        (targetEmpId && (empId === targetEmpId || empCode === targetEmpId)) ||
+        (targetEmpCode && (empCode === targetEmpCode || empId === targetEmpCode))
+      );
     }) || null;
-  }, [attendance, todayStr, isEmployee, myEmployeeId]);
+  }, [attendance, todayStr, myEmployeeId, myEmployee, user]);
 
   // Upcoming Holidays showcase memo
   const upcomingHolidaysList = useMemo(() => {
@@ -455,9 +488,8 @@ export default function AttendanceLeavePage() {
     };
   }, [breakStartTime]);
 
-  // --- LIVE PUNCH ACTIONS ---
   const handleLivePunchIn = async () => {
-    const empId = myEmployee?.id || myEmployeeId || rawEmpList[0]?.id;
+    const empId = myEmployee?.id || myEmployeeId || user?.employeeId || user?.id;
     if (!empId) {
       toast.error("Employee profile not found. Please contact Administrator.");
       return;
@@ -572,11 +604,12 @@ export default function AttendanceLeavePage() {
       const nowIso = now.toISOString();
       const empId = myEmployee?.id || myEmployeeId || todayAttendance.employeeId;
       const inDate = new Date(todayAttendance.checkIn);
-      const diffMs = now.getTime() - inDate.getTime();
+      const diffMs = Math.max(0, now.getTime() - inDate.getTime());
       const totalSpanMins = Math.max(0, Math.round(diffMs / 60000));
       const breakMins = Number(todayAttendance.breakMinutes || 0) + (breakStartTime ? Math.floor((Date.now() - breakStartTime) / 60000) : 0);
       const netWorkMins = Math.max(0, totalSpanMins - breakMins);
-      const netHours = parseFloat((netWorkMins / 60).toFixed(2));
+      let netHours = parseFloat((netWorkMins / 60).toFixed(2));
+      if (netHours > 24.0) netHours = 24.0;
       const otHours = netHours > 8.0 ? parseFloat((netHours - 8.0).toFixed(2)) : 0;
       const isHalfDay = netHours < 4.5;
       const status = isHalfDay ? "HALFDAY" : "PRESENT";
@@ -2400,71 +2433,77 @@ export default function AttendanceLeavePage() {
       sortable: false,
       render: (row) => (
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => {
-              setBreakIncidentForm({
-                employeeId: row.employeeId || row.employee?.id || "",
-                isRowTargeted: true,
-                targetEmployeeName: `${row.employee?.firstName || ''} ${row.employee?.lastName || ''}`.trim(),
-                targetEmployeeCode: row.employee?.employeeId || '',
-                targetDepartment: row.employee?.department?.name || '',
-                incidentDate: row.date ? new Date(row.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-                breakType: "",
-                excessTime: "",
-                excessMinutes: 0,
-                deductionHours: "",
-                severity: "",
-                complaintDetails: "",
-                reportedByName: user?.name || "",
-              });
-              setShowBreakIncidentModal(true);
-            }}
-            className="p-1.5 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 hover:bg-amber-500 hover:text-white rounded-lg transition-all"
-            title="HOD Report Break Misuse Complaint"
-          >
-            <Coffee className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => {
-              setNewAtt({
-                id: row.id,
-                employeeId: row.employeeId,
-                isRowTargeted: true,
-                targetEmployeeName: `${row.employee?.firstName || ''} ${row.employee?.lastName || ''}`.trim(),
-                targetEmployeeCode: row.employee?.employeeId || '',
-                targetDepartment: row.employee?.department?.name || '',
-                shiftId: row.shiftId,
-                date: row.date ? new Date(row.date).toISOString().split('T')[0] : "",
-                checkIn: row.checkIn ? new Date(row.checkIn).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : "",
-                checkOut: row.checkOut ? new Date(row.checkOut).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : "",
-                otHours: row.otHours || 0,
-                isHalfDay: !!row.isHalfDay,
-                lateHours: row.lateHours || 0,
-                earlyGoingHours: row.earlyGoingHours || 0,
-                presentDay: row.presentDay || 1.0,
-                isSundayPresent: !!row.isSundayPresent,
-                isFullNightPresent: !!row.isFullNightPresent,
-                isHolidayPresent: !!row.isHolidayPresent,
-                captureMethod: row.captureMethod || "BIOMETRIC",
-                breakMinutes: row.breakMisuseMinutes > 0 ? String(60 + Number(row.breakMisuseMinutes)) : "60",
-                onDutyMinutes: "0",
-                status: row.status || "PRESENT"
-              });
-              setShowManualAttModal(true);
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
-            title="Edit"
-          >
-            <Edit className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => setDeleteTarget({ id: row.id, name: `attendance record for ${row.employee?.firstName || 'employee'} on ${formatDateDDMMYYYY(row.date)}`, type: "attendance", label: "Attendance Record" })}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
-            title="Delete"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          {!isEmployee && (can("create", "attendance") || can("update", "attendance")) && (
+            <button
+              onClick={() => {
+                setBreakIncidentForm({
+                  employeeId: row.employeeId || row.employee?.id || "",
+                  isRowTargeted: true,
+                  targetEmployeeName: `${row.employee?.firstName || ''} ${row.employee?.lastName || ''}`.trim(),
+                  targetEmployeeCode: row.employee?.employeeId || '',
+                  targetDepartment: row.employee?.department?.name || '',
+                  incidentDate: row.date ? new Date(row.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                  breakType: "",
+                  excessTime: "",
+                  excessMinutes: 0,
+                  deductionHours: "",
+                  severity: "",
+                  complaintDetails: "",
+                  reportedByName: user?.name || "",
+                });
+                setShowBreakIncidentModal(true);
+              }}
+              className="p-1.5 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 hover:bg-amber-500 hover:text-white rounded-lg transition-all"
+              title="HOD Report Break Misuse Complaint"
+            >
+              <Coffee className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {!isEmployee && can("update", "attendance") && (
+            <button
+              onClick={() => {
+                setNewAtt({
+                  id: row.id,
+                  employeeId: row.employeeId,
+                  isRowTargeted: true,
+                  targetEmployeeName: `${row.employee?.firstName || ''} ${row.employee?.lastName || ''}`.trim(),
+                  targetEmployeeCode: row.employee?.employeeId || '',
+                  targetDepartment: row.employee?.department?.name || '',
+                  shiftId: row.shiftId,
+                  date: row.date ? new Date(row.date).toISOString().split('T')[0] : "",
+                  checkIn: row.checkIn ? new Date(row.checkIn).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : "",
+                  checkOut: row.checkOut ? new Date(row.checkOut).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : "",
+                  otHours: row.otHours || 0,
+                  isHalfDay: !!row.isHalfDay,
+                  lateHours: row.lateHours || 0,
+                  earlyGoingHours: row.earlyGoingHours || 0,
+                  presentDay: row.presentDay || 1.0,
+                  isSundayPresent: !!row.isSundayPresent,
+                  isFullNightPresent: !!row.isFullNightPresent,
+                  isHolidayPresent: !!row.isHolidayPresent,
+                  captureMethod: row.captureMethod || "BIOMETRIC",
+                  breakMinutes: row.breakMisuseMinutes > 0 ? String(60 + Number(row.breakMisuseMinutes)) : "60",
+                  onDutyMinutes: "0",
+                  status: row.status || "PRESENT"
+                });
+                setShowManualAttModal(true);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+              title="Edit"
+            >
+              <Edit className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {!isEmployee && can("delete", "attendance") && (
+            <button
+              onClick={() => setDeleteTarget({ id: row.id, name: `attendance record for ${row.employee?.firstName || 'employee'} on ${formatDateDDMMYYYY(row.date)}`, type: "attendance", label: "Attendance Record" })}
+              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
+              title="Delete"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       )
     },
@@ -2481,48 +2520,29 @@ export default function AttendanceLeavePage() {
       render: (row) => {
         const emp = row.employee || employees.find(e => String(e.id) === String(row.employeeId));
         return (
-          <div>
-            <span className="font-extrabold text-slate-800 dark:text-slate-100 text-xs block">
-              {emp ? `${emp.firstName} ${emp.lastName}` : (row.employeeId || "-")}
-            </span>
-            <span className="text-[10px] text-slate-400 font-mono">{emp?.employeeId || ""}</span>
-          </div>
-        );
-      },
-    },
-    {
-      key: "department.name",
-      label: "Department (HOD)",
-      render: (row) => {
-        const emp = row.employee || employees.find(e => String(e.id) === String(row.employeeId));
-        const deptName = row.department?.name || emp?.department?.name || departments.find(d => String(d.id) === String(emp?.departmentId || row.departmentId))?.name || "General";
-        return (
-          <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-lg bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800/50">
-            {deptName}
+          <span className="text-xs font-extrabold text-slate-800 dark:text-white">
+            {emp ? `${emp.firstName} ${emp.lastName}` : row.employeeId || "-"}
           </span>
         );
       },
     },
     {
       key: "shift.name",
-      label: "Shift",
+      label: "Assigned Shift",
       render: (row) => {
-        const shiftObj = row.shift || (dropdownShifts.length > 0 ? dropdownShifts : shifts).find(s => String(s.id) === String(row.shiftId));
+        const s = row.shift || shifts.find(sh => String(sh.id) === String(row.shiftId));
         return (
-          <div>
-            <span className="font-bold text-slate-700 dark:text-slate-200 text-xs block">{shiftObj?.name || (row.shiftId || "-")}</span>
-            {shiftObj?.startTime && shiftObj?.endTime && (
-              <span className="text-[10px] text-slate-400">{shiftObj.startTime} - {shiftObj.endTime}</span>
-            )}
-          </div>
+          <span className="text-xs font-bold text-sky-500">
+            {s ? `${s.name} (${s.startTime} - ${s.endTime})` : row.shiftId || "-"}
+          </span>
         );
       },
     },
     {
       key: "date",
-      label: "Roster Date",
+      label: "Date",
       render: (row) => (
-        <span className="font-black text-sky-500 bg-sky-50 dark:bg-sky-500/10/70 border border-sky-100 dark:border-sky-500/20 px-2.5 py-1 rounded-full text-xs">
+        <span className="text-xs text-slate-600 dark:text-slate-300">
           {formatDateDDMMYYYY(row.date)}
         </span>
       ),
@@ -2533,28 +2553,32 @@ export default function AttendanceLeavePage() {
       sortable: false,
       render: (row) => (
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              setNewRoster({
-                id: row.id,
-                employeeId: row.employeeId,
-                shiftId: row.shiftId,
-                date: row.date ? new Date(row.date).toISOString().split('T')[0] : ""
-              });
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
-            title="Edit"
-          >
-            <Edit className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setDeleteTarget({ id: row.id, name: `roster for ${row.employee?.firstName || 'employee'} on ${formatDateDDMMYYYY(row.date)}`, type: "roster", label: "Shift Roster" })}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
-            title="Delete"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {!isEmployee && (can("update", "shift_roster") || can("update", "attendance")) && (
+            <button
+              onClick={() => {
+                setNewRoster({
+                  id: row.id,
+                  employeeId: row.employeeId,
+                  shiftId: row.shiftId,
+                  date: row.date ? new Date(row.date).toISOString().split('T')[0] : ""
+                });
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+              title="Edit"
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+          )}
+          {!isEmployee && (can("delete", "shift_roster") || can("delete", "attendance")) && (
+            <button
+              onClick={() => setDeleteTarget({ id: row.id, name: `roster for ${row.employee?.firstName || 'employee'} on ${formatDateDDMMYYYY(row.date)}`, type: "roster", label: "Shift Roster" })}
+              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
+              title="Delete"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       )
     },
@@ -2570,28 +2594,32 @@ export default function AttendanceLeavePage() {
       sortable: false,
       render: (row) => (
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              setNewShift({
-                id: row.id,
-                name: row.name,
-                startTime: row.startTime,
-                endTime: row.endTime
-              });
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
-            title="Edit"
-          >
-            <Edit className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setDeleteTarget({ id: row.id, name: `shift "${row.name}"`, type: "shift", label: "Work Shift" })}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
-            title="Delete"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {!isEmployee && (can("update", "shift") || can("update", "attendance")) && (
+            <button
+              onClick={() => {
+                setNewShift({
+                  id: row.id,
+                  name: row.name,
+                  startTime: row.startTime,
+                  endTime: row.endTime
+                });
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+              title="Edit"
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+          )}
+          {!isEmployee && (can("delete", "shift") || can("delete", "attendance")) && (
+            <button
+              onClick={() => setDeleteTarget({ id: row.id, name: `shift "${row.name}"`, type: "shift", label: "Work Shift" })}
+              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
+              title="Delete"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       )
     },
@@ -2652,7 +2680,7 @@ export default function AttendanceLeavePage() {
       sortable: false,
       render: (row) => (
         <div className="flex gap-1.5 items-center">
-          {row.status === "PENDING" && !isEmployee && (
+          {row.status === "PENDING" && !isEmployee && (can("approve", "leave") || can("update", "leave")) && (
             <>
               <button
                 onClick={() => handleUpdateLeaveStatus(row.id, "APPROVED")}
@@ -2670,30 +2698,34 @@ export default function AttendanceLeavePage() {
           )}
           {row.status === "PENDING" && (
             <>
-              <button
-                onClick={() => {
-                  setNewLeave({
-                    id: row.id,
-                    employeeId: row.employeeId || myEmployeeId,
-                    leaveType: row.leaveType,
-                    startDate: row.startDate ? new Date(row.startDate).toISOString().split('T')[0] : "",
-                    endDate: row.endDate ? new Date(row.endDate).toISOString().split('T')[0] : "",
-                    reason: row.reason || ""
-                  });
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
-                title="Edit"
-              >
-                <Edit className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setDeleteTarget({ id: row.id, name: `${row.leaveType} leave application`, type: "leave", label: "Leave Application" })}
-                className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
-                title="Cancel / Delete Request"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+              {(isEmployee || can("update", "leave")) && (
+                <button
+                  onClick={() => {
+                    setNewLeave({
+                      id: row.id,
+                      employeeId: row.employeeId || myEmployeeId,
+                      leaveType: row.leaveType,
+                      startDate: row.startDate ? new Date(row.startDate).toISOString().split('T')[0] : "",
+                      endDate: row.endDate ? new Date(row.endDate).toISOString().split('T')[0] : "",
+                      reason: row.reason || ""
+                    });
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+                  title="Edit"
+                >
+                  <Edit className="w-4 h-4" />
+                </button>
+              )}
+              {(isEmployee || can("delete", "leave")) && (
+                <button
+                  onClick={() => setDeleteTarget({ id: row.id, name: `${row.leaveType} leave application`, type: "leave", label: "Leave Application" })}
+                  className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
+                  title="Cancel / Delete Request"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
             </>
           )}
         </div>
@@ -2763,38 +2795,42 @@ export default function AttendanceLeavePage() {
       sortable: false,
       render: (row) => (
         <div className="flex gap-1.5 items-center">
-          <button
-            onClick={() => {
-              const deptId = typeof row.department === 'object' && row.department ? row.department.id : row.department;
-              const fyId = typeof row.fiscalYear === 'object' && row.fiscalYear ? row.fiscalYear.id : row.fiscalYear;
-              setNewLeaveMaster({
-                id: row.id,
-                department: deptId,
-                fiscalYear: fyId,
-                casualLeave: row.casualLeave,
-                sickLeave: row.sickLeave,
-                earnedLeave: row.earnedLeave,
-                otherLeave: row.otherLeave,
-                effectiveFrom: row.effectiveFrom ? new Date(row.effectiveFrom).toISOString().split('T')[0] : ""
-              });
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
-            title="Edit"
-          >
-            <Edit className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => {
-              const deptName = typeof row.department === 'object' && row.department ? row.department.name : row.department;
-              const fyName = typeof row.fiscalYear === 'object' && row.fiscalYear ? row.fiscalYear.name : row.fiscalYear;
-              setDeleteTarget({ id: row.id, name: `leave master for ${deptName} (${fyName})`, type: "leaveMaster", label: "Leave Master" });
-            }}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
-            title="Delete"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {!isEmployee && (can("update", "leave_master") || can("update", "leave")) && (
+            <button
+              onClick={() => {
+                const deptId = typeof row.department === 'object' && row.department ? row.department.id : row.department;
+                const fyId = typeof row.fiscalYear === 'object' && row.fiscalYear ? row.fiscalYear.id : row.fiscalYear;
+                setNewLeaveMaster({
+                  id: row.id,
+                  department: deptId,
+                  fiscalYear: fyId,
+                  casualLeave: row.casualLeave,
+                  sickLeave: row.sickLeave,
+                  earnedLeave: row.earnedLeave,
+                  otherLeave: row.otherLeave,
+                  effectiveFrom: row.effectiveFrom ? new Date(row.effectiveFrom).toISOString().split('T')[0] : ""
+                });
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+              title="Edit"
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+          )}
+          {!isEmployee && (can("delete", "leave_master") || can("delete", "leave")) && (
+            <button
+              onClick={() => {
+                const deptName = typeof row.department === 'object' && row.department ? row.department.name : row.department;
+                const fyName = typeof row.fiscalYear === 'object' && row.fiscalYear ? row.fiscalYear.name : row.fiscalYear;
+                setDeleteTarget({ id: row.id, name: `leave master for ${deptName} (${fyName})`, type: "leaveMaster", label: "Leave Master" });
+              }}
+              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
+              title="Delete"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       )
     }
@@ -2818,27 +2854,31 @@ export default function AttendanceLeavePage() {
       sortable: false,
       render: (row) => (
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              setNewHoliday({
-                id: row.id,
-                name: row.name,
-                date: row.date ? new Date(row.date).toISOString().split('T')[0] : "",
-              });
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
-            title="Edit"
-          >
-            <Edit className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setDeleteTarget({ id: row.id, name: `holiday "${row.name}"`, type: "holiday", label: "Holiday Entry" })}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
-            title="Delete"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {!isEmployee && (can("update", "holiday") || can("update", "leave_master")) && (
+            <button
+              onClick={() => {
+                setNewHoliday({
+                  id: row.id,
+                  name: row.name,
+                  date: row.date ? new Date(row.date).toISOString().split('T')[0] : "",
+                });
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+              title="Edit"
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+          )}
+          {!isEmployee && (can("delete", "holiday") || can("delete", "leave_master")) && (
+            <button
+              onClick={() => setDeleteTarget({ id: row.id, name: `holiday "${row.name}"`, type: "holiday", label: "Holiday Entry" })}
+              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
+              title="Delete"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       )
     },
@@ -2847,14 +2887,9 @@ export default function AttendanceLeavePage() {
   return (
     <div className="space-y-6">
       {/* Navigation tabs (Admin only - Employee navigates directly via sidebar) */}
-      {!isEmployee && (
+      {!isEmployee && availableTabs.length > 1 && (
         <div className="flex border-b border-slate-200 dark:border-slate-800 gap-6 overflow-x-auto">
-          {[
-            { id: "attendance", label: "Attendance Logs", icon: Clock },
-            { id: "rosters", label: "Shift Schedule (HOD)", icon: CalendarRange },
-            { id: "leaves", label: "Leave Requests", icon: FileCheck },
-            { id: "holidays", label: "Holiday Configuration", icon: CalendarDays },
-          ].map((tab) => {
+          {availableTabs.map((tab) => {
             const Icon = tab.icon;
             return (
               <button
@@ -2879,7 +2914,7 @@ export default function AttendanceLeavePage() {
           {activeTab === "attendance" && (
             <div className="space-y-6">
               {/* TOP 3-CARD INTERACTIVE DASHBOARD: TODAY'S TIME UTILIZATION, UPCOMING HOLIDAYS, ATTENDANCE REPORT */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 w-full min-w-0">
                 {/* 1. TODAY'S TIME UTILIZATION CARD */}
                 <TodayTimeUtilizationCard
                   className="h-full"
@@ -3051,77 +3086,87 @@ export default function AttendanceLeavePage() {
                       </button>
                     </div>
 
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setShowReportModal(true)}
-                      className="border-sky-500 text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/50 rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer"
-                    >
-                      <FileSpreadsheet className="w-3.5 h-3.5 text-sky-500" />
-                      Attendance Log Report
-                    </Button>
+                    {(can("read", "attendance") || can("export", "attendance")) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setShowReportModal(true)}
+                        className="border-sky-500 text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/50 rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-sky-500" />
+                        Attendance Log Report
+                      </Button>
+                    )}
 
                     {!isEmployee && (
                       <>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            setShowBulkAttModal(true);
-                            setImportResult(null);
-                          }}
-                          className="border-emerald-500 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer"
-                        >
-                          <Upload className="w-3.5 h-3.5 text-emerald-500" />
-                          Bulk Excel / CSV Import
-                        </Button>
+                        {(can("create", "attendance") || can("import", "attendance")) && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setShowBulkAttModal(true);
+                              setImportResult(null);
+                            }}
+                            className="border-emerald-500 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer"
+                          >
+                            <Upload className="w-3.5 h-3.5 text-emerald-500" />
+                            Bulk Excel / CSV Import
+                          </Button>
+                        )}
 
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => setShowIncidentsReviewModal(true)}
-                          className="border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer"
-                        >
-                          <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
-                          Break Incidents ({breakIncidentsList.length})
-                        </Button>
+                        {can("read", "attendance") && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setShowIncidentsReviewModal(true)}
+                            className="border-amber-400 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer"
+                          >
+                            <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+                            Break Incidents ({breakIncidentsList.length})
+                          </Button>
+                        )}
 
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            setBreakIncidentForm({
-                              employeeId: "",
-                              incidentDate: new Date().toISOString().split("T")[0],
-                              breakType: "",
-                              excessTime: "",
-                              excessMinutes: 0,
-                              deductionHours: "",
-                              severity: "",
-                              complaintDetails: "",
-                              reportedByName: user?.name || "",
-                            });
-                            setShowBreakIncidentModal(true);
-                          }}
-                          className="border-rose-300 bg-rose-50/50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 hover:bg-rose-100 rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer"
-                        >
-                          <Coffee className="w-3.5 h-3.5 text-rose-500" />
-                          Report Break Misuse
-                        </Button>
+                        {(can("create", "attendance") || can("update", "attendance")) && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setBreakIncidentForm({
+                                employeeId: "",
+                                incidentDate: new Date().toISOString().split("T")[0],
+                                breakType: "",
+                                excessTime: "",
+                                excessMinutes: 0,
+                                deductionHours: "",
+                                severity: "",
+                                complaintDetails: "",
+                                reportedByName: user?.name || "",
+                              });
+                              setShowBreakIncidentModal(true);
+                            }}
+                            className="border-rose-300 bg-rose-50/50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 hover:bg-rose-100 rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer"
+                          >
+                            <Coffee className="w-3.5 h-3.5 text-rose-500" />
+                            Report Break Misuse
+                          </Button>
+                        )}
                       </>
                     )}
 
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleExportAttendanceCsv}
-                      className="rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer border-slate-200 dark:border-slate-700"
-                    >
-                      <Download className="w-3.5 h-3.5 text-sky-500" />
-                      Export CSV
-                    </Button>
+                    {(can("read", "attendance") || can("export", "attendance")) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleExportAttendanceCsv}
+                        className="rounded-2xl h-9 text-xs font-semibold gap-1.5 cursor-pointer border-slate-200 dark:border-slate-700"
+                      >
+                        <Download className="w-3.5 h-3.5 text-sky-500" />
+                        Export CSV
+                      </Button>
+                    )}
 
-                    {!isEmployee && (
+                    {!isEmployee && can("create", "attendance") && (
                       <Button
                         type="button"
                         onClick={() => {
@@ -3422,126 +3467,128 @@ export default function AttendanceLeavePage() {
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Apply Leave Form */}
-              <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
-                <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                  <Plus className="w-5 h-5 text-sky-500" />
-                  {isEmployee ? "Apply for Leave" : "Apply Leave (Employee behalf)"}
-                </h3>
-                <form onSubmit={handleSubmitLeave} className="space-y-3" noValidate>
-                  <div className="space-y-1">
-                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Employee *</Label>
-                    {isEmployee ? (
-                      <div className="mt-1 flex items-center justify-between p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
-                        <div className="flex items-center gap-2.5 truncate">
-                          <div className="w-8 h-8 rounded-lg bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-300 flex items-center justify-center font-extrabold text-xs shrink-0">
-                            {(myEmployee?.firstName || user?.name || "E")[0]}
+              {(isEmployee || can("create", "leave")) && (
+                <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
+                  <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                    <Plus className="w-5 h-5 text-sky-500" />
+                    {isEmployee ? "Apply for Leave" : "Apply Leave (Employee behalf)"}
+                  </h3>
+                  <form onSubmit={handleSubmitLeave} className="space-y-3" noValidate>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Employee *</Label>
+                      {isEmployee ? (
+                        <div className="mt-1 flex items-center justify-between p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                          <div className="flex items-center gap-2.5 truncate">
+                            <div className="w-8 h-8 rounded-lg bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-300 flex items-center justify-center font-extrabold text-xs shrink-0">
+                              {(myEmployee?.firstName || user?.name || "E")[0]}
+                            </div>
+                            <div className="truncate">
+                              <span className="block font-bold text-slate-900 dark:text-white text-xs truncate">
+                                {myEmployee ? `${myEmployee.firstName} ${myEmployee.lastName}` : (user?.name || "My Account")}
+                              </span>
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">
+                                {myEmployee?.employeeId || user?.employeeCode || ""} {myEmployee?.department?.name ? `• ${myEmployee.department.name}` : ""}
+                              </span>
+                            </div>
                           </div>
-                          <div className="truncate">
-                            <span className="block font-bold text-slate-900 dark:text-white text-xs truncate">
-                              {myEmployee ? `${myEmployee.firstName} ${myEmployee.lastName}` : (user?.name || "My Account")}
-                            </span>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">
-                              {myEmployee?.employeeId || user?.employeeCode || ""} {myEmployee?.department?.name ? `• ${myEmployee.department.name}` : ""}
-                            </span>
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-200/80 dark:bg-slate-700/80 text-[10px] font-bold text-slate-600 dark:text-slate-300 shrink-0 select-none">
+                            <Lock className="w-3 h-3 text-slate-500" />
+                            Locked
                           </div>
                         </div>
-                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-200/80 dark:bg-slate-700/80 text-[10px] font-bold text-slate-600 dark:text-slate-300 shrink-0 select-none">
-                          <Lock className="w-3 h-3 text-slate-500" />
-                          Locked
+                      ) : (
+                        <div className="mt-1">
+                          <SearchableSelect
+                            options={employees.map((e) => ({
+                              value: String(e.id),
+                              label: `${e.firstName} ${e.lastName} (${e.employeeId || ""})`,
+                              subLabel: e.department?.name ? `Department: ${e.department.name}` : undefined
+                            }))}
+                            value={newLeave.employeeId}
+                            onValueChange={(val) => {
+                              setNewLeave({ ...newLeave, employeeId: val });
+                              if (formErrors.employeeId) setFormErrors({ ...formErrors, employeeId: null });
+                            }}
+                            placeholder="Search & choose employee..."
+                            searchPlaceholder="Type employee name, code, or department..."
+                            className={formErrors.employeeId ? "border-rose-500 border-2" : ""}
+                          />
                         </div>
-                      </div>
-                    ) : (
-                      <div className="mt-1">
-                        <SearchableSelect
-                          options={employees.map((e) => ({
-                            value: String(e.id),
-                            label: `${e.firstName} ${e.lastName} (${e.employeeId || ""})`,
-                            subLabel: e.department?.name ? `Department: ${e.department.name}` : undefined
-                          }))}
-                          value={newLeave.employeeId}
-                          onValueChange={(val) => {
-                            setNewLeave({ ...newLeave, employeeId: val });
-                            if (formErrors.employeeId) setFormErrors({ ...formErrors, employeeId: null });
-                          }}
-                          placeholder="Search & choose employee..."
-                          searchPlaceholder="Type employee name, code, or department..."
-                          className={formErrors.employeeId ? "border-rose-500 border-2" : ""}
-                        />
-                      </div>
-                    )}
-                    {formErrors.employeeId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.employeeId}</span>}
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Leave Type</Label>
-                    <Select value={newLeave.leaveType} onValueChange={(val) => {
-                      setNewLeave({ ...newLeave, leaveType: val });
-                      if (formErrors.leaveType) setFormErrors({ ...formErrors, leaveType: null });
-                    }}>
-                      <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                        <SelectValue placeholder="Select..." />
-                      </SelectTrigger>
-                      <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:bg-slate-900">
-                        <SelectItem value="Casual">Casual Leave</SelectItem>
-                        <SelectItem value="Sick">Sick Leave</SelectItem>
-                        <SelectItem value="Earned">Earned Leave</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {formErrors.leaveType && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.leaveType}</span>}
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Start Date</Label>
-                      <DateTimePicker type="date" date={newLeave.startDate} setDate={(val) => {
-                        setNewLeave({ ...newLeave, startDate: val });
-                        if (formErrors.startDate) setFormErrors({ ...formErrors, startDate: null });
-                      }} />
-                      {formErrors.startDate && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.startDate}</span>}
+                      )}
+                      {formErrors.employeeId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.employeeId}</span>}
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">End Date</Label>
-                      <DateTimePicker type="date" date={newLeave.endDate} setDate={(val) => {
-                        setNewLeave({ ...newLeave, endDate: val });
-                        if (formErrors.endDate) setFormErrors({ ...formErrors, endDate: null });
-                      }} />
-                      {formErrors.endDate && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.endDate}</span>}
+                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Leave Type</Label>
+                      <Select value={newLeave.leaveType} onValueChange={(val) => {
+                        setNewLeave({ ...newLeave, leaveType: val });
+                        if (formErrors.leaveType) setFormErrors({ ...formErrors, leaveType: null });
+                      }}>
+                        <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
+                          <SelectValue placeholder="Select..." />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:bg-slate-900">
+                          <SelectItem value="Casual">Casual Leave</SelectItem>
+                          <SelectItem value="Sick">Sick Leave</SelectItem>
+                          <SelectItem value="Earned">Earned Leave</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {formErrors.leaveType && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.leaveType}</span>}
                     </div>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Reason</Label>
-                    <Textarea
-                      placeholder="Reason for leave request..."
-                      className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-sm dark:bg-slate-950 h-16"
-                      value={newLeave.reason}
-                      onChange={(e) => {
-                        setNewLeave({ ...newLeave, reason: e.target.value });
-                        if (formErrors.reason) setFormErrors({ ...formErrors, reason: null });
-                      }}
-                    />
-                    {formErrors.reason && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.reason}</span>}
-                  </div>
-                  <div className="flex gap-2 pt-2">
-                    <Button type="submit" className="flex-1 bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl mt-2">
-                      {newLeave.id ? "Update Leave" : "Submit Request"}
-                    </Button>
-                    {newLeave.id && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="rounded-xl font-bold mt-2"
-                        onClick={() => {
-                          setNewLeave({ employeeId: employees[0]?.id || "", leaveType: "Casual", startDate: "", endDate: "", reason: "" });
-                          setFormErrors({});
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Start Date</Label>
+                        <DateTimePicker type="date" date={newLeave.startDate} setDate={(val) => {
+                          setNewLeave({ ...newLeave, startDate: val });
+                          if (formErrors.startDate) setFormErrors({ ...formErrors, startDate: null });
+                        }} />
+                        {formErrors.startDate && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.startDate}</span>}
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">End Date</Label>
+                        <DateTimePicker type="date" date={newLeave.endDate} setDate={(val) => {
+                          setNewLeave({ ...newLeave, endDate: val });
+                          if (formErrors.endDate) setFormErrors({ ...formErrors, endDate: null });
+                        }} />
+                        {formErrors.endDate && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.endDate}</span>}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Reason</Label>
+                      <Textarea
+                        placeholder="Reason for leave request..."
+                        className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-sm dark:bg-slate-950 h-16"
+                        value={newLeave.reason}
+                        onChange={(e) => {
+                          setNewLeave({ ...newLeave, reason: e.target.value });
+                          if (formErrors.reason) setFormErrors({ ...formErrors, reason: null });
                         }}
-                      >
-                        Cancel
+                      />
+                      {formErrors.reason && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.reason}</span>}
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                      <Button type="submit" className="flex-1 bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl mt-2">
+                        {newLeave.id ? "Update Leave" : "Submit Request"}
                       </Button>
-                    )}
-                  </div>
-                </form>
-              </div>
+                      {newLeave.id && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="rounded-xl font-bold mt-2"
+                          onClick={() => {
+                            setNewLeave({ employeeId: employees[0]?.id || "", leaveType: "Casual", startDate: "", endDate: "", reason: "" });
+                            setFormErrors({});
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                    </div>
+                  </form>
+                </div>
+              )}
 
               {/* Leave Applications DataTable */}
-              <div className="lg:col-span-2">
+              <div className={(isEmployee || can("create", "leave")) ? "lg:col-span-2" : "lg:col-span-3"}>
                 <DataTable
                   title={isEmployee ? "My Leave Requests" : "Leave Requests"}
                   lazy={!isEmployee}
@@ -3570,40 +3617,42 @@ export default function AttendanceLeavePage() {
           {activeTab === "holidays" && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Form */}
-              <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
-                <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                  <Plus className="w-5 h-5 text-sky-500" />
-                  Configure Holiday
-                </h3>
-                <form onSubmit={handleSubmitHoliday} className="space-y-3" noValidate>
-                  <div className="space-y-1">
-                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Holiday Name</Label>
-                    <Input
-                      placeholder="e.g. Christmas Day"
-                      value={newHoliday.name}
-                      onChange={(e) => {
-                        setNewHoliday({ ...newHoliday, name: e.target.value });
-                        if (formErrors.holidayName) setFormErrors({ ...formErrors, holidayName: null });
-                      }}
-                    />
-                    {formErrors.holidayName && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.holidayName}</span>}
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Date</Label>
-                    <DateTimePicker type="date" date={newHoliday.date} setDate={(val) => {
-                      setNewHoliday({ ...newHoliday, date: val });
-                      if (formErrors.holidayDate) setFormErrors({ ...formErrors, holidayDate: null });
-                    }} />
-                    {formErrors.holidayDate && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.holidayDate}</span>}
-                  </div>
-                  <Button type="submit" className="w-full bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl mt-2">
-                    Save Holiday
-                  </Button>
-                </form>
-              </div>
+              {!isEmployee && (can("create", "holiday") || can("create", "leave_master")) && (
+                <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
+                  <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                    <Plus className="w-5 h-5 text-sky-500" />
+                    Configure Holiday
+                  </h3>
+                  <form onSubmit={handleSubmitHoliday} className="space-y-3" noValidate>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Holiday Name</Label>
+                      <Input
+                        placeholder="e.g. Christmas Day"
+                        value={newHoliday.name}
+                        onChange={(e) => {
+                          setNewHoliday({ ...newHoliday, name: e.target.value });
+                          if (formErrors.holidayName) setFormErrors({ ...formErrors, holidayName: null });
+                        }}
+                      />
+                      {formErrors.holidayName && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.holidayName}</span>}
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Date</Label>
+                      <DateTimePicker type="date" date={newHoliday.date} setDate={(val) => {
+                        setNewHoliday({ ...newHoliday, date: val });
+                        if (formErrors.holidayDate) setFormErrors({ ...formErrors, holidayDate: null });
+                      }} />
+                      {formErrors.holidayDate && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.holidayDate}</span>}
+                    </div>
+                    <Button type="submit" className="w-full bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl mt-2">
+                      Save Holiday
+                    </Button>
+                  </form>
+                </div>
+              )}
 
               {/* Holiday DataTable */}
-              <div className="lg:col-span-2">
+              <div className={(!isEmployee && (can("create", "holiday") || can("create", "leave_master"))) ? "lg:col-span-2" : "lg:col-span-3"}>
                 <DataTable
                   title="Corporate Holiday Calendar"
                   lazy

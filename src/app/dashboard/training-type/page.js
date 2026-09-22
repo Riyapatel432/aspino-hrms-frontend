@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { DataTable } from "@/components/ui/data-table";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
 import { Switch } from "@/components/ui/switch";
+import { RouteGuard, usePermissions } from "@/context/PermissionContext";
 import {
   FolderTree,
   Plus,
@@ -33,8 +34,22 @@ function validateTrainingTypeName(name) {
 // Component
 // ---------------------------------------------------------------------------
 export default function TrainingTypesPage() {
+  return (
+    <RouteGuard subject="training-type" action="read">
+      <TrainingTypesContent />
+    </RouteGuard>
+  );
+}
+
+function TrainingTypesContent() {
+  const { can, isSuperAdmin } = usePermissions();
   const [trainingTypes, setTrainingTypes] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Permission guards
+  const canCreate = isSuperAdmin || can("create", "training") || can("create", "performance") || can("create", "training-type") || can("create", "training_type");
+  const canUpdate = isSuperAdmin || can("update", "training") || can("update", "performance") || can("update", "training-type") || can("update", "training_type");
+  const canDelete = isSuperAdmin || can("delete", "training") || can("delete", "performance") || can("delete", "training-type") || can("delete", "training_type");
 
   // Server-side Data Handling state
   const [page, setPage] = useState(1);
@@ -50,6 +65,8 @@ export default function TrainingTypesPage() {
   const [editingId, setEditingId] = useState(null);
   const [nameError, setNameError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const showForm = canCreate || (editingId && canUpdate);
 
   // Delete dialog state
   const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
@@ -96,6 +113,10 @@ export default function TrainingTypesPage() {
   // Form helpers
   // ---------------------------------------------------------------------------
   function startEditing(type) {
+    if (!canUpdate) {
+      toast.error("You do not have permission to edit training types");
+      return;
+    }
     setEditingId(type.id);
     setFormName(type.name);
     setFormIsActive(type.isActive !== false);
@@ -114,6 +135,10 @@ export default function TrainingTypesPage() {
   // ---------------------------------------------------------------------------
   async function handleSubmit(e) {
     e.preventDefault();
+    if (editingId ? !canUpdate : !canCreate) {
+      toast.error(`You do not have permission to ${editingId ? "update" : "create"} training types.`);
+      return;
+    }
     const error = validateTrainingTypeName(formName);
     if (error) {
       setNameError(error);
@@ -150,7 +175,10 @@ export default function TrainingTypesPage() {
   }
 
   async function handleDelete() {
-    if (!deleteTarget) return;
+    if (!deleteTarget || !canDelete) {
+      toast.error("You do not have permission to delete training types");
+      return;
+    }
     setDeleting(true);
     try {
       const res = await apiFetch(`${API_URL}/staff-hrms/recruitment/training-types/${deleteTarget.id}`, {
@@ -174,6 +202,10 @@ export default function TrainingTypesPage() {
   }
 
   async function handleToggleStatus(row) {
+    if (!canUpdate) {
+      toast.error("You do not have permission to update status");
+      return;
+    }
     const nextStatus = row.isActive !== false ? false : true;
     try {
       const res = await apiFetch(`${API_URL}/staff-hrms/recruitment/training-types/${row.id}`, {
@@ -205,78 +237,75 @@ export default function TrainingTypesPage() {
         </h2>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center items-center py-20" aria-label="Loading training types">
-          <Loader2 className="w-8 h-8 text-sky-500 animate-spin" />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className={showForm ? "grid grid-cols-1 lg:grid-cols-3 gap-6" : "space-y-6"}>
           {/* Form Card */}
-          <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
-            <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-              <Plus className="w-5 h-5 text-sky-500" aria-hidden="true" />
-              {editingId ? "Edit Training Type" : "Create Training Type"}
-            </h3>
-            <form onSubmit={handleSubmit} className="space-y-3" noValidate>
-              <div className="space-y-1">
-                <Label htmlFor="type-name" className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                  Training Type Name
-                </Label>
-                <Input
-                  id="type-name"
-                  placeholder="e.g. GMP Compliance"
-                  value={formName}
-                  aria-invalid={!!nameError}
-                  aria-describedby={nameError ? "type-name-error" : undefined}
-                  onChange={(e) => {
-                    setFormName(e.target.value);
-                    if (nameError) setNameError(null);
-                  }}
-                />
-                {nameError && (
-                  <span id="type-name-error" className="text-rose-500 text-[10.5px] font-bold block mt-0.5" role="alert">
-                    {nameError}
-                  </span>
-                )}
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                  Status
-                </Label>
-                <div className="flex items-center gap-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-2.5 rounded-xl">
-                  <Switch
-                    checked={formIsActive}
-                    onCheckedChange={setFormIsActive}
+          {showForm && (
+            <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
+              <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                <Plus className="w-5 h-5 text-sky-500" aria-hidden="true" />
+                {editingId ? "Edit Training Type" : "Create Training Type"}
+              </h3>
+              <form onSubmit={handleSubmit} className="space-y-3" noValidate>
+                <div className="space-y-1">
+                  <Label htmlFor="type-name" className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                    Training Type Name
+                  </Label>
+                  <Input
+                    id="type-name"
+                    placeholder="e.g. GMP Compliance"
+                    value={formName}
+                    aria-invalid={!!nameError}
+                    aria-describedby={nameError ? "type-name-error" : undefined}
+                    onChange={(e) => {
+                      setFormName(e.target.value);
+                      if (nameError) setNameError(null);
+                    }}
                   />
-                  <span className={`text-xs font-bold ${formIsActive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`}>
-                    {formIsActive ? "Active" : "Inactive"}
-                  </span>
+                  {nameError && (
+                    <span id="type-name-error" className="text-rose-500 text-[10.5px] font-bold block mt-0.5" role="alert">
+                      {nameError}
+                    </span>
+                  )}
                 </div>
-              </div>
-              <div className="flex gap-2 pt-2">
-                <Button
-                  type="submit"
-                  disabled={submitting}
-                  className="flex-1 bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl"
-                >
-                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : editingId ? "Update" : "Save"}
-                </Button>
-                {editingId && (
+                <div className="space-y-1">
+                  <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                    Status
+                  </Label>
+                  <div className="flex items-center gap-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-2.5 rounded-xl">
+                    <Switch
+                      checked={formIsActive}
+                      onCheckedChange={setFormIsActive}
+                    />
+                    <span className={`text-xs font-bold ${formIsActive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`}>
+                      {formIsActive ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-2">
                   <Button
-                    type="button"
-                    variant="outline"
-                    className="rounded-xl font-bold"
-                    onClick={cancelEdit}
+                    type="submit"
+                    disabled={submitting}
+                    className="flex-1 bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl"
                   >
-                    Cancel
+                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : editingId ? "Update" : "Save"}
                   </Button>
-                )}
-              </div>
-            </form>
-          </div>
+                  {editingId && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-xl font-bold"
+                      onClick={cancelEdit}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+              </form>
+            </div>
+          )}
 
           {/* List Card */}
-          <div className="lg:col-span-2">
+          <div className={showForm ? "lg:col-span-2" : "w-full"}>
             <DataTable
               title="All Training Types"
               lazy
@@ -331,22 +360,26 @@ export default function TrainingTypesPage() {
                   sortable: false,
                   render: (row) => (
                     <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => startEditing(row)}
-                        className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all cursor-pointer"
-                        title={`Edit training type ${row.name}`}
-                        aria-label={`Edit training type ${row.name}`}
-                      >
-                        <Edit className="w-4 h-4" aria-hidden="true" />
-                      </button>
-                      <button
-                        onClick={() => setDeleteTarget({ id: row.id, name: row.name })}
-                        className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all cursor-pointer"
-                        title={`Delete training type ${row.name}`}
-                        aria-label={`Delete training type ${row.name}`}
-                      >
-                        <Trash2 className="w-4 h-4" aria-hidden="true" />
-                      </button>
+                      {canUpdate && (
+                        <button
+                          onClick={() => startEditing(row)}
+                          className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all cursor-pointer"
+                          title={`Edit training type ${row.name}`}
+                          aria-label={`Edit training type ${row.name}`}
+                        >
+                          <Edit className="w-4 h-4" aria-hidden="true" />
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          onClick={() => setDeleteTarget({ id: row.id, name: row.name })}
+                          className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all cursor-pointer"
+                          title={`Delete training type ${row.name}`}
+                          aria-label={`Delete training type ${row.name}`}
+                        >
+                          <Trash2 className="w-4 h-4" aria-hidden="true" />
+                        </button>
+                      )}
                     </div>
                   ),
                 },
@@ -354,7 +387,6 @@ export default function TrainingTypesPage() {
             />
           </div>
         </div>
-      )}
 
       {/* Delete Confirmation Dialog */}
       <DeleteConfirmDialog
