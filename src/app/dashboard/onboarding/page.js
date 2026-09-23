@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { DataTable } from "@/components/ui/data-table";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
-import { RouteGuard } from "@/context/PermissionContext";
+import { RouteGuard, usePermissions } from "@/context/PermissionContext";
 import {
   UserCheck,
   FileCheck,
@@ -38,6 +38,11 @@ export default function OnboardingPage() {
 }
 
 function OnboardingPageContent() {
+  const { can } = usePermissions();
+  const canCreate = can("create", "onboarding");
+  const canUpdate = can("update", "onboarding");
+  const canDelete = can("delete", "onboarding");
+
   const [employees, setEmployees] = useState([]);
   const [banks, setBanks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -376,17 +381,19 @@ function OnboardingPageContent() {
           >
             {selectedEmp?.id === row.id ? "Selected" : "Manage"}
           </Button>
-          <button
-            onClick={() => setDeleteTarget({ id: row.id, name: `${row.firstName} ${row.lastName}` })}
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all cursor-pointer"
-            title="Delete Employee"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {canDelete && (
+            <button
+              onClick={() => setDeleteTarget({ id: row.id, name: `${row.firstName} ${row.lastName}` })}
+              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all cursor-pointer"
+              title="Delete Employee"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       ),
     },
-  ], [selectedEmp?.id]);
+  ], [selectedEmp?.id, canDelete]);
 
   return (
     <div className="space-y-6">
@@ -544,26 +551,28 @@ function OnboardingPageContent() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2 mt-1">
-                            <label className="flex-1">
-                              <span className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-[11px] font-bold cursor-pointer hover:bg-slate-100 dark:bg-slate-500/10 dark:hover:bg-slate-750 transition-colors">
-                                <Upload className="w-3.5 h-3.5" />{" "}
-                                {doc.fileUrl
-                                  ? (doc.documentType.startsWith('Education') || doc.documentType.startsWith('Previous Employment')
-                                    ? "Upload More"
-                                    : "Re-upload")
-                                  : "Upload File"}
-                              </span>
-                              <Input
-                                type="file"
-                                accept="image/*,.pdf,.doc,.docx"
-                                className="hidden"
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) handleUploadDoc(doc.id, file);
-                                }}
-                              />
-                            </label>
-                            {doc.status === 'SUBMITTED' && (
+                            {canUpdate && (
+                              <label className="flex-1">
+                                <span className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-[11px] font-bold cursor-pointer hover:bg-slate-100 dark:bg-slate-500/10 dark:hover:bg-slate-750 transition-colors">
+                                  <Upload className="w-3.5 h-3.5" />{" "}
+                                  {doc.fileUrl
+                                    ? (doc.documentType.startsWith('Education') || doc.documentType.startsWith('Previous Employment')
+                                      ? "Upload More"
+                                      : "Re-upload")
+                                    : "Upload File"}
+                                </span>
+                                <Input
+                                  type="file"
+                                  accept="image/*,.pdf,.doc,.docx"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleUploadDoc(doc.id, file);
+                                  }}
+                                />
+                              </label>
+                            )}
+                            {canUpdate && doc.status === 'SUBMITTED' && (
                               <Button size="sm" onClick={() => handleUpdateDocStatus(doc.id, 'VERIFIED')} className="bg-emerald-500 dark:bg-emerald-600 hover:bg-emerald-600 text-white rounded-xl text-[11px] font-bold h-8.5 px-3">
                                 Verify
                               </Button>
@@ -591,6 +600,7 @@ function OnboardingPageContent() {
                         ].map((access) => (
                           <label key={access.id} className="flex items-center gap-3 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300">
                             <Checkbox
+                              disabled={!canUpdate}
                               checked={sysAccess[access.id]}
                               onCheckedChange={(checked) => setSysAccess({ ...sysAccess, [access.id]: checked })}
                               className="mt-0.5"
@@ -599,9 +609,11 @@ function OnboardingPageContent() {
                           </label>
                         ))}
                       </div>
-                      <Button type="submit" className="bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl h-10 px-5">
-                        Save System Access
-                      </Button>
+                      {canUpdate && (
+                        <Button type="submit" className="bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl h-10 px-5">
+                          Save System Access
+                        </Button>
+                      )}
                     </form>
                   </div>
                 )}
@@ -619,7 +631,7 @@ function OnboardingPageContent() {
                           <div>Trainer Name: <strong className="text-slate-800 dark:text-slate-200">{selectedEmp.induction.trainer}</strong></div>
                           <div>Status: <strong className="text-sky-500">{selectedEmp.induction.status}</strong></div>
                         </div>
-                        {selectedEmp.induction.status === 'SCHEDULED' && (
+                        {canUpdate && selectedEmp.induction.status === 'SCHEDULED' && (
                           <Button
                             size="sm"
                             onClick={() => handleUpdateInductionStatus(selectedEmp.induction.id, 'COMPLETED')}
@@ -629,7 +641,7 @@ function OnboardingPageContent() {
                           </Button>
                         )}
                       </div>
-                    ) : (
+                    ) : (canCreate || canUpdate) ? (
                       <form onSubmit={handleCreateInduction} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end" noValidate>
                         <div className="space-y-1">
                           <Label className="text-xs font-bold text-slate-650 dark:text-slate-300">Schedule Date</Label>
@@ -652,6 +664,8 @@ function OnboardingPageContent() {
                           Schedule Orientation
                         </Button>
                       </form>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic">No orientation scheduled yet.</p>
                     )}
                   </div>
                 )}
@@ -689,7 +703,7 @@ function OnboardingPageContent() {
                       <div className="text-xs font-medium text-slate-500 leading-relaxed">
                         All new hires start with a **6-month probation period**. Once orientation and document collection are completed, review performance to confirm full payroll status.
                       </div>
-                      {selectedEmp.probationStatus === 'UNDER_REVIEW' ? (
+                      {selectedEmp.probationStatus === 'UNDER_REVIEW' && canUpdate ? (
                         <div className="flex gap-2 shrink-0">
                           <Button
                             onClick={() => {

@@ -140,13 +140,150 @@ export function PermissionProvider({ children }) {
       if (!ability) return false;
       if (isSuperAdmin) return true;
       if (subject) {
-        return ability.can(action, subject);
+        const act = String(action).toLowerCase().trim();
+        const subj = String(subject).toLowerCase().trim();
+
+        const aliases = [subj, subj.replace(/-/g, "_"), subj.replace(/_/g, "-")];
+        if (subj === "recruitment" || subj === "recruitments") {
+          aliases.push("recruitment", "recruitments");
+        } else if (
+          subj === "requisitions" ||
+          subj === "requisition" ||
+          subj === "job_requisitions" ||
+          subj === "job_requisition" ||
+          subj === "job-requisitions" ||
+          subj === "job-requisition"
+        ) {
+          aliases.push("requisition", "requisitions", "job_requisitions", "job-requisitions", "job_requisition", "job-requisition");
+        } else if (subj === "candidates" || subj === "candidate") {
+          aliases.push("candidates", "candidate");
+        } else if (
+          subj === "interviews" ||
+          subj === "interview" ||
+          subj === "interview_scheduling" ||
+          subj === "interview-scheduling" ||
+          subj === "schedules" ||
+          subj === "schedule"
+        ) {
+          aliases.push("interview", "interviews", "interview_scheduling", "interview-scheduling", "schedules", "schedule");
+        } else if (
+          subj === "offers" ||
+          subj === "offer" ||
+          subj === "offer_letters" ||
+          subj === "offer_letter" ||
+          subj === "offer-letters" ||
+          subj === "offer-letter"
+        ) {
+          aliases.push("offer", "offers", "offer_letter", "offer_letters", "offer-letter", "offer-letters");
+        } else if (subj === "onboarding" || subj === "onboardings") {
+          aliases.push("onboarding", "onboardings");
+        } else if (subj === "exit" || subj === "exits" || subj === "exit_process" || subj === "exit-process") {
+          aliases.push("exit", "exits", "exit_process", "exit-process");
+        } else if (
+          subj === "resignation" ||
+          subj === "clearance" ||
+          subj === "resignation_clearance" ||
+          subj === "resignation-clearance"
+        ) {
+          aliases.push("resignation", "clearance", "resignation_clearance", "resignation-clearance");
+        } else if (
+          subj === "settlement" ||
+          subj === "settlements" ||
+          subj === "fnf_settlement" ||
+          subj === "fnf-settlement" ||
+          subj === "fnf"
+        ) {
+          aliases.push("settlement", "settlements", "fnf_settlement", "fnf-settlement", "fnf");
+        } else if (
+          subj === "letter" ||
+          subj === "letters" ||
+          subj === "relieving_letters" ||
+          subj === "relieving-letters" ||
+          subj === "relieving_letter" ||
+          subj === "relieving-letter"
+        ) {
+          aliases.push("letter", "letters", "relieving_letter", "relieving-letter", "relieving_letters", "relieving-letters");
+        } else if (
+          subj === "salary_structures" ||
+          subj === "salary-structures" ||
+          subj === "salary_structure" ||
+          subj === "salary-structure"
+        ) {
+          aliases.push("salary_structures", "salary-structures", "salary_structure", "salary-structure");
+        } else if (
+          subj === "hra_tax" ||
+          subj === "hra-tax" ||
+          subj === "hratax" ||
+          subj === "tax"
+        ) {
+          aliases.push("hra_tax", "hra-tax", "hratax", "tax");
+        } else if (
+          subj === "loans" ||
+          subj === "loan" ||
+          subj === "advances" ||
+          subj === "advance"
+        ) {
+          aliases.push("loans", "loan", "advances", "advance");
+        } else if (
+          subj === "monthly_run" ||
+          subj === "monthly-run" ||
+          subj === "payroll_run" ||
+          subj === "payroll-run"
+        ) {
+          aliases.push("monthly_run", "monthly-run", "payroll_run", "payroll-run");
+        } else if (
+          subj === "payslips" ||
+          subj === "payslip"
+        ) {
+          aliases.push("payslips", "payslip");
+        } else if (
+          subj === "reports" ||
+          subj === "report" ||
+          subj === "payroll_reports" ||
+          subj === "payroll-reports"
+        ) {
+          aliases.push("reports", "report", "payroll_reports", "payroll-reports");
+        }
+
+        for (const s of aliases) {
+          if (ability.can(act, s) || ability.can("manage", s)) return true;
+        }
+
+        if (Array.isArray(permissions)) {
+          const directNames = [];
+          for (const s of aliases) {
+            directNames.push(
+              `${act}-${s}`,
+              `${act}_${s}`,
+              `${act}:${s}`,
+              `${s}:${act}`,
+              `${s}-${act}`
+            );
+          }
+
+          if (
+            permissions.some((p) => {
+              const pName = (p.name || "").toLowerCase().trim();
+              const pMod = (p.module || "").toLowerCase().trim();
+              const pAct = (p.action || "").toLowerCase().trim();
+              return (
+                directNames.includes(pName) ||
+                pName === act ||
+                (pAct === act && aliases.includes(pMod)) ||
+                (pAct === "manage" && aliases.includes(pMod))
+              );
+            })
+          ) {
+            return true;
+          }
+        }
+        return false;
       }
       if (typeof action === "string") {
-        const actLower = action.toLowerCase();
+        const actLower = action.toLowerCase().trim();
         if (
           Array.isArray(permissions) &&
-          permissions.some((p) => (p.name || "").toLowerCase() === actLower)
+          permissions.some((p) => (p.name || "").toLowerCase().trim() === actLower)
         ) {
           return true;
         }

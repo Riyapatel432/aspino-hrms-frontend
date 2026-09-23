@@ -69,8 +69,12 @@ import {
 
 
 export default function HraTaxTab() {
-  const { isEmployee, user } = usePermissions();
+  const { isEmployee, user, can } = usePermissions();
   const dispatch = useDispatch();
+
+  const canCreateHra = can("create", "hra_tax") || can("create", "payroll");
+  const canUpdateHra = can("update", "hra_tax") || can("update", "payroll");
+  const canDeleteHra = can("delete", "hra_tax") || can("delete", "payroll");
   const {
     employees = [],
     salaryStructures = [],
@@ -571,51 +575,53 @@ export default function HraTaxTab() {
       sortable: false,
       render: (row) => (
         <div className="flex items-center gap-2">
-          {row.status === "SUBMITTED" && (
+          {canUpdateHra && row.status === "SUBMITTED" && (
             <>
               <Button size="sm" className="bg-emerald-600 text-white h-7 text-xs rounded-lg" onClick={() => handleVerifyRent(row.id, "APPROVED")}>Approve</Button>
               <Button size="sm" variant="outline" className="h-7 text-xs text-rose-600 rounded-lg" onClick={() => handleVerifyRent(row.id, "REJECTED")}>Reject</Button>
             </>
           )}
-          <button
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-sky-500 hover:text-white hover:border-sky-500 dark:hover:bg-sky-500 rounded-lg transition-all cursor-pointer"
-            title="Edit Receipt"
-            onClick={() => {
-              let houseNo = row.houseNo || "";
-              let landmark = row.landmark || "";
-              let city = row.city || "";
-              if (!houseNo && !landmark && !city && row.landlordAddress) {
-                const parts = row.landlordAddress.split(",").map(p => p.trim()).filter(Boolean);
-                if (parts.length >= 3) {
-                  houseNo = parts[0];
-                  city = parts[parts.length - 1];
-                  landmark = parts.slice(1, -1).join(", ");
-                } else if (parts.length === 2) {
-                  houseNo = parts[0];
-                  city = parts[1];
-                } else {
-                  houseNo = row.landlordAddress;
+          {canUpdateHra && (
+            <button
+              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-sky-500 hover:text-white hover:border-sky-500 dark:hover:bg-sky-500 rounded-lg transition-all cursor-pointer"
+              title="Edit Receipt"
+              onClick={() => {
+                let houseNo = row.houseNo || "";
+                let landmark = row.landmark || "";
+                let city = row.city || "";
+                if (!houseNo && !landmark && !city && row.landlordAddress) {
+                  const parts = row.landlordAddress.split(",").map(p => p.trim()).filter(Boolean);
+                  if (parts.length >= 3) {
+                    houseNo = parts[0];
+                    city = parts[parts.length - 1];
+                    landmark = parts.slice(1, -1).join(", ");
+                  } else if (parts.length === 2) {
+                    houseNo = parts[0];
+                    city = parts[1];
+                  } else {
+                    houseNo = row.landlordAddress;
+                  }
                 }
-              }
 
-              setRentForm({
-                id: row.id,
-                employeeId: row.employeeId,
-                financialYear: row.financialYear,
-                landlordName: row.landlordName,
-                landlordPan: row.landlordPan || "",
-                houseNo,
-                landmark,
-                city,
-                landlordAddress: row.landlordAddress || "",
-                monthlyRent: String(row.monthlyRent),
-              });
-              setRentErrors({});
-              setIsRentOpen(true);
-            }}
-          >
-            <Edit className="w-4 h-4" />
-          </button>
+                setRentForm({
+                  id: row.id,
+                  employeeId: row.employeeId,
+                  financialYear: row.financialYear,
+                  landlordName: row.landlordName,
+                  landlordPan: row.landlordPan || "",
+                  houseNo,
+                  landmark,
+                  city,
+                  landlordAddress: row.landlordAddress || "",
+                  monthlyRent: String(row.monthlyRent),
+                });
+                setRentErrors({});
+                setIsRentOpen(true);
+              }}
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+          )}
         </div>
       )
     }
@@ -707,35 +713,36 @@ export default function HraTaxTab() {
                 <h3 className="font-bold text-slate-900 dark:text-slate-100">Submit Rent Receipts</h3>
                 <p className="text-xs text-slate-500 mt-1">Upload monthly rent paid & landlord details for HR/Finance verification.</p>
               </div>
-              <Dialog open={isRentOpen} onOpenChange={setIsRentOpen}>
-                <DialogTrigger asChild>
-                  <Button className="mt-4 bg-sky-600 hover:bg-sky-700 text-white rounded-xl gap-2 text-xs py-2.5 shadow-md" onClick={() => {
-                    setRentForm({
-                      employeeId: employees[0]?.id || "",
-                      financialYear: activeFinancialYear || "2026-2027",
-                      landlordName: "",
-                      landlordPan: "",
-                      houseNo: "",
-                      landmark: "",
-                      city: "",
-                      landlordAddress: "",
-                      monthlyRent: "",
-                    });
-                    setRentErrors({});
-                  }}>
-                    <Plus className="size-4" /> Submit Rent Details
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-2xl sm:max-w-2xl border-0 shadow-2xl rounded-3xl p-0 overflow-hidden bg-slate-50 dark:bg-slate-950">
-                  <div className="bg-gradient-to-r from-indigo-900 to-purple-900 p-6 text-white">
-                    <DialogTitle className="text-xl font-extrabold tracking-tight flex items-center gap-2">
-                      <Home className="size-5 text-indigo-300" /> {rentForm.id ? "Edit Rent Details for HRA Exemption" : "Submit Rent Details for HRA Exemption"}
-                    </DialogTitle>
-                    <DialogDescription className="text-indigo-200 text-xs mt-1">
-                      Enter landlord PAN, rental address, and monthly rent amount to trigger Rule 2A HRA tax exemption computation.
-                    </DialogDescription>
-                  </div>
-                  <form onSubmit={handleSubmitRent} className="p-6 space-y-5">
+              {canCreateHra && (
+                <Dialog open={isRentOpen} onOpenChange={setIsRentOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="mt-4 bg-sky-600 hover:bg-sky-700 text-white rounded-xl gap-2 text-xs py-2.5 shadow-md" onClick={() => {
+                      setRentForm({
+                        employeeId: employees[0]?.id || "",
+                        financialYear: activeFinancialYear || "2026-2027",
+                        landlordName: "",
+                        landlordPan: "",
+                        houseNo: "",
+                        landmark: "",
+                        city: "",
+                        landlordAddress: "",
+                        monthlyRent: "",
+                      });
+                      setRentErrors({});
+                    }}>
+                      <Plus className="size-4" /> Submit Rent Details
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-2xl sm:max-w-2xl border-0 shadow-2xl rounded-3xl p-0 overflow-hidden bg-slate-50 dark:bg-slate-950">
+                    <div className="bg-gradient-to-r from-indigo-900 to-purple-900 p-6 text-white">
+                      <DialogTitle className="text-xl font-extrabold tracking-tight flex items-center gap-2">
+                        <Home className="size-5 text-indigo-300" /> {rentForm.id ? "Edit Rent Details for HRA Exemption" : "Submit Rent Details for HRA Exemption"}
+                      </DialogTitle>
+                      <DialogDescription className="text-indigo-200 text-xs mt-1">
+                        Enter landlord PAN, rental address, and monthly rent amount to trigger Rule 2A HRA tax exemption computation.
+                      </DialogDescription>
+                    </div>
+                    <form onSubmit={handleSubmitRent} className="p-6 space-y-5">
                     <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border space-y-4">
                       <div>
                         <Label className="text-xs font-semibold">Employee *</Label>
@@ -943,6 +950,7 @@ export default function HraTaxTab() {
                   </form>
                 </DialogContent>
               </Dialog>
+              )}
             </Card>
 
             {/* ENHANCED MODAL 3: TAX DECLARATION */}
@@ -951,22 +959,23 @@ export default function HraTaxTab() {
                 <h3 className="font-bold text-slate-900 dark:text-slate-100">Tax Regime Declaration</h3>
                 <p className="text-xs text-slate-500 mt-1">Declare 80C, 80D, 80G deductions for annual TDS calculation.</p>
               </div>
-              <Dialog open={isTaxOpen} onOpenChange={setIsTaxOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" className="mt-4 rounded-xl gap-2 text-xs py-2.5 border-sky-200 text-sky-700 hover:bg-sky-50">
-                    <FileText className="size-4" /> Declare Investments (80C / 80D)
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-2xl sm:max-w-2xl border-0 shadow-2xl rounded-3xl p-0 overflow-hidden bg-slate-50 dark:bg-slate-950">
-                  <div className="bg-gradient-to-r from-slate-900 to-sky-900 p-6 text-white">
-                    <DialogTitle className="text-xl font-extrabold tracking-tight flex items-center gap-2">
-                      <FileText className="size-5 text-sky-400" /> Income Tax Declaration & Regime Selection
-                    </DialogTitle>
-                    <DialogDescription className="text-slate-300 text-xs mt-1">
-                      Choose Old vs New Tax Regime and submit eligible Chapter VI-A investment proofs.
-                    </DialogDescription>
-                  </div>
-                  <form onSubmit={handleSubmitTax} className="p-6 space-y-5">
+              {canCreateHra && (
+                <Dialog open={isTaxOpen} onOpenChange={setIsTaxOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" className="mt-4 rounded-xl gap-2 text-xs py-2.5 border-sky-200 text-sky-700 hover:bg-sky-50">
+                      <FileText className="size-4" /> Declare Investments (80C / 80D)
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-2xl sm:max-w-2xl border-0 shadow-2xl rounded-3xl p-0 overflow-hidden bg-slate-50 dark:bg-slate-950">
+                    <div className="bg-gradient-to-r from-slate-900 to-sky-900 p-6 text-white">
+                      <DialogTitle className="text-xl font-extrabold tracking-tight flex items-center gap-2">
+                        <FileText className="size-5 text-sky-400" /> Income Tax Declaration & Regime Selection
+                      </DialogTitle>
+                      <DialogDescription className="text-slate-300 text-xs mt-1">
+                        Choose Old vs New Tax Regime and submit eligible Chapter VI-A investment proofs.
+                      </DialogDescription>
+                    </div>
+                    <form onSubmit={handleSubmitTax} className="p-6 space-y-5">
                     <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border space-y-4">
                       <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -1078,6 +1087,7 @@ export default function HraTaxTab() {
                   </form>
                 </DialogContent>
               </Dialog>
+              )}
             </Card>
           </div>
 

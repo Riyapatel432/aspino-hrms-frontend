@@ -136,34 +136,15 @@ export function getExpectedIfscPrefixes(bankName) {
 }
 
 export default function SalaryStructuresTab() {
-  const { isEmployee, isSuperAdmin, role, can, user } = usePermissions();
+  const { isEmployee, isSuperAdmin, can, user } = usePermissions();
   const dispatch = useDispatch();
 
-  const canManageSalary = useMemo(() => {
-    const extractRoleName = (r) => {
-      if (!r) return "";
-      if (typeof r === "string") return r;
-      if (typeof r === "object") return r.name || r.role || r.displayName || "";
-      return String(r);
-    };
-    const rName = (
-      extractRoleName(role) ||
-      extractRoleName(user?.role) ||
-      extractRoleName(user?.roleRelation?.name) ||
-      ""
-    ).toUpperCase();
+  const canReadSalary = isSuperAdmin || can("read", "salary_structures") || can("read", "salary_structure") || can("read", "salary-structures");
+  const canCreateSalary = isSuperAdmin || can("create", "salary_structures") || can("create", "salary_structure") || can("create", "salary-structures");
+  const canUpdateSalary = isSuperAdmin || can("update", "salary_structures") || can("update", "salary_structure") || can("update", "salary-structures");
+  const canDeleteSalary = isSuperAdmin || can("delete", "salary_structures") || can("delete", "salary_structure") || can("delete", "salary-structures");
 
-    return (
-      rName.includes("HR") ||
-      rName.includes("ADMIN") ||
-      rName.includes("MANAGER") ||
-      isSuperAdmin ||
-      can("manage", "payroll") ||
-      can("update", "payroll") ||
-      can("create", "payroll") ||
-      !isEmployee
-    );
-  }, [role, user, isSuperAdmin, isEmployee, can]);
+  const canManageSalary = canCreateSalary || canUpdateSalary;
   const {
     employees = [],
     salaryStructures = [],
@@ -925,54 +906,58 @@ export default function SalaryStructuresTab() {
       },
     ];
 
-    if (canManageSalary) {
+    if (canUpdateSalary || canDeleteSalary) {
       cols.push({
         key: "actions",
         label: "Actions",
         sortable: false,
         render: (row) => (
           <div className="flex items-center gap-2 justify-end">
-            <button
-              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-sky-500 hover:text-white hover:border-sky-500 dark:hover:bg-sky-500 rounded-lg transition-all cursor-pointer"
-              title="Edit Structure"
-              onClick={() => {
-                setStructForm({
-                  employeeId: row.employeeId,
-                  basicSalary: row.basicSalary,
-                  hraAmount: row.hraAmount,
-                  da: row.da,
-                  conveyance: row.conveyance,
-                  specialAllowance: row.specialAllowance,
-                  statutoryBonus: row.statutoryBonus,
-                  reimbursements: row.reimbursements,
-                  pfAmount: row.pfAmount,
-                  esiAmount: row.esiAmount,
-                  ptAmount: row.ptAmount,
-                  taxRegime: row.taxRegime,
-                  bankId: row.employee?.bankId || row.employee?.bank?.id || "",
-                  accountNumber: row.employee?.accountNumber || "",
-                  ifscCode: row.employee?.ifscCode || "",
-                  panNumber: row.employee?.panNumber || "",
-                });
-                setIsStructureOpen(true);
-              }}
-            >
-              <Edit className="w-4 h-4" />
-            </button>
-            <button
-              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all cursor-pointer"
-              title="Delete Structure"
-              onClick={() => setDeleteStructId(row.id)}
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+            {canUpdateSalary && (
+              <button
+                className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-sky-500 hover:text-white hover:border-sky-500 dark:hover:bg-sky-500 rounded-lg transition-all cursor-pointer"
+                title="Edit Structure"
+                onClick={() => {
+                  setStructForm({
+                    employeeId: row.employeeId,
+                    basicSalary: row.basicSalary,
+                    hraAmount: row.hraAmount,
+                    da: row.da,
+                    conveyance: row.conveyance,
+                    specialAllowance: row.specialAllowance,
+                    statutoryBonus: row.statutoryBonus,
+                    reimbursements: row.reimbursements,
+                    pfAmount: row.pfAmount,
+                    esiAmount: row.esiAmount,
+                    ptAmount: row.ptAmount,
+                    taxRegime: row.taxRegime,
+                    bankId: row.employee?.bankId || row.employee?.bank?.id || "",
+                    accountNumber: row.employee?.accountNumber || "",
+                    ifscCode: row.employee?.ifscCode || "",
+                    panNumber: row.employee?.panNumber || "",
+                  });
+                  setIsStructureOpen(true);
+                }}
+              >
+                <Edit className="w-4 h-4" />
+              </button>
+            )}
+            {canDeleteSalary && (
+              <button
+                className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all cursor-pointer"
+                title="Delete Structure"
+                onClick={() => setDeleteStructId(row.id)}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
           </div>
         ),
       });
     }
 
     return cols;
-  }, [canManageSalary, banks]);
+  }, [canUpdateSalary, canDeleteSalary, banks]);
 
   const rentReceiptColumns = [
     {

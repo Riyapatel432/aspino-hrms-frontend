@@ -210,6 +210,10 @@ export function RolesManagerContent() {
       if (key === "departments") key = "department";
       if (key === "employees") key = "employee";
       if (key === "leaves") key = "leave";
+      if (key === "holidays") key = "holiday";
+      if (key === "shifts") key = "shift";
+      if (key === "shift_rosters" || key === "rosters" || key === "roster") key = "shift_roster";
+      if (key === "leave_masters" || key === "leave_master") key = "leave_master";
       if (key === "training_types" || key === "training_type") key = "training";
       if (key === "interview_rounds") key = "interview_round";
       if (key === "payroll_hra" || key === "payroll_loans" || key === "payroll_run") key = "payroll";
@@ -1494,9 +1498,31 @@ export function RolesManagerContent() {
                 className="text-xs h-10 rounded-xl bg-muted/50 border-border font-mono font-bold focus-visible:ring-sky-500"
               />
               {permModalMode === "create" && (
-                <p className="text-[11px] text-muted-foreground">
-                  You can enter multiple comma-separated permissions at once.
-                </p>
+                <div className="space-y-1.5 pt-1">
+                  <p className="text-[11px] text-muted-foreground font-semibold">
+                    Quick suggestions (click to append):
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      { label: "+ Shift Schedule (HOD)", val: "read-shift_roster, create-shift_roster, update-shift_roster, delete-shift_roster" },
+                      { label: "+ Shift Master", val: "read-shift, create-shift, update-shift, delete-shift" },
+                      { label: "+ Leave Requests", val: "read-leave, create-leave, update-leave, delete-leave, approve-leave, reject-leave" },
+                      { label: "+ Holiday Config", val: "read-holiday, create-holiday, update-holiday, delete-holiday" },
+                      { label: "+ Attendance Logs", val: "read-attendance, create-attendance, update-attendance, delete-attendance, import-attendance, export-attendance" },
+                    ].map((s) => (
+                      <button
+                        key={s.label}
+                        type="button"
+                        onClick={() => {
+                          setPermInputCodes((prev) => (prev ? `${prev}, ${s.val}` : s.val));
+                        }}
+                        className="text-[10px] font-bold px-2 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 hover:bg-sky-100 cursor-pointer transition-colors"
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
 

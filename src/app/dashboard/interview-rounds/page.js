@@ -49,9 +49,9 @@ function InterviewRoundsContent() {
   const [loading, setLoading] = useState(true);
 
   // Permission guards
-  const canCreate = isSuperAdmin || can("create", "recruitment") || can("create", "interview-rounds") || can("create", "interview_round") || can("create", "interview_rounds");
-  const canUpdate = isSuperAdmin || can("update", "recruitment") || can("update", "interview-rounds") || can("update", "interview_round") || can("update", "interview_rounds");
-  const canDelete = isSuperAdmin || can("delete", "recruitment") || can("delete", "interview-rounds") || can("delete", "interview_round") || can("delete", "interview_rounds");
+  const canCreate = isSuperAdmin || can("create", "interview-rounds") || can("create", "interview_round") || can("create", "interview_rounds");
+  const canUpdate = isSuperAdmin || can("update", "interview-rounds") || can("update", "interview_round") || can("update", "interview_rounds");
+  const canDelete = isSuperAdmin || can("delete", "interview-rounds") || can("delete", "interview_round") || can("delete", "interview_rounds");
 
   // Server-side Data Handling state
   const [page, setPage] = useState(1);

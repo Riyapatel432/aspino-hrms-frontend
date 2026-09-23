@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useState, useMemo, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, getErrorMessage } from "@/lib/api";
 import { usePermissions } from "@/context/PermissionContext";
 import { cn } from "@/lib/utils";
@@ -99,30 +99,72 @@ export const formatDateDDMMYYYY = (dateVal) => {
 };
 
 export default function AttendanceLeavePage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams ? searchParams.get("tab") : null;
-  const { isEmployee, user, can } = usePermissions();
+  const { isEmployee, user, can, isSuperAdmin } = usePermissions();
   const [activeTab, setActiveTab] = useState(tabParam || "attendance");
   const [activeLeaveTab, setActiveLeaveTab] = useState("requests");
 
   const availableTabs = useMemo(() => {
     if (isEmployee) return [{ id: "attendance", label: "Attendance Logs", icon: Clock }];
     const tabs = [
-      { id: "attendance", label: "Attendance Logs", icon: Clock, permitted: can("read", "attendance") || can("attendance") },
-      { id: "rosters", label: "Shift Schedule (HOD)", icon: CalendarRange, permitted: can("read", "shift_roster") || can("read", "attendance") || can("shift_roster") || can("attendance") },
-      { id: "leaves", label: "Leave Requests", icon: FileCheck, permitted: can("read", "leave") || can("leave") },
-      { id: "holidays", label: "Holiday Configuration", icon: CalendarDays, permitted: can("read", "leave_master") || can("read", "holiday") || can("leave_master") || can("holiday") },
+      {
+        id: "attendance",
+        label: "Attendance Logs",
+        icon: Clock,
+        permitted: isSuperAdmin || can("read", "attendance") || can("attendance"),
+      },
+      {
+        id: "rosters",
+        label: "Shift Schedule (HOD)",
+        icon: CalendarRange,
+        permitted:
+          isSuperAdmin ||
+          can("read", "shift_roster") ||
+          can("read", "shift") ||
+          can("read", "attendance") ||
+          can("shift_roster") ||
+          can("shift") ||
+          can("attendance"),
+      },
+      {
+        id: "leaves",
+        label: "Leave Requests",
+        icon: FileCheck,
+        permitted: isSuperAdmin || can("read", "leave") || can("leave"),
+      },
+      {
+        id: "holidays",
+        label: "Holiday Configuration",
+        icon: CalendarDays,
+        permitted:
+          isSuperAdmin ||
+          can("read", "holiday") ||
+          can("read", "leave_master") ||
+          can("holiday") ||
+          can("leave_master"),
+      },
     ];
     return tabs.filter((t) => t.permitted);
-  }, [isEmployee, can]);
+  }, [isEmployee, can, isSuperAdmin]);
+
+  const handleTabChange = useCallback((tabId) => {
+    setActiveTab(tabId);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", tabId);
+      window.history.replaceState(null, "", url.toString());
+    }
+  }, []);
 
   useEffect(() => {
-    if (tabParam && (!availableTabs.length || availableTabs.some((t) => t.id === tabParam))) {
+    if (tabParam && availableTabs.some((t) => t.id === tabParam)) {
       setActiveTab(tabParam);
     } else if (!isEmployee && availableTabs.length > 0 && !availableTabs.some((t) => t.id === activeTab)) {
       setActiveTab(availableTabs[0].id);
     }
-  }, [tabParam, availableTabs, activeTab, isEmployee]);
+  }, [tabParam, availableTabs]);
   
   const dispatch = useDispatch();
 
@@ -2553,7 +2595,7 @@ export default function AttendanceLeavePage() {
       sortable: false,
       render: (row) => (
         <div className="flex items-center gap-2">
-          {!isEmployee && (can("update", "shift_roster") || can("update", "attendance")) && (
+          {!isEmployee && can("update", "shift_roster") && (
             <button
               onClick={() => {
                 setNewRoster({
@@ -2570,7 +2612,7 @@ export default function AttendanceLeavePage() {
               <Edit className="w-4 h-4" />
             </button>
           )}
-          {!isEmployee && (can("delete", "shift_roster") || can("delete", "attendance")) && (
+          {!isEmployee && can("delete", "shift_roster") && (
             <button
               onClick={() => setDeleteTarget({ id: row.id, name: `roster for ${row.employee?.firstName || 'employee'} on ${formatDateDDMMYYYY(row.date)}`, type: "roster", label: "Shift Roster" })}
               className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
@@ -2594,7 +2636,7 @@ export default function AttendanceLeavePage() {
       sortable: false,
       render: (row) => (
         <div className="flex items-center gap-2">
-          {!isEmployee && (can("update", "shift") || can("update", "attendance")) && (
+          {!isEmployee && can("update", "shift") && (
             <button
               onClick={() => {
                 setNewShift({
@@ -2611,7 +2653,7 @@ export default function AttendanceLeavePage() {
               <Edit className="w-4 h-4" />
             </button>
           )}
-          {!isEmployee && (can("delete", "shift") || can("delete", "attendance")) && (
+          {!isEmployee && can("delete", "shift") && (
             <button
               onClick={() => setDeleteTarget({ id: row.id, name: `shift "${row.name}"`, type: "shift", label: "Work Shift" })}
               className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
@@ -2795,7 +2837,7 @@ export default function AttendanceLeavePage() {
       sortable: false,
       render: (row) => (
         <div className="flex gap-1.5 items-center">
-          {!isEmployee && (can("update", "leave_master") || can("update", "leave")) && (
+          {!isEmployee && can("update", "leave_master") && (
             <button
               onClick={() => {
                 const deptId = typeof row.department === 'object' && row.department ? row.department.id : row.department;
@@ -2818,7 +2860,7 @@ export default function AttendanceLeavePage() {
               <Edit className="w-4 h-4" />
             </button>
           )}
-          {!isEmployee && (can("delete", "leave_master") || can("delete", "leave")) && (
+          {!isEmployee && can("delete", "leave_master") && (
             <button
               onClick={() => {
                 const deptName = typeof row.department === 'object' && row.department ? row.department.name : row.department;
@@ -2854,7 +2896,7 @@ export default function AttendanceLeavePage() {
       sortable: false,
       render: (row) => (
         <div className="flex items-center gap-2">
-          {!isEmployee && (can("update", "holiday") || can("update", "leave_master")) && (
+          {!isEmployee && can("update", "holiday") && (
             <button
               onClick={() => {
                 setNewHoliday({
@@ -2870,7 +2912,7 @@ export default function AttendanceLeavePage() {
               <Edit className="w-4 h-4" />
             </button>
           )}
-          {!isEmployee && (can("delete", "holiday") || can("delete", "leave_master")) && (
+          {!isEmployee && can("delete", "holiday") && (
             <button
               onClick={() => setDeleteTarget({ id: row.id, name: `holiday "${row.name}"`, type: "holiday", label: "Holiday Entry" })}
               className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
@@ -2894,7 +2936,7 @@ export default function AttendanceLeavePage() {
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleTabChange(tab.id)}
                 className={`flex items-center gap-2 pb-3 font-semibold text-sm cursor-pointer whitespace-nowrap transition-all border-b-2 ${
                   activeTab === tab.id
                     ? "border-sky-500 text-sky-600 dark:text-sky-400 font-bold"
@@ -2980,7 +3022,7 @@ export default function AttendanceLeavePage() {
                   {!isEmployee && (
                     <button
                       type="button"
-                      onClick={() => setActiveTab("holidays")}
+                      onClick={() => handleTabChange("holidays")}
                       className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center justify-center gap-1 pt-1 cursor-pointer"
                     >
                       Manage Company Holidays <Sparkles className="w-3.5 h-3.5" />
@@ -3617,7 +3659,7 @@ export default function AttendanceLeavePage() {
           {activeTab === "holidays" && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Form */}
-              {!isEmployee && (can("create", "holiday") || can("create", "leave_master")) && (
+              {!isEmployee && can("create", "holiday") && (
                 <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
                   <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
                     <Plus className="w-5 h-5 text-sky-500" />
@@ -3652,7 +3694,7 @@ export default function AttendanceLeavePage() {
               )}
 
               {/* Holiday DataTable */}
-              <div className={(!isEmployee && (can("create", "holiday") || can("create", "leave_master"))) ? "lg:col-span-2" : "lg:col-span-3"}>
+              <div className={(!isEmployee && can("create", "holiday")) ? "lg:col-span-2" : "lg:col-span-3"}>
                 <DataTable
                   title="Corporate Holiday Calendar"
                   lazy

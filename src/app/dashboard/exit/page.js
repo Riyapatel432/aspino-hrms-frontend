@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DataTable } from "@/components/ui/data-table";
 import { DeleteConfirmDialog } from "@/components/ui/delete-confirm-dialog";
+import { RouteGuard, usePermissions } from "@/context/PermissionContext";
 import {
   FileWarning,
   ClipboardList,
@@ -139,6 +140,39 @@ const LETTER_PRINT_CSS = `
 // Main Page Component
 // ---------------------------------------------------------------------------
 export default function ExitPage() {
+  return (
+    <RouteGuard subject="exit" action="read">
+      <ExitPageContent />
+    </RouteGuard>
+  );
+}
+
+function ExitPageContent() {
+  const { can, isSuperAdmin } = usePermissions();
+
+  // Granular Submodule Permissions
+  const canReadResignation = isSuperAdmin || can("read", "resignation_clearance") || can("read", "resignation") || can("read", "clearance");
+  const canCreateResignation = isSuperAdmin || can("create", "resignation_clearance") || can("create", "resignation") || can("create", "clearance");
+  const canUpdateResignation = isSuperAdmin || can("update", "resignation_clearance") || can("update", "resignation") || can("update", "clearance");
+  const canDeleteResignation = isSuperAdmin || can("delete", "resignation_clearance") || can("delete", "resignation") || can("delete", "clearance");
+
+  const canReadSettlement = isSuperAdmin || can("read", "fnf_settlement") || can("read", "settlement") || can("read", "fnf");
+  const canCreateSettlement = isSuperAdmin || can("create", "fnf_settlement") || can("create", "settlement") || can("create", "fnf");
+  const canUpdateSettlement = isSuperAdmin || can("update", "fnf_settlement") || can("update", "settlement") || can("update", "fnf");
+  const canDeleteSettlement = isSuperAdmin || can("delete", "fnf_settlement") || can("delete", "settlement") || can("delete", "fnf");
+
+  const canReadLetters = isSuperAdmin || can("read", "relieving_letters") || can("read", "letters") || can("read", "relieving_letter") || can("read", "letter");
+  const canCreateLetters = isSuperAdmin || can("create", "relieving_letters") || can("create", "letters") || can("create", "relieving_letter") || can("create", "letter");
+  const canUpdateLetters = isSuperAdmin || can("update", "relieving_letters") || can("update", "letters") || can("update", "relieving_letter") || can("update", "letter");
+  const canDeleteLetters = isSuperAdmin || can("delete", "relieving_letters") || can("delete", "letters") || can("delete", "relieving_letter") || can("delete", "letter");
+
+  const allTabs = [
+    { id: "exits", label: "Resignation & clearance", icon: FileWarning, canView: canReadResignation },
+    { id: "settlement", label: "F&F Settlement", icon: Calculator, canView: canReadSettlement },
+    { id: "letters", label: "Relieving / Experience Letters", icon: FileCheck, canView: canReadLetters },
+  ];
+  const visibleTabs = allTabs.filter((tab) => tab.canView);
+
   const {
     employees,
     exits,
@@ -178,16 +212,21 @@ export default function ExitPage() {
     handleCompleteExit,
   } = useExitWorkflow();
 
-  const [activeTab, setActiveTab] = useState("exits");
+  const [activeTab, setActiveTab] = useState(() => {
+    return visibleTabs.length > 0 ? visibleTabs[0].id : "exits";
+  });
 
-
+  useEffect(() => {
+    if (visibleTabs.length > 0 && !visibleTabs.some((t) => t.id === activeTab)) {
+      setActiveTab(visibleTabs[0].id);
+    }
+  }, [visibleTabs, activeTab]);
 
   useEffect(() => {
     async function load() { await fetchData(); }
     load();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
 
   const netPayable =
     (Number(settlement.pendingSalary) || 0) +
@@ -200,23 +239,32 @@ export default function ExitPage() {
     (e) => e.status !== "RELIEVED" || String(e.id) === String(exitForm.employeeId)
   );
 
+  if (visibleTabs.length === 0) {
+    return (
+      <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-8 shadow-md text-center space-y-3">
+        <p className="text-rose-500 font-bold text-base">Access Restricted</p>
+        <p className="text-slate-500 text-xs">You do not have permission to view any sections of the Exit Process module.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Tab Navigation */}
       <nav className="flex border-b border-slate-200 dark:border-slate-800 gap-6 overflow-x-auto print:hidden" aria-label="Exit management tabs">
-        {TABS.map((tab) => {
+        {visibleTabs.map((tab) => {
           const Icon = tab.icon;
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              role="tab"
               aria-selected={activeTab === tab.id}
               aria-controls={`panel-${tab.id}`}
-              role="tab"
+              onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 pb-3 font-semibold text-sm cursor-pointer whitespace-nowrap transition-all border-b-2 ${
                 activeTab === tab.id
                   ? "border-sky-500 text-sky-600 dark:text-sky-400"
-                  : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-200"
+                  : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400"
               }`}
             >
               <Icon className="w-4 h-4" aria-hidden="true" />
@@ -230,17 +278,18 @@ export default function ExitPage() {
           {/* ================================================================
               TAB 1 — RESIGNATIONS & CLEARANCES
           ================================================================ */}
-          {activeTab === "exits" && (
-            <div id="panel-exits" role="tabpanel" className="grid grid-cols-1 lg:grid-cols-3 gap-6 print:hidden">
+          {activeTab === "exits" && canReadResignation && (
+            <div id="panel-exits" role="tabpanel" className={`grid grid-cols-1 ${canCreateResignation || (editingExitId && canUpdateResignation) ? "lg:grid-cols-3" : "lg:grid-cols-1"} gap-6 print:hidden`}>
               {/* --- Registration Form --- */}
-              <div className="space-y-6 h-fit">
-                <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4">
-                  <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                    <Plus className="w-5 h-5 text-sky-500" aria-hidden="true" />
-                    {editingExitId ? "Edit Exit Details" : "Register Resignation"}
-                  </h3>
+              {(canCreateResignation || (editingExitId && canUpdateResignation)) && (
+                <div className="space-y-6 h-fit">
+                  <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4">
+                    <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                      <Plus className="w-5 h-5 text-sky-500" aria-hidden="true" />
+                      {editingExitId ? "Edit Exit Details" : "Register Resignation"}
+                    </h3>
 
-                  <form onSubmit={handleInitiateExit} className="space-y-3" noValidate>
+                    <form onSubmit={handleInitiateExit} className="space-y-3" noValidate>
                     {/* Employee select */}
                     <div className="space-y-1">
                       <Label htmlFor="exit-employee" className="text-xs font-bold text-slate-600 dark:text-slate-300">Employee</Label>
@@ -350,9 +399,10 @@ export default function ExitPage() {
                   </form>
                 </div>
               </div>
+              )}
 
               {/* --- Exits Table --- */}
-              <div className="lg:col-span-2 space-y-6">
+              <div className={canCreateResignation || (editingExitId && canUpdateResignation) ? "lg:col-span-2 space-y-6" : "lg:col-span-1 w-full space-y-6"}>
                 <DataTable
                   title="Active Exits & Clearance Workflow"
                   lazy
@@ -426,24 +476,32 @@ export default function ExitPage() {
                                 <div key={task.id} className="flex items-center justify-between gap-2 p-1.5 bg-slate-50 dark:bg-slate-800 rounded-lg">
                                   <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 truncate max-w-[90px]">{deptName}</span>
                                   {task.status === "PENDING" ? (
-                                    <button
-                                      onClick={() => handleUpdateClearance(task.id, "CLEARED")}
-                                      className="bg-emerald-500 dark:bg-emerald-600 hover:bg-emerald-600 text-white text-[9px] font-bold rounded px-2 py-0.5 cursor-pointer shadow-sm transition-all"
-                                      aria-label={`Mark ${deptName} clearance as cleared`}
-                                    >
-                                      Clear
-                                    </button>
+                                    canUpdateResignation ? (
+                                      <button
+                                        onClick={() => handleUpdateClearance(task.id, "CLEARED")}
+                                        className="bg-emerald-500 dark:bg-emerald-600 hover:bg-emerald-600 text-white text-[9px] font-bold rounded px-2 py-0.5 cursor-pointer shadow-sm transition-all"
+                                        aria-label={`Mark ${deptName} clearance as cleared`}
+                                      >
+                                        Clear
+                                      </button>
+                                    ) : (
+                                      <span className="text-[9px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-bold">Pending</span>
+                                    )
                                   ) : (
-                                    <button
-                                      onClick={() => handleUpdateClearance(task.id, "PENDING")}
-                                      className="cursor-pointer transition-colors"
-                                      title="Accidentally cleared? Click to revert back to PENDING"
-                                      aria-label={`Revert ${deptName} clearance to pending`}
-                                    >
-                                      <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded text-emerald-700 dark:text-emerald-300 font-black hover:bg-rose-100 dark:hover:bg-rose-950 hover:text-rose-700 dark:hover:text-rose-300 hover:border-rose-200 dark:hover:border-rose-800 transition-all block">
-                                        CLEARED ↩ (Undo)
-                                      </span>
-                                    </button>
+                                    canUpdateResignation ? (
+                                      <button
+                                        onClick={() => handleUpdateClearance(task.id, "PENDING")}
+                                        className="cursor-pointer transition-colors"
+                                        title="Accidentally cleared? Click to revert back to PENDING"
+                                        aria-label={`Revert ${deptName} clearance to pending`}
+                                      >
+                                        <span className="text-[9px] bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded text-emerald-700 dark:text-emerald-300 font-black hover:bg-rose-100 dark:hover:bg-rose-950 hover:text-rose-700 dark:hover:text-rose-300 hover:border-rose-200 dark:hover:border-rose-800 transition-all block">
+                                          CLEARED ↩ (Undo)
+                                        </span>
+                                      </button>
+                                    ) : (
+                                      <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Cleared</span>
+                                    )
                                   )}
                                 </div>
                               );
@@ -460,22 +518,29 @@ export default function ExitPage() {
                       sortable: false,
                       render: (row) => (
                         <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => startEditingExit(row)}
-                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 rounded-lg transition-all"
-                            title="Edit exit record"
-                            aria-label={`Edit exit record for ${row.employee?.firstName}`}
-                          >
-                            <Edit2 className="w-4 h-4" aria-hidden="true" />
-                          </button>
-                          <button
-                            onClick={() => setDeleteTarget({ id: row.id, name: `${row.employee?.firstName || ""} ${row.employee?.lastName || ""}`.trim() || "this exit record" })}
-                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 rounded-lg transition-all"
-                            title="Delete exit record"
-                            aria-label={`Delete exit record for ${row.employee?.firstName}`}
-                          >
-                            <Trash2 className="w-4 h-4" aria-hidden="true" />
-                          </button>
+                          {canUpdateResignation && (
+                            <button
+                              onClick={() => startEditingExit(row)}
+                              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 rounded-lg transition-all"
+                              title="Edit exit record"
+                              aria-label={`Edit exit record for ${row.employee?.firstName}`}
+                            >
+                              <Edit2 className="w-4 h-4" aria-hidden="true" />
+                            </button>
+                          )}
+                          {canDeleteResignation && (
+                            <button
+                              onClick={() => setDeleteTarget({ id: row.id, name: `${row.employee?.firstName || ""} ${row.employee?.lastName || ""}`.trim() || "this exit record" })}
+                              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 rounded-lg transition-all"
+                              title="Delete exit record"
+                              aria-label={`Delete exit record for ${row.employee?.firstName}`}
+                            >
+                              <Trash2 className="w-4 h-4" aria-hidden="true" />
+                            </button>
+                          )}
+                          {!canUpdateResignation && !canDeleteResignation && (
+                            <span className="text-slate-400 text-xs italic">—</span>
+                          )}
                         </div>
                       ),
                     },
@@ -488,7 +553,7 @@ export default function ExitPage() {
           {/* ================================================================
               TAB 2 — FULL & FINAL SETTLEMENT
           ================================================================ */}
-          {activeTab === "settlement" && (
+          {activeTab === "settlement" && canReadSettlement && (
             <div id="panel-settlement" role="tabpanel" className="grid grid-cols-1 lg:grid-cols-3 gap-6 print:hidden">
               {/* Profile selector */}
               <div className="lg:col-span-1">
@@ -582,59 +647,62 @@ export default function ExitPage() {
                       </div>
                     )}
 
-                    <form onSubmit={handleProcessSettlement} className="grid grid-cols-1 md:grid-cols-2 gap-4" noValidate>
-                      {[
-                        { key: "pendingSalary", label: "Pending Salary Dues (INR)" },
-                        { key: "leaveEncashment", label: "Leave Encashment (INR)" },
-                        { key: "bonus", label: "Performance Bonus (INR)" },
-                        { key: "recoveries", label: "Recoveries / Asset Damage (INR)" },
-                      ].map(({ key, label }) => (
-                        <div key={key} className="space-y-1">
-                          <Label htmlFor={`settlement-${key}`} className="text-xs font-bold text-slate-600 dark:text-slate-300">{label}</Label>
-                          <Input
-                            id={`settlement-${key}`}
-                            type="number"
-                            min={0}
-                            value={settlement[key]}
-                            onChange={(e) => updateSettlementField(key, e.target.value)}
-                          />
-                          <FieldError message={settlementFormErrors[key]} />
-                        </div>
-                      ))}
-
-                      <div className="md:col-span-2 pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
-                        <div className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                          Estimated Net Payable:{" "}
-                          <strong className="text-emerald-500">
-                            ₹{netPayable.toLocaleString("en-IN")}
-                          </strong>
-                        </div>
-                        <Button type="submit" className="bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl h-10 px-6">
-                          Record Final Dues
-                        </Button>
-                      </div>
-                    </form>
-
-                    {/* Saved settlement summary */}
-                    {selectedExit.settlement && (
-                      <div className="p-4 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl space-y-2">
-                        <h4 className="font-extrabold text-xs text-slate-700 dark:text-slate-200">SAVED SETTLEMENT SUMMARY:</h4>
-                        <div className="text-xs font-medium text-slate-600 dark:text-slate-300 space-y-1 grid grid-cols-2">
-                          <div>Net Dues: <strong>₹{selectedExit.settlement.netPayable.toLocaleString("en-IN")}</strong></div>
-                          <div>Status: <strong>{selectedExit.settlement.paymentStatus}</strong></div>
-                        </div>
-                        {selectedExit.status === "SETTLED" && (
-                          <div className="pt-2">
-                            <Button
-                              onClick={() => handleCompleteExit(selectedExit.id)}
-                              className="bg-emerald-500 dark:bg-emerald-600 hover:bg-emerald-600 text-white text-xs font-bold rounded-xl h-9"
-                            >
-                              Finalize Exit & Approve Relieving Letter
-                            </Button>
+                      <form onSubmit={handleProcessSettlement} className="grid grid-cols-1 md:grid-cols-2 gap-4" noValidate>
+                        {[
+                          { key: "pendingSalary", label: "Pending Salary Dues (INR)" },
+                          { key: "leaveEncashment", label: "Leave Encashment (INR)" },
+                          { key: "bonus", label: "Performance Bonus (INR)" },
+                          { key: "recoveries", label: "Recoveries / Asset Damage (INR)" },
+                        ].map(({ key, label }) => (
+                          <div key={key} className="space-y-1">
+                            <Label htmlFor={`settlement-${key}`} className="text-xs font-bold text-slate-600 dark:text-slate-300">{label}</Label>
+                            <Input
+                              id={`settlement-${key}`}
+                              type="number"
+                              disabled={!canCreateSettlement && !canUpdateSettlement}
+                              min={0}
+                              value={settlement[key]}
+                              onChange={(e) => updateSettlementField(key, e.target.value)}
+                            />
+                            <FieldError message={settlementFormErrors[key]} />
                           </div>
-                        )}
-                      </div>
-                    )}
+                        ))}
+
+                        <div className="md:col-span-2 pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                          <div className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                            Estimated Net Payable:{" "}
+                            <strong className="text-emerald-500">
+                              ₹{netPayable.toLocaleString("en-IN")}
+                            </strong>
+                          </div>
+                          {(canCreateSettlement || canUpdateSettlement) && (
+                            <Button type="submit" className="bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl h-10 px-6">
+                              Record Final Dues
+                            </Button>
+                          )}
+                        </div>
+                      </form>
+
+                      {/* Saved settlement summary */}
+                      {selectedExit.settlement && (
+                        <div className="p-4 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl space-y-2">
+                          <h4 className="font-extrabold text-xs text-slate-700 dark:text-slate-200">SAVED SETTLEMENT SUMMARY:</h4>
+                          <div className="text-xs font-medium text-slate-600 dark:text-slate-300 space-y-1 grid grid-cols-2">
+                            <div>Net Dues: <strong>₹{selectedExit.settlement.netPayable.toLocaleString("en-IN")}</strong></div>
+                            <div>Status: <strong>{selectedExit.settlement.paymentStatus}</strong></div>
+                          </div>
+                          {canUpdateSettlement && selectedExit.status === "SETTLED" && (
+                            <div className="pt-2">
+                              <Button
+                                onClick={() => handleCompleteExit(selectedExit.id)}
+                                className="bg-emerald-500 dark:bg-emerald-600 hover:bg-emerald-600 text-white text-xs font-bold rounded-xl h-9"
+                              >
+                                Finalize Exit & Approve Relieving Letter
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                   </div>
                   )
                 ) : (
@@ -647,7 +715,7 @@ export default function ExitPage() {
           {/* ================================================================
               TAB 3 — LETTER TEMPLATE GENERATOR
           ================================================================ */}
-          {activeTab === "letters" && (
+          {activeTab === "letters" && canReadLetters && (
             <div id="panel-letters" role="tabpanel" className="space-y-6">
               {/* Inject print-only CSS for letter formatting */}
               <style dangerouslySetInnerHTML={{ __html: LETTER_PRINT_CSS }} />
@@ -691,7 +759,7 @@ export default function ExitPage() {
                   </div>
                 </div>
 
-                {selectedExit && selectedExit.status === "COMPLETED" && (
+                {selectedExit && selectedExit.status === "COMPLETED" && canCreateLetters && (
                   <Button
                     onClick={() => window.print()}
                     className="bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 h-10 px-4"

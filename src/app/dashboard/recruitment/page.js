@@ -61,7 +61,7 @@ import {
   updateOfferStatus
 } from "@/features/recruitment/store/recruitmentSlice";
 import { toast } from "sonner";
-import { RouteGuard } from "@/context/PermissionContext";
+import { RouteGuard, usePermissions } from "@/context/PermissionContext";
 
 export default function RecruitmentPage() {
   return (
@@ -72,7 +72,46 @@ export default function RecruitmentPage() {
 }
 
 function RecruitmentPageContent() {
-  const [activeTab, setActiveTab] = useState("requisitions");
+  const { can, isSuperAdmin } = usePermissions();
+
+  const canReadReq = isSuperAdmin || can("read", "job_requisitions") || can("read", "requisitions") || can("read", "requisition");
+  const canCreateReq = isSuperAdmin || can("create", "job_requisitions") || can("create", "requisitions") || can("create", "requisition");
+  const canUpdateReq = isSuperAdmin || can("update", "job_requisitions") || can("update", "requisitions") || can("update", "requisition");
+  const canDeleteReq = isSuperAdmin || can("delete", "job_requisitions") || can("delete", "requisitions") || can("delete", "requisition");
+
+  const canReadCand = isSuperAdmin || can("read", "candidates") || can("read", "candidate");
+  const canCreateCand = isSuperAdmin || can("create", "candidates") || can("create", "candidate");
+  const canUpdateCand = isSuperAdmin || can("update", "candidates") || can("update", "candidate");
+  const canDeleteCand = isSuperAdmin || can("delete", "candidates") || can("delete", "candidate");
+
+  const canReadSched = isSuperAdmin || can("read", "interview_scheduling") || can("read", "interviews") || can("read", "interview") || can("read", "schedules");
+  const canCreateSched = isSuperAdmin || can("create", "interview_scheduling") || can("create", "interviews") || can("create", "interview") || can("create", "schedules");
+  const canUpdateSched = isSuperAdmin || can("update", "interview_scheduling") || can("update", "interviews") || can("update", "interview") || can("update", "schedules");
+  const canDeleteSched = isSuperAdmin || can("delete", "interview_scheduling") || can("delete", "interviews") || can("delete", "interview") || can("delete", "schedules");
+
+  const canReadOffer = isSuperAdmin || can("read", "offer_letters") || can("read", "offers") || can("read", "offer");
+  const canCreateOffer = isSuperAdmin || can("create", "offer_letters") || can("create", "offers") || can("create", "offer");
+  const canUpdateOffer = isSuperAdmin || can("update", "offer_letters") || can("update", "offers") || can("update", "offer");
+  const canDeleteOffer = isSuperAdmin || can("delete", "offer_letters") || can("delete", "offers") || can("delete", "offer");
+
+  const allTabs = [
+    { id: "requisitions", label: "Job Requisitions", icon: Briefcase, canView: canReadReq },
+    { id: "candidates", label: "Candidates & Sourcing", icon: UserCheck, canView: canReadCand },
+    { id: "interviews", label: "Interview Scheduling", icon: Calendar, canView: canReadSched },
+    { id: "offers", label: "Offer Letters", icon: FileText, canView: canReadOffer },
+  ];
+  const visibleTabs = allTabs.filter((t) => t.canView);
+
+  const [activeTab, setActiveTab] = useState(() => {
+    return visibleTabs.length > 0 ? visibleTabs[0].id : "requisitions";
+  });
+
+  useEffect(() => {
+    if (visibleTabs.length > 0 && !visibleTabs.some((t) => t.id === activeTab)) {
+      setActiveTab(visibleTabs[0].id);
+    }
+  }, [visibleTabs, activeTab]);
+
   const [viewOfferModal, setViewOfferModal] = useState(null);
   // CNV Compliance Modal State
   const [cnvModal, setCnvModal] = useState(null); // { requisition } or null
@@ -203,7 +242,7 @@ function RecruitmentPageContent() {
       .catch(err => console.error("Failed to fetch dropdown requisitions:", err));
   }, [dispatch, activeTab]);
 
-  // Candidates dropdown + Users + Interview Rounds: needed on Interview Scheduling tab
+  // Candidates dropdown + Panelists + Interview Rounds: needed on Interview Scheduling tab
   useEffect(() => {
     if (activeTab !== "interviews") return;
     const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -217,10 +256,31 @@ function RecruitmentPageContent() {
       .then(data => setDropdownInterviewRounds(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
       .catch(err => console.error("Failed to fetch interview rounds:", err));
 
-    apiFetch(`${backendUrl}/users`)
+    // Fetch interview panelists (or fallback to users)
+    apiFetch(`${backendUrl}/staff-hrms/recruitment/interview-panelists`)
       .then(res => res.json())
-      .then(data => setUsers(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
-      .catch(err => console.error("Failed to fetch users:", err));
+      .then(data => {
+        const list = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+        if (list.length > 0) {
+          setUsers(list);
+        } else {
+          apiFetch(`${backendUrl}/users?limit=1000`)
+            .then(r => r.json())
+            .then(d => setUsers(Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : []))
+            .catch(() => {});
+        }
+      })
+      .catch(() => {
+        apiFetch(`${backendUrl}/users?limit=1000`)
+          .then(r => r.json())
+          .then(d => setUsers(Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : []))
+          .catch(err => console.error("Failed to fetch users:", err));
+      });
+
+    apiFetch(`${backendUrl}/staff-hrms/recruitment/employees`)
+      .then(res => res.json())
+      .then(data => setDropdownEmployees(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []))
+      .catch(err => console.error("Failed to fetch employees:", err));
   }, [activeTab]);
 
   // Requisition Form State
@@ -317,12 +377,35 @@ function RecruitmentPageContent() {
     return Array.from(new Set(cleaned));
   };
 
-  const formatPanelistNames = (rawPanelists, usersList = []) => {
+  const formatPanelistNames = (rawPanelists, usersList = [], row = null) => {
+    if (row?.panelistNames && Array.isArray(row.panelistNames) && row.panelistNames.length > 0) {
+      return row.panelistNames;
+    }
+    if (row?.panelistDetails && Array.isArray(row.panelistDetails) && row.panelistDetails.length > 0) {
+      return row.panelistDetails.map((d) => d.name || d.id);
+    }
     const idsOrNames = parsePanelistList(rawPanelists);
     if (idsOrNames.length === 0) return [];
     return idsOrNames.map((item) => {
-      const found = (usersList || []).find((u) => String(u.id) === String(item) || u.name?.toLowerCase() === String(item).toLowerCase());
-      return found ? found.name : item;
+      const foundUser = (usersList || []).find(
+        (u) =>
+          String(u.id) === String(item) ||
+          (u.userId && String(u.userId) === String(item)) ||
+          u.name?.toLowerCase() === String(item).toLowerCase() ||
+          u.email?.toLowerCase() === String(item).toLowerCase()
+      );
+      if (foundUser) return foundUser.name;
+
+      const foundEmp = (dropdownEmployees || []).find(
+        (e) =>
+          String(e.id) === String(item) ||
+          String(e.employeeId) === String(item) ||
+          (e.userId && String(e.userId) === String(item)) ||
+          `${e.firstName || ""} ${e.lastName || ""}`.trim().toLowerCase() === String(item).toLowerCase()
+      );
+      if (foundEmp) return `${foundEmp.firstName || ""} ${foundEmp.lastName || ""}`.trim() || foundEmp.employeeId;
+
+      return item;
     }).filter(Boolean);
   };
 
@@ -2026,12 +2109,7 @@ function RecruitmentPageContent() {
     <div className="space-y-6">
       {/* Navigation tabs */}
       <div className="flex border-b border-slate-200 dark:border-slate-800 gap-6 overflow-x-auto">
-        {[
-          { id: "requisitions", label: "Job Requisitions", icon: Briefcase },
-          { id: "candidates", label: "Candidates & Sourcing", icon: UserCheck },
-          { id: "interviews", label: "Interview Scheduling", icon: Calendar },
-          { id: "offers", label: "Offer Letters", icon: FileText },
-        ].map((tab) => {
+        {visibleTabs.map((tab) => {
           const Icon = tab.icon;
           return (
             <button
@@ -2052,10 +2130,11 @@ function RecruitmentPageContent() {
 
       <div className="space-y-6">
           {/* TAB 1: REQUISITIONS */}
-          {activeTab === "requisitions" && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {activeTab === "requisitions" && canReadReq && (
+            <div className={`grid grid-cols-1 ${canCreateReq || newReq.id ? "lg:grid-cols-3" : "lg:grid-cols-1"} gap-6`}>
               {/* Form Card */}
-              <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
+              {(canCreateReq || newReq.id) && (
+                <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
                 <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
                   <Plus className="w-5 h-5 text-sky-500" />
                   {newReq.id ? "Edit Requisition" : "Raise Requisition"}
@@ -2422,9 +2501,10 @@ function RecruitmentPageContent() {
                   </div>
                 </form>
               </div>
+              )}
 
               {/* Active Requisitions DataTable */}
-              <div className="lg:col-span-2">
+              <div className={canCreateReq || newReq.id ? "lg:col-span-2" : "lg:col-span-1 w-full"}>
                 <DataTable
                   title="Active Requisitions"
                   lazy
@@ -2500,47 +2580,38 @@ function RecruitmentPageContent() {
                       },
                     },
                     {
-                      key: "department.name",
+                      key: "department",
                       label: "Department",
-                      render: (row) => {
-                        const deptName = row.department?.name || departments.find(d => String(d.id) === String(row.departmentId))?.name || "Unknown";
-                        return (
-                          <span className="text-xs font-extrabold uppercase px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400">
-                            {deptName}
-                          </span>
-                        );
-                      },
+                      render: (row) => (
+                        <span className="text-xs font-bold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/40 px-2 py-1 rounded-md border border-sky-200 dark:border-sky-800 uppercase tracking-wider">
+                          {row.department?.name || "N/A"}
+                        </span>
+                      ),
                     },
                     {
                       key: "headcount",
                       label: "Headcount",
                       render: (row) => (
-                        <span className="text-sm font-black text-slate-700 dark:text-slate-300">{row.headcount}</span>
+                        <span className="text-xs font-black text-slate-700 dark:text-slate-300">{row.headcount}</span>
                       ),
                     },
                     {
-                      key: "cnvStatus",
+                      key: "cnv",
                       label: "CNV",
                       render: (row) => {
-                        const isCnv = row.isCnvApplicable;
-                        // Determine effective status — prefer CnvRecord status, fall back to JobRequisition cnvStatus string
-                        const cnvRecordStatus = row.cnvRecord?.cnvStatus;
-                        const legacyStatus = row.cnvStatus;
-                        const status = cnvRecordStatus || legacyStatus;
-
-                        if (!isCnv) {
+                        if (!row.isCnvApplicable) {
                           return (
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700" title={row.cnvExemptionReason ? `Exemption: ${row.cnvExemptionReason}` : "CNV Not Applicable"}>
-                              N/A
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md border bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700" title={row.cnvExemptionReason ? `Exempt: ${row.cnvExemptionReason}` : "CNV Not Required"}>
+                              Exempt
                             </span>
                           );
                         }
-
+                        const status = row.cnvRecord?.cnvStatus || row.cnvStatus || "PENDING_NOTIFICATION";
                         if (status === "ACKNOWLEDGED") {
                           return (
                             <div className="space-y-0.5">
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md border bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800">
-                                <CheckCircle className="w-2.5 h-2.5" />
+                                <CheckCircle className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
                                 CNV Ack ✓
                               </span>
                               {(row.cnvRecord?.acknowledgementNumber || row.cnvRefNumber) && (
@@ -2566,7 +2637,6 @@ function RecruitmentPageContent() {
                             </div>
                           );
                         }
-                        // Default: PENDING_NOTIFICATION or any other
                         return (
                           <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md border bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800">
                             <Landmark className="w-2.5 h-2.5" />
@@ -2601,8 +2671,8 @@ function RecruitmentPageContent() {
                       sortable: false,
                       render: (row) => (
                         <div className="flex items-center gap-2 flex-wrap">
-                          {/* CNV Compliance Action — only when CNV is applicable */}
-                          {row.isCnvApplicable && (
+                          {/* CNV Compliance Action — only when CNV is applicable and user has update permission */}
+                          {canUpdateReq && row.isCnvApplicable && (
                             <button
                               onClick={() => openCnvModal(row)}
                               className="p-1.5 bg-white dark:bg-slate-800 text-indigo-500 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-500 hover:text-white hover:border-indigo-500 dark:hover:bg-indigo-500 rounded-lg transition-all"
@@ -2611,39 +2681,46 @@ function RecruitmentPageContent() {
                               <ClipboardCheck className="w-4 h-4" />
                             </button>
                           )}
-                          <button
-                            onClick={() => {
-                              setNewReq({
-                                id: row.id,
-                                title: row.title,
-                                departmentId: row.departmentId,
-                                headcount: row.headcount,
-                                experienceRequired: row.experienceRequired ?? "",
-                                justification: row.justification,
-                                jobSpecification: row.jobSpecification || "",
-                                requisitionType: row.requisitionType || "NEW_REQUIREMENT",
-                                replacementForEmployeeId: row.replacementForEmployeeId || "",
-                                raisedBy: row.raisedBy,
-                                isCnvApplicable: Boolean(row.isCnvApplicable),
-                                cnvExchangeOffice: row.cnvExchangeOffice || row.cnvRecord?.employmentExchangeOffice || "",
-                                cnvRefNumber: row.cnvRefNumber || "",
-                                cnvNotificationDate: row.cnvNotificationDate ? String(row.cnvNotificationDate).split("T")[0] : "",
-                                cnvStatus: row.cnvRecord?.cnvStatus || row.cnvStatus || (row.isCnvApplicable ? "PENDING_NOTIFICATION" : "NOT_REQUIRED"),
-                                cnvExemptionReason: row.cnvExemptionReason || ""
-                              });
-                            }}
-                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
-                            title="Edit"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => setDeleteTarget({ id: row.id, name: `requisition "${row.title}"`, type: "requisition", label: "Job Requisition" })}
-                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {canUpdateReq && (
+                            <button
+                              onClick={() => {
+                                setNewReq({
+                                  id: row.id,
+                                  title: row.title,
+                                  departmentId: row.departmentId,
+                                  headcount: row.headcount,
+                                  experienceRequired: row.experienceRequired ?? "",
+                                  justification: row.justification,
+                                  jobSpecification: row.jobSpecification || "",
+                                  requisitionType: row.requisitionType || "NEW_REQUIREMENT",
+                                  replacementForEmployeeId: row.replacementForEmployeeId || "",
+                                  raisedBy: row.raisedBy,
+                                  isCnvApplicable: Boolean(row.isCnvApplicable),
+                                  cnvExchangeOffice: row.cnvExchangeOffice || row.cnvRecord?.employmentExchangeOffice || "",
+                                  cnvRefNumber: row.cnvRefNumber || "",
+                                  cnvNotificationDate: row.cnvNotificationDate ? String(row.cnvNotificationDate).split("T")[0] : "",
+                                  cnvStatus: row.cnvRecord?.cnvStatus || row.cnvStatus || (row.isCnvApplicable ? "PENDING_NOTIFICATION" : "NOT_REQUIRED"),
+                                  cnvExemptionReason: row.cnvExemptionReason || ""
+                                });
+                              }}
+                              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+                              title="Edit"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                          )}
+                          {canDeleteReq && (
+                            <button
+                              onClick={() => setDeleteTarget({ id: row.id, name: `requisition "${row.title}"`, type: "requisition", label: "Job Requisition" })}
+                              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          {!canUpdateReq && !canDeleteReq && (
+                            <span className="text-slate-400 text-xs italic">—</span>
+                          )}
                         </div>
                       ),
                     },
@@ -2654,10 +2731,11 @@ function RecruitmentPageContent() {
           )}
 
           {/* TAB 2: CANDIDATES */}
-          {activeTab === "candidates" && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {activeTab === "candidates" && canReadCand && (
+            <div className={`grid grid-cols-1 ${canCreateCand || newCand.id ? "lg:grid-cols-3" : "lg:grid-cols-1"} gap-6`}>
               {/* Form Card */}
-              <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
+              {(canCreateCand || newCand.id) && (
+                <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
                 <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
                   <Plus className="w-5 h-5 text-sky-500" />
                   {newCand.id ? "Edit Candidate" : "Log Candidate"}
@@ -2815,9 +2893,10 @@ function RecruitmentPageContent() {
                   </div>
                 </form>
               </div>
+              )}
 
               {/* Active Candidates DataTable */}
-              <div className="lg:col-span-2">
+              <div className={canCreateCand || newCand.id ? "lg:col-span-2" : "lg:col-span-1 w-full"}>
                 <DataTable
                   title="Active Candidates"
                   lazy
@@ -2853,47 +2932,23 @@ function RecruitmentPageContent() {
                           <SelectItem value="ALL" className="text-xs font-bold text-slate-700 dark:text-slate-200">
                             All Statuses
                           </SelectItem>
-                          <SelectItem value="SOURCED" className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-sky-500"></span>
-                              Sourced
-                            </span>
+                          <SelectItem value="NEW" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                            New
+                          </SelectItem>
+                          <SelectItem value="SCREENED" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                            Screened
                           </SelectItem>
                           <SelectItem value="INTERVIEWING" className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-                              Interviewing
-                            </span>
+                            Interviewing
                           </SelectItem>
-                          <SelectItem value="SELECTED" className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                              Selected
-                            </span>
+                          <SelectItem value="RE_INTERVIEW_ELIGIBLE" className="text-xs font-medium text-amber-600 dark:text-amber-400 font-bold">
+                            Re-Interview Eligible
                           </SelectItem>
-                          <SelectItem value="OFFERED" className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-purple-500"></span>
-                              Offered
-                            </span>
+                          <SelectItem value="SELECTED" className="text-xs font-medium text-emerald-600 dark:text-emerald-400 font-bold">
+                            Selected
                           </SelectItem>
-                          <SelectItem value="ACCEPTED" className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-teal-500"></span>
-                              Accepted
-                            </span>
-                          </SelectItem>
-                          <SelectItem value="REJECTED" className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-                              Rejected
-                            </span>
-                          </SelectItem>
-                          <SelectItem value="RE_INTERVIEW_ELIGIBLE" className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                              Re-interview Eligible
-                            </span>
+                          <SelectItem value="REJECTED" className="text-xs font-medium text-rose-600 dark:text-rose-400">
+                            Rejected
                           </SelectItem>
                         </SelectContent>
                       </Select>
@@ -2905,7 +2960,7 @@ function RecruitmentPageContent() {
                             setCandStatusFilter("ALL");
                             setCandPage(1);
                           }}
-                          className="h-10 px-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                          className="h-10 px-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white rounded-xl"
                           title="Clear Filter"
                         >
                           <X className="w-3.5 h-3.5 mr-1" /> Clear
@@ -2920,117 +2975,85 @@ function RecruitmentPageContent() {
                       render: (row) => {
                         const reHist = getReInterviewHistory(row);
                         return (
-                          <div>
-                            <span className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-1.5 flex-wrap">
-                              {row.name}
+                          <div className="space-y-0.5 max-w-[200px]">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-sm font-bold text-slate-800 dark:text-white block">{row.name}</span>
                               {reHist.isReInterview && row.status !== "SELECTED" && row.status !== "ACCEPTED" && row.status !== "OFFERED" && (
-                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700 flex items-center gap-1" title="Candidate was previously rejected and is re-interviewing">
-                                  <RotateCcw className="w-2.5 h-2.5" /> Re-Interview (Prev. Rejected)
-                                </span>
-                              )}
-                            </span>
-                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                              <span className="text-[10px] text-slate-400 font-bold">Source: {row.source}</span>
-                              {row.experienceYears !== undefined && row.experienceYears !== null && row.experienceYears !== "" && Number(row.experienceYears) >= 0 && (
-                                <span className="text-[9.5px] font-extrabold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/40 px-1.5 py-0.2 rounded border border-sky-200 dark:border-sky-800">
-                                  🎯 Exp: {row.experienceYears} Yrs
+                                <span className="inline-flex items-center gap-0.5 text-[8.5px] font-black px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
+                                  <RotateCcw className="w-2.5 h-2.5" /> Re-Interview
                                 </span>
                               )}
                             </div>
+                            <span className="text-xs text-slate-500 block truncate">{row.email}</span>
+                            <span className="text-[10px] text-slate-400 font-mono block">{row.phone || "No phone"}</span>
                           </div>
                         );
                       },
-                    },
-                    {
-                      key: "email",
-                      label: "Contact Info",
-                      render: (row) => (
-                        <div className="text-xs space-y-0.5">
-                          <span className="text-slate-600 dark:text-slate-300 block font-medium">{row.email ? row.email.toLowerCase() : ""}</span>
-                          {row.phone && <span className="text-slate-400 block">{row.phone}</span>}
-                        </div>
-                      ),
                     },
                     {
                       key: "requisition.title",
                       label: "Applied Role",
-                      render: (row) => {
-                        const req = row.requisition;
-                        const isReplacement = req?.requisitionType === "REPLACEMENT";
-                        const replEmp = req?.replacementForEmployee;
-                        return (
-                          <div className="space-y-0.5">
-                            <span className="text-xs font-extrabold text-sky-600 dark:text-sky-400 block">
-                              {req?.title || "Unknown"}
-                            </span>
-                            {isReplacement ? (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800">
-                                <RotateCcw className="w-2.5 h-2.5" /> Replacement {replEmp ? `for ${replEmp.firstName}` : ''}
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
-                                <Sparkles className="w-2.5 h-2.5" /> New Req
-                              </span>
-                            )}
-                          </div>
-                        );
-                      },
+                      render: (row) => (
+                        <div className="space-y-0.5 max-w-[170px]">
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block truncate">{row.requisition?.title || "Direct Sourcing"}</span>
+                          <span className="text-[10px] text-slate-400 block truncate">{row.source || "Portal"}</span>
+                        </div>
+                      ),
                     },
                     {
-                      key: "department",
-                      label: "Department",
-                      render: (row) => {
-                        const deptName =
-                          row.requisition?.department?.name ||
-                          dropdownRequisitions.find((r) => String(r.id) === String(row.requisitionId))?.department?.name ||
-                          departments.find((d) => String(d.id) === String(row.requisition?.departmentId))?.name ||
-                          "—";
-                        return (
-                          <span className="text-xs font-extrabold uppercase px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 inline-block">
-                            {deptName}
-                          </span>
-                        );
-                      },
+                      key: "experienceYears",
+                      label: "Experience",
+                      render: (row) => (
+                        <span className="text-xs font-black text-slate-700 dark:text-slate-300">
+                          {row.experienceYears ? `${row.experienceYears} Yrs` : "Fresh"}
+                        </span>
+                      ),
                     },
                     {
                       key: "resumeUrl",
                       label: "Resume",
                       sortable: false,
-                      render: (row) => row.resumeUrl ? (
-                        <a
-                          href={getResumeUrl(row.resumeUrl)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sky-500 hover:text-sky-600 dark:text-sky-400 font-extrabold text-xs"
-                        >
-                          View PDF
-                        </a>
-                      ) : <span className="text-slate-400 text-xs">No Resume</span>,
+                      render: (row) => (
+                        row.resumeUrl ? (
+                          <a
+                            href={row.resumeUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-sky-600 dark:text-sky-400 font-bold bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 px-2 py-1 rounded-lg hover:underline"
+                          >
+                            <FileText className="w-3.5 h-3.5" /> PDF
+                          </a>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 italic">None</span>
+                        )
+                      ),
                     },
                     {
                       key: "status",
                       label: "Status",
                       render: (row) => (
                         <div className="flex flex-col gap-1 items-start">
-                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border flex items-center gap-1.5 uppercase ${
-                            row.status === "SELECTED"
+                          <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${
+                            row.status === "SELECTED" || row.status === "ACCEPTED"
                               ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800"
-                              : row.status === "INTERVIEWING"
-                              ? "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950 dark:text-indigo-300 dark:border-indigo-800"
-                              : row.status === "ACCEPTED"
-                              ? "bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950 dark:text-teal-300 dark:border-teal-800"
-                              : row.status === "OFFERED"
-                              ? "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800"
                               : row.status === "REJECTED"
                               ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800"
-                              : "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800"
+                              : row.status === "INTERVIEWING"
+                              ? "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800"
+                              : row.status === "RE_INTERVIEW_ELIGIBLE"
+                              ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800"
+                              : "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700"
                           }`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${
-                              row.status === "SELECTED" ? "bg-emerald-500" :
-                              row.status === "INTERVIEWING" ? "bg-indigo-500 animate-pulse" :
-                              row.status === "ACCEPTED" ? "bg-teal-500" :
-                              row.status === "OFFERED" ? "bg-purple-500" :
-                              row.status === "REJECTED" ? "bg-rose-500" : "bg-sky-500"
+                              row.status === "SELECTED" || row.status === "ACCEPTED"
+                                ? "bg-emerald-500"
+                                : row.status === "REJECTED"
+                                ? "bg-rose-500"
+                                : row.status === "INTERVIEWING"
+                                ? "bg-sky-500 animate-pulse"
+                                : row.status === "RE_INTERVIEW_ELIGIBLE"
+                                ? "bg-amber-500"
+                                : "bg-slate-400"
                             }`} />
                             {row.status}
                           </span>
@@ -3047,7 +3070,7 @@ function RecruitmentPageContent() {
 
                         return (
                           <div className="flex gap-1 items-center">
-                            {hasScheduledInterview && !isFinalStatus && (
+                            {canUpdateCand && hasScheduledInterview && !isFinalStatus && (
                               <>
                                 <button
                                   onClick={() => handleUpdateCandidateStatus(row.id, "SELECTED")}
@@ -3063,33 +3086,39 @@ function RecruitmentPageContent() {
                                 </button>
                               </>
                             )}
-                            <button
-                              onClick={() => {
-                                setNewCand({
-                                  id: row.id,
-                                  name: row.name,
-                                  email: row.email,
-                                  phone: row.phone || "",
-                                  source: row.source,
-                                  requisitionId: String(row.requisitionId || row.requisition?.id || ""),
-                                  experienceYears: row.experienceYears ?? "",
-                                  resumeUrl: row.resumeUrl || ""
-                                });
-                                // Scroll to form (optional)
-                                window.scrollTo({ top: 0, behavior: 'smooth' });
-                              }}
-                              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
-                              title="Edit"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => setDeleteTarget({ id: row.id, name: `candidate "${row.name}"`, type: "candidate", label: "Candidate Profile" })}
-                              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            {canUpdateCand && (
+                              <button
+                                onClick={() => {
+                                  setNewCand({
+                                    id: row.id,
+                                    name: row.name,
+                                    email: row.email,
+                                    phone: row.phone || "",
+                                    source: row.source,
+                                    requisitionId: String(row.requisitionId || row.requisition?.id || ""),
+                                    experienceYears: row.experienceYears ?? "",
+                                    resumeUrl: row.resumeUrl || ""
+                                  });
+                                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                                }}
+                                className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
+                                title="Edit"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                            )}
+                            {canDeleteCand && (
+                              <button
+                                onClick={() => setDeleteTarget({ id: row.id, name: `candidate "${row.name}"`, type: "candidate", label: "Candidate Profile" })}
+                                className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                            {!canUpdateCand && !canDeleteCand && (
+                              <span className="text-slate-400 text-xs italic">—</span>
+                            )}
                           </div>
                         );
                       }
@@ -3100,218 +3129,78 @@ function RecruitmentPageContent() {
             </div>
           )}
 
-          {/* TAB 3: INTERVIEWS */}
-          {activeTab === "interviews" && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {activeTab === "interviews" && canReadSched && (
+            <div className={`grid grid-cols-1 ${canCreateSched || newSched.id ? "lg:grid-cols-3" : "lg:grid-cols-1"} gap-6`}>
               {/* Scheduling & Feedback Forms Column */}
-              <div className="space-y-6 h-fit">
-                {/* Schedule Interview Form */}
-                <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4">
-                  <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                    <Calendar className="w-5 h-5 text-sky-500" />
-                    {newSched.id ? "Edit Schedule" : "Schedule Interview"}
-                  </h3>
-                  <form onSubmit={handleSubmitSchedule} className="space-y-3" noValidate>
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Candidate</Label>
-                      {(() => {
-                        const baseList = (dropdownCandidates && dropdownCandidates.length > 0) ? dropdownCandidates : (candidates || []);
-                        const candidateOptions = [...baseList];
-                        if (newSched.candidateId) {
-                          const exists = candidateOptions.some(c => String(c.id) === String(newSched.candidateId));
-                          if (!exists) {
-                            const sched = schedules.find(s => String(s.candidateId) === String(newSched.candidateId) || String(s.id) === String(newSched.id));
-                            if (sched?.candidate) {
-                              candidateOptions.unshift(sched.candidate);
+              {(canCreateSched || newSched.id) && (
+                <div className="space-y-6 h-fit">
+                  {/* Schedule Interview Form */}
+                  <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4">
+                    <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                      <Calendar className="w-5 h-5 text-sky-500" />
+                      {newSched.id ? "Edit Schedule" : "Schedule Interview"}
+                    </h3>
+                    <form onSubmit={handleSubmitSchedule} className="space-y-3" noValidate>
+                      <div className="space-y-1">
+                        <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Candidate</Label>
+                        {(() => {
+                          const baseList = (dropdownCandidates && dropdownCandidates.length > 0) ? dropdownCandidates : (candidates || []);
+                          const candidateOptions = [...baseList];
+                          if (newSched.candidateId) {
+                            const exists = candidateOptions.some(c => String(c.id) === String(newSched.candidateId));
+                            if (!exists) {
+                              const sched = schedules.find(s => String(s.candidateId) === String(newSched.candidateId) || String(s.id) === String(newSched.id));
+                              if (sched?.candidate) {
+                                candidateOptions.unshift(sched.candidate);
+                              }
                             }
                           }
-                        }
 
-                        const filteredCandidates = candidateOptions.filter(c => {
-                          if (newSched.candidateId && String(c.id) === String(newSched.candidateId)) return true;
-                          return c.status !== 'SELECTED' && c.status !== 'ACCEPTED';
-                        });
+                          const filteredCandidates = candidateOptions.filter(c => {
+                            if (newSched.candidateId && String(c.id) === String(newSched.candidateId)) return true;
+                            return c.status !== 'SELECTED' && c.status !== 'ACCEPTED';
+                          });
 
-                        return (
-                          <Select
-                            disabled={Boolean(newSched.id)}
-                            value={newSched.candidateId ? String(newSched.candidateId) : ""}
-                            onValueChange={(val) => {
-                              setNewSched({ ...newSched, candidateId: val });
-                              if (formErrors.candidateId) setFormErrors({ ...formErrors, candidateId: null });
-                            }}
-                          >
-                            <SelectTrigger className={`h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full ${newSched.id ? 'opacity-70 cursor-not-allowed bg-slate-100/70 dark:bg-slate-800/70' : ''}`}>
-                              <SelectValue placeholder="Select..." />
-                            </SelectTrigger>
-                            <SelectContent position="popper" className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                              {filteredCandidates.map((c) => {
-                                const coolOff = getCandidateCoolOffInfo(c);
-                                let labelSuffix = "";
-                                if (coolOff.isCoolingOff) {
-                                  labelSuffix = ` (Rejected - ${coolOff.daysLeft}d cool-off left)`;
-                                } else if (c.status === 'REJECTED') {
-                                  labelSuffix = ` (Rejected - Re-interview Eligible)`;
-                                }
-                                return (
-                                  <SelectItem key={c.id} value={String(c.id)}>
-                                    {c.name}{labelSuffix}
-                                  </SelectItem>
-                                );
-                              })}
-                            </SelectContent>
-                          </Select>
-                        );
-                      })()}
-                      {formErrors.candidateId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.candidateId}</span>}
-                    </div>
-
-                    {newSched.candidateId && (() => {
-                      const selCand = (dropdownCandidates.length > 0 ? dropdownCandidates : candidates).find(c => String(c.id) === String(newSched.candidateId));
-                      if (!selCand) return null;
-                      const coolOff = getCandidateCoolOffInfo(selCand);
-                      const reHist = getReInterviewHistory(selCand);
-                      const dbDaysLeft = selCand.coolOffDaysLeft ?? (coolOff.isCoolingOff ? coolOff.daysLeft : 0);
-                      const candSchedules = (schedules || []).filter(
-                        (s) => String(s.candidateId) === String(newSched.candidateId) && (!newSched.id || String(s.id) !== String(newSched.id))
-                      );
-                      const sortedSchedules = [...candSchedules].sort(
-                        (a, b) => new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()
-                      );
-                      const latestSched = sortedSchedules[0];
-
-                      return (
-                        <div className="p-3 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs space-y-1">
-                          <div className="flex justify-between items-center flex-wrap gap-2">
-                            <span className="font-extrabold text-slate-800 dark:text-white">{selCand.name}</span>
-                            {reHist.isReInterview && (
-                              <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700 flex items-center gap-1">
-                                <RotateCcw className="w-2.5 h-2.5" /> Re-Interview Candidate
-                              </span>
-                            )}
-                          </div>
-                          {candSchedules.length > 0 && (
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-1">
-                              <span className="font-semibold text-slate-700 dark:text-slate-300">Existing Rounds:</span>
-                              {candSchedules.map((s, idx) => (
-                                <span key={s.id || idx} className="inline-block px-1.5 py-0.5 rounded bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 font-bold border border-sky-200 dark:border-sky-800 text-[10px]">
-                                  {getRoundDisplayName(s)}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {latestSched && (
-                            <div className="text-sky-600 dark:text-sky-400 font-semibold text-[11px] flex items-center gap-1">
-                              <Calendar className="w-3 h-3 shrink-0" />
-                              Latest Round ({getRoundDisplayName(latestSched)}): {new Date(latestSched.scheduledAt).toLocaleString()}
-                            </div>
-                          )}
-                          {coolOff.isCoolingOff ? (
-                            <div className="text-rose-500 font-bold text-[11px] flex items-center gap-1">
-                              <XCircle className="w-3.5 h-3.5" />
-                              Cool-off Active: {dbDaysLeft} days remaining (Eligible on {coolOff.eligibleDateString})
-                            </div>
-                          ) : selCand.status === 'RE_INTERVIEW_ELIGIBLE' || selCand.status === 'REJECTED' ? (
-                            <div className="text-emerald-600 dark:text-emerald-400 font-bold text-[11px] flex items-center gap-1">
-                              <CheckCircle className="w-3.5 h-3.5" />
-                              Cool-off Finished: Eligible for Re-interview
-                            </div>
-                          ) : null}
-                          {(selCand.rejectionCount > 0 || selCand.isReInterview) && (
-                            <div className="text-[10.5px] text-slate-500 dark:text-slate-400 block font-semibold">
-                              DB Rejections Count: {selCand.rejectionCount ?? 1} | Days Left in DB: {dbDaysLeft} days
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                    <div className="space-y-1">
-                      <div className="flex justify-between items-center">
-                        <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Round Name</Label>
-                        <Link
-                          href="/dashboard/interview-rounds"
-                          className="text-[10.5px] font-bold text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-0.5"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          + Manage Rounds
-                        </Link>
-                      </div>
-                      {(() => {
-                        const availableRounds = Array.isArray(dropdownInterviewRounds) ? dropdownInterviewRounds : [];
-                        const matchedRound = availableRounds.find(r =>
-                          (newSched.interviewRoundId && String(r.id) === String(newSched.interviewRoundId)) ||
-                          (newSched.roundName && String(r.id) === String(newSched.roundName)) ||
-                          (newSched.roundName && r.name?.toLowerCase() === String(newSched.roundName)?.toLowerCase())
-                        );
-                        const selectVal = matchedRound ? String(matchedRound.id) : (newSched.interviewRoundId || newSched.roundName || "");
-
-                        return (
-                          <Select
-                            value={selectVal}
-                            onValueChange={(val) => {
-                              if (val && val !== "NONE_AVAILABLE") {
-                                const selectedRound = availableRounds.find(r => String(r.id) === String(val) || r.name?.toLowerCase() === val.toLowerCase());
-                                const chosenId = selectedRound ? selectedRound.id : val;
-                                setNewSched({
-                                  ...newSched,
-                                  interviewRoundId: chosenId,
-                                  roundName: chosenId, // Store Master ID in roundName
-                                });
-                                if (formErrors.roundName) setFormErrors({ ...formErrors, roundName: null });
-                              }
-                            }}
-                          >
-                            <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                              <SelectValue placeholder={availableRounds.length === 0 ? "No rounds found in Master..." : "Select interview round..."} />
-                            </SelectTrigger>
-                            <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 max-h-60">
-                              {/* Current custom value when editing an existing schedule with legacy round */}
-                              {newSched.roundName && !matchedRound && (
-                                <SelectItem value={newSched.interviewRoundId || newSched.roundName}>
-                                  {getRoundDisplayName(newSched)} (Current)
-                                </SelectItem>
-                              )}
-                              {availableRounds.length === 0 ? (
-                                <SelectItem value="NONE_AVAILABLE" disabled className="text-slate-400 italic text-xs">
-                                  No interview rounds configured. Click "+ Manage Rounds" to add.
-                                </SelectItem>
-                              ) : (
-                                availableRounds.map((r) => {
-                                  const isAlreadyScheduled = Boolean(
-                                    newSched.candidateId &&
-                                    (schedules || []).some(
-                                      (s) =>
-                                        String(s.candidateId) === String(newSched.candidateId) &&
-                                        (!newSched.id || String(s.id) !== String(newSched.id)) &&
-                                        ((s.interviewRoundId && String(s.interviewRoundId) === String(r.id)) ||
-                                          (s.roundName && String(s.roundName) === String(r.id)) ||
-                                          (s.roundName && s.roundName.trim().toLowerCase() === r.name?.trim().toLowerCase())) &&
-                                        s.status !== "CANCELLED"
-                                    )
-                                  );
-
+                          return (
+                            <Select
+                              disabled={Boolean(newSched.id)}
+                              value={newSched.candidateId ? String(newSched.candidateId) : ""}
+                              onValueChange={(val) => {
+                                setNewSched({ ...newSched, candidateId: val });
+                                if (formErrors.candidateId) setFormErrors({ ...formErrors, candidateId: null });
+                              }}
+                            >
+                              <SelectTrigger className={`h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full ${newSched.id ? 'opacity-70 cursor-not-allowed bg-slate-100/70 dark:bg-slate-800/70' : ''}`}>
+                                <SelectValue placeholder="Select..." />
+                              </SelectTrigger>
+                              <SelectContent position="popper" className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                                {filteredCandidates.map((c) => {
+                                  const coolOff = getCandidateCoolOffInfo(c);
+                                  let labelSuffix = "";
+                                  if (coolOff.isCoolingOff) {
+                                    labelSuffix = ` (Rejected - ${coolOff.daysLeft}d cool-off left)`;
+                                  } else if (c.status === 'REJECTED') {
+                                    labelSuffix = ` (Rejected - Re-interview Eligible)`;
+                                  }
                                   return (
-                                    <SelectItem
-                                      key={r.id}
-                                      value={String(r.id)}
-                                      disabled={isAlreadyScheduled}
-                                      className={isAlreadyScheduled ? "opacity-40 text-slate-400 font-medium" : ""}
-                                    >
-                                      {r.name} {isAlreadyScheduled ? "(Already Scheduled)" : ""}
+                                    <SelectItem key={c.id} value={String(c.id)}>
+                                      {c.name}{labelSuffix}
                                     </SelectItem>
                                   );
-                                })
-                              )}
-                            </SelectContent>
-                          </Select>
-                        );
-                      })()}
-                      {formErrors.roundName && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.roundName}</span>}
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Scheduled Date & Time</Label>
-                      {(() => {
+                                })}
+                              </SelectContent>
+                            </Select>
+                          );
+                        })()}
+                        {formErrors.candidateId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.candidateId}</span>}
+                      </div>
+
+                      {newSched.candidateId && (() => {
+                        const selCand = (dropdownCandidates.length > 0 ? dropdownCandidates : candidates).find(c => String(c.id) === String(newSched.candidateId));
+                        if (!selCand) return null;
+                        const coolOff = getCandidateCoolOffInfo(selCand);
+                        const reHist = getReInterviewHistory(selCand);
+                        const dbDaysLeft = selCand.coolOffDaysLeft ?? (coolOff.isCoolingOff ? coolOff.daysLeft : 0);
                         const candSchedules = (schedules || []).filter(
                           (s) => String(s.candidateId) === String(newSched.candidateId) && (!newSched.id || String(s.id) !== String(newSched.id))
                         );
@@ -3319,436 +3208,174 @@ function RecruitmentPageContent() {
                           (a, b) => new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()
                         );
                         const latestSched = sortedSchedules[0];
-                        const minDateVal = latestSched && new Date(latestSched.scheduledAt) > new Date()
-                          ? new Date(latestSched.scheduledAt)
-                          : undefined;
 
                         return (
-                          <DateTimePicker
-                            date={newSched.scheduledAt}
-                            disablePast={true}
-                            minDate={minDateVal}
-                            setDate={(val) => {
-                              setNewSched({ ...newSched, scheduledAt: val });
-                              if (formErrors.scheduledAt) setFormErrors({ ...formErrors, scheduledAt: null });
-                            }}
-                          />
-                        );
-                      })()}
-                      {formErrors.scheduledAt && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.scheduledAt}</span>}
-                    </div>
-                    {/* Panel Members (Multi-Select) */}
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                        Panel Members (Multi-Select)
-                      </Label>
-                      {(() => {
-                        const selectedUserIds = parsePanelistList(newSched.panelists);
-                        return (
-                          <>
-                            {selectedUserIds.length > 0 && (
-                              <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl">
-                                {selectedUserIds.map((uId) => {
-                                  const userObj = users.find((u) => String(u.id) === String(uId) || u.name?.toLowerCase() === String(uId).toLowerCase());
-                                  const displayName = userObj ? userObj.name : uId;
-                                  return (
-                                    <span
-                                      key={uId}
-                                      className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800"
-                                    >
-                                      {displayName}
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const updated = selectedUserIds.filter((id) => id !== uId);
-                                          setNewSched({ ...newSched, panelists: updated });
-                                        }}
-                                        className="hover:text-rose-500 rounded-full p-0.5 transition-colors cursor-pointer"
-                                        title="Remove panelist"
-                                      >
-                                        <XCircle className="w-3.5 h-3.5" />
-                                      </button>
-                                    </span>
-                                  );
-                                })}
+                          <div className="space-y-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                            {/* Candidate Applied Details */}
+                            <div className="text-[11.5px] text-slate-600 dark:text-slate-300">
+                              <span className="font-bold text-slate-800 dark:text-white">Role:</span> {selCand.requisition?.title || 'Direct Sourcing'}
+                              {selCand.requisition?.department?.name && (
+                                <span className="ml-1 text-[10.5px] text-sky-600 font-semibold uppercase">({selCand.requisition.department.name})</span>
+                              )}
+                            </div>
+
+                            {/* Re-Interview Banner */}
+                            {reHist.isReInterview && selCand.status !== 'SELECTED' && selCand.status !== 'ACCEPTED' && (
+                              <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 space-y-1">
+                                <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300 font-bold text-xs">
+                                  <RotateCcw className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                  <span>Re-Interview Profile</span>
+                                </div>
+                                {reHist.rejectedComment && (
+                                  <p className="text-[10.5px] text-amber-700 dark:text-amber-400 italic">
+                                    &ldquo;{reHist.rejectedComment}&rdquo;
+                                  </p>
+                                )}
                               </div>
                             )}
 
-                            <Select
-                              value=""
-                              onValueChange={(val) => {
-                                if (val) {
-                                  if (!selectedUserIds.includes(val)) {
-                                    const updated = [...selectedUserIds, val];
-                                    setNewSched({ ...newSched, panelists: updated });
-                                    if (formErrors.panelists) setFormErrors({ ...formErrors, panelists: null });
-                                  }
-                                }
-                              }}
-                            >
-                              <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                                <SelectValue placeholder={selectedUserIds.length > 0 ? "Add another panel member..." : "Select panel members..."} />
-                              </SelectTrigger>
-                              <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                                {users.map((u) => {
-                                  const isSel = selectedUserIds.includes(String(u.id)) || selectedUserIds.includes(u.name);
-                                  return (
-                                    <SelectItem
-                                      key={u.id}
-                                      value={String(u.id)}
-                                      disabled={isSel}
-                                      className={isSel ? "opacity-40 font-bold" : ""}
-                                    >
-                                      {isSel ? `✓ ${u.name} (${u.role?.toUpperCase()})` : `${u.name} (${u.role?.toUpperCase()})`}
-                                    </SelectItem>
-                                  );
-                                })}
-                              </SelectContent>
-                            </Select>
-                          </>
+                            {/* 30-Day Cool-off Warning */}
+                            {dbDaysLeft > 0 && (
+                              <div className="p-2.5 rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 space-y-1">
+                                <div className="flex items-center gap-1.5 text-rose-800 dark:text-rose-300 font-bold text-xs">
+                                  <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                                  <span>30-Day Cool-Off Active ({dbDaysLeft} days left)</span>
+                                </div>
+                                <p className="text-[10.5px] text-rose-700 dark:text-rose-400">
+                                  Standard policy recommends waiting 30 days before re-interviewing. You may proceed if exception is approved by HR Head.
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Past Schedules / Attempts Breakdown */}
+                            {sortedSchedules.length > 0 && (
+                              <div className="space-y-1 pt-1 border-t border-slate-200 dark:border-slate-700">
+                                <span className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block">
+                                  Previous Interview History ({sortedSchedules.length})
+                                </span>
+                                <div className="space-y-1 max-h-28 overflow-y-auto pr-1">
+                                  {sortedSchedules.map((s, idx) => (
+                                    <div key={s.id} className="text-[10.5px] p-1.5 rounded bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between">
+                                      <div>
+                                        <span className="font-bold text-slate-700 dark:text-slate-200">
+                                          {getRoundDisplayName(s)}
+                                        </span>
+                                        <span className="text-slate-400 ml-1">
+                                          ({new Date(s.scheduledAt).toLocaleDateString()})
+                                        </span>
+                                      </div>
+                                      <span className={`text-[9px] font-black px-1.5 py-0.2 rounded uppercase ${
+                                        s.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' :
+                                        s.status === 'CANCELLED' ? 'bg-rose-100 text-rose-700' : 'bg-sky-100 text-sky-700'
+                                      }`}>
+                                        {s.status}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         );
                       })()}
-                      {formErrors.panelists && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.panelists}</span>}
-                    </div>
-                    <div className="flex gap-2 mt-2">
-                      {newSched.id && (
-                        <Button 
-                          type="button" 
-                          variant="outline" 
-                          onClick={() => {
-                            setNewSched({ candidateId: "", interviewRoundId: "", roundName: "", scheduledAt: "", panelists: [] });
-                            setFormErrors({});
-                          }}
-                          className="w-1/3 rounded-xl font-bold"
-                        >
-                          Cancel
-                        </Button>
-                      )}
-                      <Button type="submit" className={`bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl ${newSched.id ? 'w-2/3' : 'w-full'}`}>
-                        {newSched.id ? "Update Schedule" : "Schedule Round"}
-                      </Button>
-                    </div>
-                  </form>
-                </div>
 
-                {/* Log Feedback Form */}
-                <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4">
-                  <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                    <Star className="w-5 h-5 text-sky-500" />
-                    {newFeedback.id ? "Edit Panelist Feedback" : "Record Panelist Feedback"}
-                  </h3>
-                  <form onSubmit={handleCreateFeedback} className="space-y-3" noValidate>
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Filter by Candidate</Label>
-                      {(() => {
-                        const candidatesWithEligibleInterviews = Array.from(
-                          new Map(
-                            (schedules || [])
-                              .filter((s) => s.scheduledAt && new Date(s.scheduledAt) <= new Date())
-                              .map((s) => {
-                                const cand =
-                                  s.candidate ||
-                                  (dropdownCandidates || candidates || []).find(
-                                    (c) => String(c.id) === String(s.candidateId),
-                                  );
-                                return cand ? [String(cand.id), cand] : null;
-                              })
-                              .filter(Boolean),
-                          ).values(),
-                        );
-
-                        return (
-                          <Select
-                            value={feedbackCandidateId}
-                            onValueChange={(val) => {
-                              setFeedbackCandidateId(val);
-                              setNewFeedback({
-                                ...newFeedback,
-                                scheduleId: "",
-                                panelistId: "",
-                                panelistName: "",
-                              });
-                            }}
-                          >
-                            <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                              <SelectValue placeholder="All Candidates" />
-                            </SelectTrigger>
-                            <SelectContent position="popper" className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                              <SelectItem value="ALL">All Eligible Candidates ({candidatesWithEligibleInterviews.length})</SelectItem>
-                              {candidatesWithEligibleInterviews.map((c) => (
-                                <SelectItem key={c.id} value={String(c.id)}>
-                                  {c.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        );
-                      })()}
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Select Schedule</Label>
-                      <Select value={newFeedback.scheduleId} onValueChange={(val) => {
-                        if (val === "_none" || !val) return;
-                        const selSched = schedules.find(s => String(s.id) === String(val));
-                        const assigned = parsePanelistList(selSched?.panelists);
-                        const firstUser = users.find(u => String(u.id) === String(assigned[0]) || u.name?.toLowerCase() === assigned[0]?.toLowerCase());
-                        const firstPanelistId = firstUser ? firstUser.id : (assigned[0] || "");
-                        const firstPanelistName = firstUser ? firstUser.name : (assigned[0] || "");
-
-                        // Auto-load existing feedback if already submitted
-                        const existingFb = selSched?.feedbacks?.find((f) =>
-                          (firstPanelistId && String(f.panelistId) === String(firstPanelistId)) ||
-                          (firstPanelistName && f.panelistName?.toLowerCase() === firstPanelistName.toLowerCase())
-                        );
-
-                        if (existingFb) {
-                          setNewFeedback({
-                            id: existingFb.id,
-                            scheduleId: val,
-                            panelistId: firstPanelistId,
-                            panelistName: firstPanelistName,
-                            rating: existingFb.rating !== undefined && existingFb.rating !== null ? String(existingFb.rating) : "",
-                            comments: existingFb.comments || "",
-                            recommendation: existingFb.recommendation || "",
-                          });
-                        } else {
-                          setNewFeedback({
-                            id: "",
-                            scheduleId: val,
-                            panelistId: firstPanelistId,
-                            panelistName: firstPanelistName,
-                            rating: "",
-                            comments: "",
-                            recommendation: "",
-                          });
-                        }
-                        if (formErrors.scheduleId) setFormErrors({ ...formErrors, scheduleId: null });
-                      }}>
-                        <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                          <SelectValue placeholder="Select a schedule..." />
-                        </SelectTrigger>
-                        <SelectContent position="popper" className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                          {(() => {
-                            const eligibleSchedules = schedules.filter(s => {
-                              const matchesCandidate = feedbackCandidateId === 'ALL' || String(s.candidateId) === String(feedbackCandidateId);
-                              const hasStarted = s.scheduledAt ? new Date(s.scheduledAt) <= new Date() : false;
-                              return matchesCandidate && hasStarted;
+                      {/* Interview Round Master Dropdown */}
+                      <div className="space-y-1">
+                        <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Interview Round Master</Label>
+                        <Select
+                          value={newSched.interviewRoundId || ""}
+                          onValueChange={(val) => {
+                            const matched = (dropdownInterviewRounds || []).find(r => String(r.id) === String(val));
+                            setNewSched({
+                              ...newSched,
+                              interviewRoundId: val,
+                              roundName: matched?.name || val,
                             });
-
-                            if (eligibleSchedules.length === 0) {
-                              return (
-                                <SelectItem disabled value="_none">
-                                  No completed or ongoing interviews available
-                                </SelectItem>
-                              );
-                            }
-
-                            return eligibleSchedules.map((s) => (
-                              <SelectItem key={s.id} value={String(s.id)}>
-                                {s.candidate?.name || "Candidate"} - Round: {getRoundDisplayName(s)} ({new Date(s.scheduledAt).toLocaleDateString()})
-                              </SelectItem>
-                            ));
-                          })()}
-                        </SelectContent>
-                      </Select>
-                      {formErrors.scheduleId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.scheduleId}</span>}
-                    </div>
-
-                    {newFeedback.scheduleId && (() => {
-                      const selSched = schedules.find(s => String(s.id) === String(newFeedback.scheduleId));
-                      const cand = selSched?.candidate || candidates.find(c => String(c.id) === String(selSched?.candidateId));
-                      const reHist = getReInterviewHistory(cand);
-                      const isFinalStatus = cand?.status === "SELECTED" || cand?.status === "ACCEPTED" || cand?.status === "OFFERED";
-                      if (!reHist.isReInterview || isFinalStatus) return null;
-                      return (
-                        <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-2xl text-xs text-amber-800 dark:text-amber-300 space-y-1">
-                          <span className="font-bold flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
-                            <RotateCcw className="w-3.5 h-3.5" /> Re-Interview Candidate Note
-                          </span>
-                          <p className="text-[11px] opacity-90 leading-tight">
-                            This candidate was previously rejected in a past interview process.
-                            {reHist.rejectedComment && <span className="block mt-0.5 italic">Past Panel Comment: &quot;{reHist.rejectedComment}&quot;</span>}
-                          </p>
-                        </div>
-                      );
-                    })()}
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Panelist Name</Label>
-                      {(() => {
-                        const currentSchedule = schedules.find((s) => String(s.id) === String(newFeedback.scheduleId));
-                        const assignedIdsOrNames = parsePanelistList(currentSchedule?.panelists);
-
-                        const panelistOptions = assignedIdsOrNames.map((item) => {
-                          const userMatch = users.find((u) => String(u.id) === String(item) || u.name?.toLowerCase() === item.toLowerCase());
-                          return {
-                            id: userMatch ? userMatch.id : item,
-                            name: userMatch ? userMatch.name : item,
-                            role: userMatch?.role ? userMatch.role.toUpperCase() : "PANELIST",
-                          };
-                        });
-
-                        let selectedPanelistValue = newFeedback.panelistId || newFeedback.panelistName || "";
-
-                        if (selectedPanelistValue) {
-                          const exactOrPartialMatch = panelistOptions.find(p => 
-                            String(p.id) === String(selectedPanelistValue) ||
-                            p.name.toLowerCase() === selectedPanelistValue.toLowerCase()
-                          );
-                          if (exactOrPartialMatch) {
-                            selectedPanelistValue = exactOrPartialMatch.id;
-                          } else {
-                            panelistOptions.unshift({
-                              id: selectedPanelistValue,
-                              name: selectedPanelistValue,
-                              role: "PANELIST",
-                            });
-                          }
-                        }
-
-                        return (
-                          <Select
-                            key={selectedPanelistValue || 'empty'}
-                            disabled={!newFeedback.scheduleId}
-                            value={selectedPanelistValue}
-                            onValueChange={(val) => {
-                              const matchObj = panelistOptions.find(p => String(p.id) === String(val) || p.name.toLowerCase() === val.toLowerCase());
-                              const pId = matchObj ? matchObj.id : val;
-                              const pName = matchObj ? matchObj.name : val;
-
-                              // Check if feedback already exists for this panelist on this schedule
-                              const existingFb = currentSchedule?.feedbacks?.find((f) =>
-                                (pId && String(f.panelistId) === String(pId)) ||
-                                (pName && f.panelistName?.toLowerCase() === pName.toLowerCase())
-                              );
-
-                              if (existingFb) {
-                                setNewFeedback({
-                                  id: existingFb.id,
-                                  scheduleId: currentSchedule?.id || newFeedback.scheduleId,
-                                  panelistId: pId,
-                                  panelistName: pName,
-                                  rating: existingFb.rating !== undefined && existingFb.rating !== null ? String(existingFb.rating) : "",
-                                  comments: existingFb.comments || "",
-                                  recommendation: existingFb.recommendation || "",
-                                });
-                              } else {
-                                setNewFeedback({
-                                  ...newFeedback,
-                                  id: "",
-                                  panelistId: pId,
-                                  panelistName: pName,
-                                  rating: "",
-                                  comments: "",
-                                  recommendation: "",
-                                });
-                              }
-                              if (formErrors.panelistName) setFormErrors({ ...formErrors, panelistName: null });
-                            }}
-                          >
-                            <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                              <SelectValue placeholder={!newFeedback.scheduleId ? "Select a schedule first" : "Select assigned panelist..."} />
-                            </SelectTrigger>
-                            <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                              {panelistOptions.length > 0 ? (
-                                panelistOptions.map((p) => {
-                                  const hasFb = currentSchedule?.feedbacks?.some(
-                                    f => String(f.panelistId) === String(p.id) || f.panelistName?.toLowerCase() === p.name.toLowerCase()
-                                  );
-                                  return (
-                                    <SelectItem key={p.id} value={String(p.id)}>
-                                      {p.name} ({p.role}) {hasFb ? "✓ (Recorded)" : ""}
-                                    </SelectItem>
-                                  );
-                                })
-                              ) : (
-                                <SelectItem disabled value="_empty">
-                                  No panel members assigned to this schedule
-                                </SelectItem>
-                              )}
-                            </SelectContent>
-                          </Select>
-                        );
-                      })()}
-                      {formErrors.panelistName && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.panelistName}</span>}
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Rating (1 to 10)</Label>
-                      <Input
-                        type="number"
-                        min="1"
-                        max="10"
-                        value={newFeedback.rating}
-                        onChange={(e) => {
-                          setNewFeedback({ ...newFeedback, rating: e.target.value });
-                          if (formErrors.rating) setFormErrors({ ...formErrors, rating: null });
-                        }}
-                      />
-                      {formErrors.rating && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.rating}</span>}
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Comments</Label>
-                      <Textarea
-                        placeholder="Detailed strengths & weaknesses..."
-                        className="w-full p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-sm dark:bg-slate-950 h-16"
-                        value={newFeedback.comments}
-                        onChange={(e) => {
-                          setNewFeedback({ ...newFeedback, comments: e.target.value });
-                          if (formErrors.comments) setFormErrors({ ...formErrors, comments: null });
-                        }}
-                      />
-                      {formErrors.comments && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.comments}</span>}
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Recommendation</Label>
-                      <Select value={newFeedback.recommendation} onValueChange={(val) => {
-                        setNewFeedback({ ...newFeedback, recommendation: val });
-                        if (formErrors.recommendation) setFormErrors({ ...formErrors, recommendation: null });
-                      }}>
-                        <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                          <SelectValue placeholder="Select recommendation..." />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                          <SelectItem value="SELECT">SELECT (Recommend Candidate)</SelectItem>
-                          <SelectItem value="REJECT">REJECT Candidate</SelectItem>
-                          <SelectItem value="HOLD">HOLD Candidate</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {formErrors.recommendation && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.recommendation}</span>}
-                    </div>
-                    <div className="flex gap-2 mt-2">
-                      {newFeedback.id && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => {
-                            setNewFeedback({ id: "", scheduleId: "", panelistId: "", panelistName: "", rating: "", comments: "", recommendation: "" });
-                            setFormErrors({});
+                            if (formErrors.roundName) setFormErrors({ ...formErrors, roundName: null });
                           }}
-                          className="w-1/3 rounded-xl font-bold"
                         >
-                          Cancel
-                        </Button>
-                      )}
-                      {(() => {
-                        const selSched = schedules.find(s => String(s.id) === String(newFeedback.scheduleId));
-                        const isUpcoming = selSched && selSched.scheduledAt && new Date(selSched.scheduledAt) > new Date();
-                        return (
+                          <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
+                            <SelectValue placeholder="Select Interview Round" />
+                          </SelectTrigger>
+                          <SelectContent position="popper" className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+                            {dropdownInterviewRounds && dropdownInterviewRounds.length > 0 ? (
+                              dropdownInterviewRounds.map((r) => (
+                                <SelectItem key={r.id} value={String(r.id)}>
+                                  {r.name} {r.description ? `— ${r.description}` : ""}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <>
+                                <SelectItem value="Technical Round 1">Technical Round 1</SelectItem>
+                                <SelectItem value="Technical Round 2">Technical Round 2</SelectItem>
+                                <SelectItem value="Managerial Round">Managerial Round</SelectItem>
+                                <SelectItem value="HR Round">HR Round</SelectItem>
+                              </>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {formErrors.roundName && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.roundName}</span>}
+                      </div>
+
+                      {/* Date Time Picker */}
+                      <div className="space-y-1">
+                        <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Date & Time</Label>
+                        <DateTimePicker
+                          date={newSched.scheduledAt}
+                          setDate={(val) => {
+                            setNewSched({ ...newSched, scheduledAt: val });
+                            if (formErrors.scheduledAt) setFormErrors({ ...formErrors, scheduledAt: null });
+                          }}
+                          className="h-10 text-xs rounded-xl"
+                        />
+                        {formErrors.scheduledAt && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.scheduledAt}</span>}
+                      </div>
+
+                      {/* Panelists Multiselect */}
+                      <div className="space-y-1">
+                        <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Panelists (Select Employees)</Label>
+                        <SearchableSelect
+                          multiple
+                          options={users.map((u) => ({
+                            value: String(u.id),
+                            label: u.name,
+                            subLabel: `${u.designation || u.role || 'Staff'} ${u.departmentName ? `• ${u.departmentName}` : ''}`
+                          }))}
+                          value={Array.isArray(newSched.panelists) ? newSched.panelists : []}
+                          onValueChange={(val) => {
+                            setNewSched({ ...newSched, panelists: val });
+                            if (formErrors.panelists) setFormErrors({ ...formErrors, panelists: null });
+                          }}
+                          placeholder="Select panelist(s)..."
+                        />
+                        {formErrors.panelists && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.panelists}</span>}
+                      </div>
+
+                      <div className="flex gap-2 mt-2">
+                        {newSched.id && (
                           <Button
-                            type="submit"
-                            disabled={isUpcoming}
-                            className={`bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl ${newFeedback.id ? 'w-2/3' : 'w-full'} ${isUpcoming ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setNewSched({ candidateId: "", interviewRoundId: "", roundName: "", scheduledAt: "", panelists: [] });
+                              setFormErrors({});
+                            }}
+                            className="w-1/3 rounded-xl font-bold"
                           >
-                            {newFeedback.id ? "Update Feedback" : "Submit Recommendation"}
+                            Cancel
                           </Button>
-                        );
-                      })()}
-                    </div>
-                  </form>
+                        )}
+                        <Button type="submit" className={`bg-sky-500 dark:bg-sky-600 hover:bg-sky-600 text-white font-bold rounded-xl ${newSched.id ? 'w-2/3' : 'w-full'}`}>
+                          {newSched.id ? "Update Schedule" : "Schedule Interview"}
+                        </Button>
+                      </div>
+                    </form>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Schedules Table Column */}
-              <div className="lg:col-span-2 space-y-4">
+              <div className={canCreateSched || newSched.id ? "lg:col-span-2 space-y-4" : "lg:col-span-1 w-full space-y-4"}>
                 <DataTable
                   title="Scheduled Interviews"
                   lazy
@@ -3798,22 +3425,13 @@ function RecruitmentPageContent() {
                             All Statuses
                           </SelectItem>
                           <SelectItem value="SCHEDULED" className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-sky-500"></span>
-                              Scheduled
-                            </span>
+                            Scheduled
                           </SelectItem>
                           <SelectItem value="COMPLETED" className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                              Completed
-                            </span>
+                            Completed
                           </SelectItem>
                           <SelectItem value="CANCELLED" className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-                              Cancelled
-                            </span>
+                            Cancelled
                           </SelectItem>
                         </SelectContent>
                       </Select>
@@ -3828,7 +3446,7 @@ function RecruitmentPageContent() {
                             setSchedDateFilter("");
                             setSchedPage(1);
                           }}
-                          className="h-10 px-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                          className="h-10 px-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white rounded-xl"
                           title="Clear Date & Status Filters"
                         >
                           <X className="w-3.5 h-3.5 mr-1" /> Clear
@@ -3868,15 +3486,17 @@ function RecruitmentPageContent() {
                     {
                       key: "panelists",
                       label: "Panelists",
+                      className: "min-w-[170px] max-w-[240px]",
                       render: (row) => {
-                        const names = formatPanelistNames(row.panelists, users);
+                        const names = formatPanelistNames(row.panelists, users, row);
                         if (names.length === 0) return <span className="text-xs text-slate-400">—</span>;
                         return (
-                          <div className="flex flex-wrap gap-1 max-w-[180px]">
+                          <div className="flex flex-wrap gap-1">
                             {names.map((name, idx) => (
                               <span
                                 key={idx}
-                                className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+                                title={name}
+                                className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 max-w-[190px] truncate"
                               >
                                 {name}
                               </span>
@@ -3888,96 +3508,62 @@ function RecruitmentPageContent() {
                     {
                       key: "scheduledAt",
                       label: "Scheduled Time",
-                      render: (row) => {
-                        if (!row.scheduledAt) return <span className="text-xs text-slate-400">—</span>;
-                        const d = new Date(row.scheduledAt);
-                        return (
-                          <div className="text-xs whitespace-nowrap">
-                            <span className="font-bold text-slate-700 dark:text-slate-200 block">
-                              {d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-                            </span>
-                            <span className="text-[11px] text-slate-400 font-medium block">
-                              {d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          </div>
-                        );
-                      },
+                      className: "min-w-[150px] whitespace-nowrap",
+                      render: (row) => (
+                        <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                          {row.scheduledAt ? new Date(row.scheduledAt).toLocaleString() : "—"}
+                        </div>
+                      ),
                     },
                     {
                       key: "feedbacks",
-                      label: "Panel Feedback",
-                      sortable: false,
-                      render: (row) => row.feedbacks && row.feedbacks.length > 0 ? (
-                        <div className="space-y-1.5 max-w-[220px]">
-                          {row.feedbacks.map((f, fi) => (
-                            <div key={fi} className="text-xs p-2 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-100 dark:border-slate-800 space-y-0.5">
-                              <div className="flex justify-between items-center gap-2">
-                                <span className="font-extrabold text-slate-700 dark:text-slate-200 truncate">{f.panelistName}</span>
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
-                                    f.recommendation === "SELECT" ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                                    : f.recommendation === "REJECT" ? "bg-rose-100 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400"
-                                    : "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400"
-                                  }`}>
-                                    {f.recommendation} ({f.rating}/10)
-                                  </span>
-                                  <button
-                                    type="button"
-                                    title="Edit Feedback"
-                                    onClick={() => {
-                                      setFeedbackCandidateId(row.candidateId || "ALL");
-                                      const matchedUser = users.find(u => u.name?.toLowerCase() === f.panelistName?.toLowerCase() || String(u.id) === String(f.panelistId));
-                                      setNewFeedback({
-                                        id: f.id,
-                                        scheduleId: row.id,
-                                        panelistId: f.panelistId || (matchedUser ? matchedUser.id : ""),
-                                        panelistName: f.panelistName || (matchedUser ? matchedUser.name : ""),
-                                        rating: f.rating !== undefined && f.rating !== null ? String(f.rating) : "",
-                                        comments: f.comments || "",
-                                        recommendation: f.recommendation || "",
-                                      });
-                                      setFormErrors({});
-                                    }}
-                                    className="p-1 text-slate-400 hover:text-sky-500 rounded-md transition-colors cursor-pointer"
-                                  >
-                                    <Edit className="w-3 h-3" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    title="Delete Feedback"
-                                    onClick={() => handleDeleteFeedback(f.id)}
-                                    className="p-1 text-slate-400 hover:text-rose-500 rounded-md transition-colors cursor-pointer"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
+                      label: "Feedback",
+                      render: (row) => (
+                        <div className="text-xs text-slate-600 dark:text-slate-300">
+                          {row.feedbacks && row.feedbacks.length > 0 ? (
+                            <div className="space-y-1">
+                              {row.feedbacks.map((f, i) => (
+                                <div key={i} className="text-[11px] bg-slate-50 dark:bg-slate-800/80 p-1.5 rounded border border-slate-200 dark:border-slate-700">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="font-bold">{f.panelistName || "Panelist"}</span>
+                                    <span className={`text-[9px] font-black px-1.5 py-0.2 rounded uppercase ${
+                                      f.recommendation === "HIRE" || f.recommendation === "SELECTED"
+                                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                                        : f.recommendation === "REJECT"
+                                        ? "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
+                                        : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                                    }`}>
+                                      {f.recommendation} ({f.rating}/10)
+                                    </span>
+                                  </div>
+                                  {f.comments && (
+                                    <p className="text-[10px] text-slate-500 italic mt-0.5 truncate">{f.comments}</p>
+                                  )}
                                 </div>
-                              </div>
-                              {f.comments && (
-                                <p className="text-[10.5px] text-slate-500 dark:text-slate-400 italic line-clamp-2 mt-1 break-words">{f.comments}</p>
-                              )}
+                              ))}
                             </div>
-                          ))}
+                          ) : (
+                            <span className="text-slate-400 text-xs italic">No feedback</span>
+                          )}
                         </div>
-                      ) : <span className="text-slate-400 text-xs italic">No feedback yet</span>,
+                      ),
                     },
                     {
                       key: "status",
                       label: "Status",
                       render: (row) => (
-                        <div className="flex flex-col gap-1 items-start">
-                          <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${
-                            row.status === "COMPLETED"
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800"
-                              : row.status === "CANCELLED"
-                              ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800"
-                              : "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800"
-                          }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${
-                              row.status === "COMPLETED" ? "bg-emerald-500" : row.status === "CANCELLED" ? "bg-rose-500" : "bg-sky-500 animate-pulse"
-                            }`} />
-                            {row.status}
-                          </span>
-                        </div>
+                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border flex items-center gap-1.5 w-fit ${
+                          row.status === "COMPLETED"
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800"
+                            : row.status === "CANCELLED"
+                            ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800"
+                            : "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800"
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${
+                            row.status === "COMPLETED" ? "bg-emerald-500" : row.status === "CANCELLED" ? "bg-rose-500" : "bg-sky-500 animate-pulse"
+                          }`} />
+                          {row.status}
+                        </span>
                       ),
                     },
                     {
@@ -3985,32 +3571,39 @@ function RecruitmentPageContent() {
                       label: "Actions",
                       render: (row) => (
                         <div className="flex gap-1.5 items-center">
-                          <button
-                            onClick={() => {
-                              const roundIdOrVal = row.interviewRoundId || row.roundName || "";
-                              setNewSched({
-                                id: row.id,
-                                candidateId: String(row.candidateId || row.candidate?.id || ""),
-                                interviewRoundId: roundIdOrVal,
-                                roundName: roundIdOrVal,
-                                scheduledAt: row.scheduledAt || "",
-                                panelists: parsePanelistList(row.panelists)
-                              });
-                              setFormErrors({});
-                              window.scrollTo({ top: 0, behavior: 'smooth' });
-                            }}
-                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all cursor-pointer"
-                            title="Edit"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => setDeleteTarget({ id: row.id, name: `interview round "${getRoundDisplayName(row)}" for ${row.candidate?.name || 'candidate'}`, type: "schedule", label: "Interview Schedule" })}
-                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all cursor-pointer"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {canUpdateSched && (
+                            <button
+                              onClick={() => {
+                                const roundIdOrVal = row.interviewRoundId || row.roundName || "";
+                                setNewSched({
+                                  id: row.id,
+                                  candidateId: String(row.candidateId || row.candidate?.id || ""),
+                                  interviewRoundId: roundIdOrVal,
+                                  roundName: roundIdOrVal,
+                                  scheduledAt: row.scheduledAt || "",
+                                  panelists: parsePanelistList(row.panelists)
+                                });
+                                setFormErrors({});
+                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                              }}
+                              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all cursor-pointer"
+                              title="Edit"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                          )}
+                          {canDeleteSched && (
+                            <button
+                              onClick={() => setDeleteTarget({ id: row.id, name: `interview round "${getRoundDisplayName(row)}" for ${row.candidate?.name || 'candidate'}`, type: "schedule", label: "Interview Schedule" })}
+                              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all cursor-pointer"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          {!canUpdateSched && !canDeleteSched && (
+                            <span className="text-slate-400 text-xs italic">—</span>
+                          )}
                         </div>
                       ),
                     },
@@ -4021,10 +3614,11 @@ function RecruitmentPageContent() {
           )}
 
           {/* TAB 4: OFFERS */}
-          {activeTab === "offers" && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {activeTab === "offers" && canReadOffer && (
+            <div className={`grid grid-cols-1 ${canCreateOffer || newOffer.id ? "lg:grid-cols-3" : "lg:grid-cols-1"} gap-6`}>
               {/* Create Offer */}
-              <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
+              {(canCreateOffer || newOffer.id) && (
+                <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-md space-y-4 h-fit">
                   <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
                     <FileText className="w-5 h-5 text-sky-500" />
                     {newOffer.id ? "Edit Offer Letter" : "Generate Offer Letter"}
@@ -4070,117 +3664,97 @@ function RecruitmentPageContent() {
                               const replEmp = req?.replacementForEmployee || dropdownEmployees.find(e => String(e.id) === String(req?.replacementForEmployeeId));
                               const salInfo = getEmployeeSalaryInfo(replEmp);
 
+                              const defaultSalary = salInfo?.annualCtc > 0 
+                                ? salInfo.annualCtc 
+                                : (newOffer.salary ? Number(newOffer.salary) : 600000);
+
                               setNewOffer({
                                 ...newOffer,
-                                candidateId: selectedCandId,
-                                role: cand ? cand.requisition?.title || newOffer.role : newOffer.role,
-                                salary: (!newOffer.salary || newOffer.salary === 0) && salInfo.annualCtc > 0 ? salInfo.annualCtc : newOffer.salary,
+                                candidateId: val,
+                                role: req?.title || newOffer.role || "",
+                                salary: defaultSalary,
                               });
                               if (formErrors.candidateId) setFormErrors({ ...formErrors, candidateId: null });
-                              if (salInfo.annualCtc > 0 && (!newOffer.salary || newOffer.salary === 0)) {
-                                toast.info(`Pre-filled target salary ₹${salInfo.annualCtc.toLocaleString("en-IN")} based on replaced employee's CTC.`);
-                              }
                             }}
                           >
                             <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
-                              <SelectValue placeholder="Select..." />
+                              <SelectValue placeholder="Select candidate..." />
                             </SelectTrigger>
-                            <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-                              {offerCandOptions.map((c) => (
-                                <SelectItem key={c.id} value={String(c.id)}>{c.name} ({c.requisition?.title || "Requisition"}) - {c.status}</SelectItem>
-                              ))}
+                            <SelectContent position="popper" className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 max-h-60">
+                              {offerCandOptions.length > 0 ? (
+                                offerCandOptions.map((c) => {
+                                  const req = c.requisition;
+                                  const isReplacement = req?.requisitionType === 'REPLACEMENT';
+                                  const replEmp = req?.replacementForEmployee;
+                                  const salInfo = getEmployeeSalaryInfo(replEmp);
+
+                                  return (
+                                    <SelectItem key={c.id} value={String(c.id)}>
+                                      <span className="font-semibold">{c.name}</span>
+                                      <span className="text-slate-400 text-[11px] ml-1.5">
+                                        ({req?.title || "Candidate"}
+                                        {isReplacement && ` • Repl ${replEmp?.firstName || 'Staff'}${salInfo?.formattedCtc ? ` @ ${salInfo.formattedCtc}` : ''}`})
+                                      </span>
+                                    </SelectItem>
+                                  );
+                                })
+                              ) : (
+                                <SelectItem value="none" disabled>No candidates with SELECTED status</SelectItem>
+                              )}
                             </SelectContent>
                           </Select>
                         );
                       })()}
                       {formErrors.candidateId && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.candidateId}</span>}
-
-                      {/* Replacement Salary & Experience Benchmark Comparison Card */}
-                      {(() => {
-                        const allCandidatesList = Array.from(new Map(
-                          [...candidates, ...dropdownCandidates, ...(offers.map(o => o.candidate).filter(Boolean))]
-                            .map(c => [String(c.id), c])
-                        ).values());
-                        const selectedCand = allCandidatesList.find(c => String(c.id) === String(newOffer.candidateId));
-                        const req = selectedCand?.requisition;
-                        const replEmp = req?.replacementForEmployee || dropdownEmployees.find(e => String(e.id) === String(req?.replacementForEmployeeId));
-                        if (!replEmp) return null;
-
-                        const salInfo = getEmployeeSalaryInfo(replEmp);
-                        const expDetails = getEmployeeExperienceDetails(replEmp);
-                        const offeredSal = Number(newOffer.salary) || 0;
-                        const variance = (salInfo.annualCtc > 0 && offeredSal > 0)
-                          ? (((offeredSal - salInfo.annualCtc) / salInfo.annualCtc) * 100).toFixed(1)
-                          : null;
-
-                        return (
-                          <div className="p-2.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 space-y-1.5 text-xs text-slate-800 dark:text-slate-200 animate-in fade-in">
-                            <div className="flex items-center justify-between text-[11px]">
-                              <span className="font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1">
-                                <Users className="w-3 h-3 text-amber-600" /> Replacing: {replEmp.firstName} {replEmp.lastName}
-                              </span>
-                              <span className="text-[10px] font-semibold text-slate-500">Exp: <strong>{expDetails.totalExp}</strong> <span className="font-normal">(Tenure: {expDetails.companyTenure})</span></span>
-                            </div>
-                            <div className="flex items-center justify-between text-[11px] bg-white dark:bg-slate-900 p-2 rounded-lg border border-amber-100 dark:border-amber-900/40">
-                              <div>
-                                <span className="text-[9.5px] text-slate-400 block font-semibold">PREVIOUS CTC BENCHMARK</span>
-                                <span className="font-extrabold text-slate-800 dark:text-white">{salInfo.formattedCtc}</span>
-                              </div>
-                              {variance !== null && (
-                                <div className="text-right">
-                                  <span className="text-[9.5px] text-slate-400 block font-semibold">OFFER VARIANCE</span>
-                                  <span className={`font-bold text-[11px] ${Number(variance) > 15 ? 'text-amber-600' : Number(variance) < -10 ? 'text-rose-500' : 'text-emerald-600'}`}>
-                                    {Number(variance) > 0 ? `+${variance}%` : `${variance}%`} {Number(variance) <= 10 && Number(variance) >= -10 ? '✓ Matched' : ''}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })()}
                     </div>
+
                     <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Designation / Role Offered</Label>
+                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Designation / Role Title</Label>
                       <Input
-                        placeholder="e.g. Senior QA Lead"
+                        placeholder="Software Engineer"
                         value={newOffer.role}
                         onChange={(e) => {
                           setNewOffer({ ...newOffer, role: e.target.value });
                           if (formErrors.role) setFormErrors({ ...formErrors, role: null });
                         }}
+                        className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
                       />
                       {formErrors.role && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.role}</span>}
                     </div>
+
                     <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Annual CTC (INR)</Label>
+                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Annual CTC (₹)</Label>
                       <Input
                         type="number"
+                        placeholder="600000"
                         value={newOffer.salary}
                         onChange={(e) => {
-                          setNewOffer({ ...newOffer, salary: Number(e.target.value) });
+                          setNewOffer({ ...newOffer, salary: e.target.value });
                           if (formErrors.salary) setFormErrors({ ...formErrors, salary: null });
                         }}
+                        className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
                       />
                       {formErrors.salary && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.salary}</span>}
                     </div>
+
                     <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Expected Joining Date</Label>
-                      <DateTimePicker 
-                        type="date" 
-                        date={newOffer.joiningDate} 
-                        disablePast={true}
+                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Joining Date</Label>
+                      <DatePicker
+                        date={newOffer.joiningDate}
                         setDate={(val) => {
                           setNewOffer({ ...newOffer, joiningDate: val });
                           if (formErrors.joiningDate) setFormErrors({ ...formErrors, joiningDate: null });
-                        }} 
+                        }}
+                        className="h-10 text-xs rounded-xl"
                       />
                       {formErrors.joiningDate && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.joiningDate}</span>}
                     </div>
+
                     <div className="flex gap-2 mt-2">
                       {newOffer.id && (
-                        <Button 
-                          type="button" 
-                          variant="outline" 
+                        <Button
+                          type="button"
+                          variant="outline"
                           onClick={() => {
                             setNewOffer({ candidateId: "", role: "", salary: 600000, joiningDate: "" });
                             setFormErrors({});
@@ -4196,11 +3770,12 @@ function RecruitmentPageContent() {
                     </div>
                   </form>
                 </div>
+              )}
 
-              {/* Offer Letters DataTable */}
-              <div className="lg:col-span-2">
+              {/* Offers Table */}
+              <div className={canCreateOffer || newOffer.id ? "lg:col-span-2" : "lg:col-span-1 w-full"}>
                 <DataTable
-                  title="Generated Offer Letters"
+                  title="Issued Offer Letters"
                   lazy
                   value={offers}
                   totalRecords={totalOffers}
@@ -4214,32 +3789,17 @@ function RecruitmentPageContent() {
                   onRowsChange={(r) => { setOfferRows(r); setOfferPage(1); }}
                   onSortChange={(k, dir) => { setOfferSortBy(k); setOfferSortOrder(dir); setOfferPage(1); }}
                   onSearchChange={(s) => { setOfferSearch(s); setOfferPage(1); }}
-                  emptyMessage="No offer letters generated yet."
+                  emptyMessage="No offer letters issued yet."
                   columns={[
                     {
                       key: "candidate.name",
                       label: "Candidate",
-                      render: (row) => {
-                        const cand = row.candidate || candidates.find(c => String(c.id) === String(row.candidateId));
-                        const req = cand?.requisition;
-                        const isReplacement = req?.requisitionType === "REPLACEMENT";
-                        const replEmp = req?.replacementForEmployee;
-                        return (
-                          <div className="space-y-1">
-                            <span className="text-sm font-bold text-slate-800 dark:text-white block">{cand?.name}</span>
-                            {isReplacement ? (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800">
-                                <RotateCcw className="w-2.5 h-2.5" /> Replacement {replEmp ? `for ${replEmp.firstName}` : ''}
-                              </span>
-                            ) : req?.requisitionType ? (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
-                                <Sparkles className="w-2.5 h-2.5" /> New Req
-                              </span>
-                            ) : null}
-                            <span className="text-[10px] text-slate-400 font-bold uppercase mt-0.5 block">Status: {row.status}</span>
-                          </div>
-                        );
-                      },
+                      render: (row) => (
+                        <div className="space-y-0.5">
+                          <span className="text-sm font-bold text-slate-800 dark:text-white block">{row.candidate?.name || "Unknown"}</span>
+                          <span className="text-xs text-slate-500 block">{row.candidate?.email}</span>
+                        </div>
+                      ),
                     },
                     {
                       key: "role",
@@ -4285,7 +3845,7 @@ function RecruitmentPageContent() {
                       sortable: false,
                       render: (row) => (
                         <div className="flex items-center gap-2">
-                          {row.status === "GENERATED" && (
+                          {canUpdateOffer && row.status === "GENERATED" && (
                             <button
                               onClick={() => handleAcceptOffer(row.id)}
                               className="bg-emerald-500 dark:bg-emerald-600 hover:bg-emerald-600 text-white font-bold rounded-lg text-[9px] px-2 py-1 cursor-pointer transition-all inline-flex items-center gap-1"
@@ -4293,31 +3853,37 @@ function RecruitmentPageContent() {
                               <CheckCircle className="w-3 h-3" /> Accept
                             </button>
                           )}
-                          <button
-                            onClick={() => {
-                              const candId = row.candidateId || row.candidate?.id || "";
-                              setNewOffer({
-                                id: row.id,
-                                candidateId: candId,
-                                role: row.role || row.candidate?.requisition?.title || "",
-                                salary: row.salary ?? 600000,
-                                joiningDate: row.joiningDate ? String(row.joiningDate).split('T')[0] : ""
-                              });
-                              setFormErrors({});
-                              window.scrollTo({ top: 0, behavior: 'smooth' });
-                            }}
-                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-blue-500 hover:text-white hover:border-blue-500 dark:hover:bg-blue-500 rounded-lg transition-all"
-                            title="Edit"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => setDeleteTarget({ id: row.id, name: `offer letter for "${row.candidate?.name || 'candidate'}"`, type: "offer", label: "Offer Letter" })}
-                            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {canUpdateOffer && (
+                            <button
+                              onClick={() => {
+                                setNewOffer({
+                                  id: row.id,
+                                  candidateId: row.candidateId,
+                                  role: row.role,
+                                  salary: row.salary,
+                                  joiningDate: row.joiningDate ? new Date(row.joiningDate) : null,
+                                });
+                                setFormErrors({});
+                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-950/50 rounded-lg transition-colors cursor-pointer"
+                              title="Edit Offer"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                          )}
+                          {canDeleteOffer && (
+                            <button
+                              onClick={() => setDeleteTarget({ type: 'offer', id: row.id, name: `offer for ${row.candidate?.name || 'candidate'}`, label: 'Offer Letter' })}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors cursor-pointer"
+                              title="Delete Offer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          {!canUpdateOffer && !canDeleteOffer && (
+                            <span className="text-slate-400 text-xs italic">—</span>
+                          )}
                         </div>
                       ),
                     },

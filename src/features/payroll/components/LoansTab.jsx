@@ -69,8 +69,12 @@ import {
 
 
 export default function LoansTab() {
-  const { isEmployee, user } = usePermissions();
+  const { isEmployee, user, can } = usePermissions();
   const dispatch = useDispatch();
+
+  const canCreateLoans = can("create", "loans") || can("create", "payroll");
+  const canUpdateLoans = can("update", "loans") || can("update", "payroll");
+  const canDeleteLoans = can("delete", "loans") || can("delete", "payroll");
   const {
     employees = [],
     salaryStructures = [],
@@ -585,7 +589,7 @@ export default function LoansTab() {
       sortable: false,
       render: (row) => (
         <div className="flex items-center gap-2 justify-end">
-          {row.status === "ACTIVE" && row.balanceRemaining > 0 && (
+          {canUpdateLoans && row.status === "ACTIVE" && row.balanceRemaining > 0 && (
             <button
               className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-emerald-500 hover:text-white hover:border-emerald-500 dark:hover:bg-emerald-500 rounded-lg transition-all cursor-pointer"
               title="Record Repayment"
@@ -599,22 +603,24 @@ export default function LoansTab() {
               <Banknote className="w-4 h-4" />
             </button>
           )}
-          <button
-            className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-sky-500 hover:text-white hover:border-sky-500 dark:hover:bg-sky-500 rounded-lg transition-all cursor-pointer"
-            title="Edit Loan"
-            onClick={() => {
-              setLoanForm({
-                id: row.id,
-                employeeId: row.employeeId,
-                loanType: row.loanType,
-                principalAmount: String(row.principalAmount),
-                monthlyInstallment: String(row.monthlyInstallment),
-              });
-              setIsLoanOpen(true);
-            }}
-          >
-            <Edit className="w-4 h-4" />
-          </button>
+          {canUpdateLoans && (
+            <button
+              className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-sky-500 hover:text-white hover:border-sky-500 dark:hover:bg-sky-500 rounded-lg transition-all cursor-pointer"
+              title="Edit Loan"
+              onClick={() => {
+                setLoanForm({
+                  id: row.id,
+                  employeeId: row.employeeId,
+                  loanType: row.loanType,
+                  principalAmount: String(row.principalAmount),
+                  monthlyInstallment: String(row.monthlyInstallment),
+                });
+                setIsLoanOpen(true);
+              }}
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+          )}
         </div>
       )
     }
@@ -677,104 +683,106 @@ export default function LoansTab() {
             </div>
 
             {/* ENHANCED MODAL 4: ISSUE LOAN */}
-            <Dialog open={isLoanOpen} onOpenChange={setIsLoanOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-sky-600 hover:bg-sky-700 text-white rounded-xl gap-2 shadow-md py-2.5" onClick={() => setLoanForm({
-                  employeeId: employees[0]?.id || "",
-                  loanType: "LOAN",
-                  principalAmount: "",
-                  monthlyInstallment: "",
-                })}>
-                  <Plus className="size-4" /> Issue Loan / Advance
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-xl sm:max-w-xl border-0 shadow-2xl rounded-3xl p-0 overflow-hidden bg-slate-50 dark:bg-slate-950">
-                <div className="bg-gradient-to-r from-amber-900 via-slate-900 to-slate-900 p-6 text-white">
-                  <DialogTitle className="text-xl font-extrabold tracking-tight flex items-center gap-2">
-                    <Wallet className="size-5 text-amber-400" /> {loanForm.id ? "Edit Employee Loan or Salary Advance" : "Issue Employee Loan or Salary Advance"}
-                  </DialogTitle>
-                  <DialogDescription className="text-slate-300 text-xs mt-1">
-                    Set up principal disbursement and monthly auto-recovery installment amount.
-                  </DialogDescription>
-                </div>
-                <form onSubmit={handleCreateLoan} className="p-6 space-y-5">
-                  <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border space-y-4">
-                    <div>
-                      <Label className="text-xs font-semibold">Employee *</Label>
-                      <div className="mt-1.5">
-                        <SearchableSelect
-                          options={(employees || []).map((emp) => ({
-                            value: emp.id,
-                            label: `${emp.firstName} ${emp.lastName} (${emp.employeeId})`,
-                            subLabel: `${emp.designation || "Staff"} • ${emp.department || "General"}`
-                          }))}
-                          value={loanForm.employeeId}
-                          onValueChange={(val) => setLoanForm({ ...loanForm, employeeId: val })}
-                          placeholder="Search & choose employee..."
-                          searchPlaceholder="Type employee name or ID..."
-                          className={loanErrors.employeeId ? 'border-red-500 border-2' : ''}
-                        />
-                      </div>
-                      {loanErrors.employeeId && (
-                        <div className="text-red-500 text-[11px] font-bold mt-1 pl-1">
-                          {loanErrors.employeeId}
+            {canCreateLoans && (
+              <Dialog open={isLoanOpen} onOpenChange={setIsLoanOpen}>
+                <DialogTrigger asChild>
+                  <Button className="bg-sky-600 hover:bg-sky-700 text-white rounded-xl gap-2 shadow-md py-2.5" onClick={() => setLoanForm({
+                    employeeId: employees[0]?.id || "",
+                    loanType: "LOAN",
+                    principalAmount: "",
+                    monthlyInstallment: "",
+                  })}>
+                    <Plus className="size-4" /> Issue Loan / Advance
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-xl sm:max-w-xl border-0 shadow-2xl rounded-3xl p-0 overflow-hidden bg-slate-50 dark:bg-slate-950">
+                  <div className="bg-gradient-to-r from-amber-900 via-slate-900 to-slate-900 p-6 text-white">
+                    <DialogTitle className="text-xl font-extrabold tracking-tight flex items-center gap-2">
+                      <Wallet className="size-5 text-amber-400" /> {loanForm.id ? "Edit Employee Loan or Salary Advance" : "Issue Employee Loan or Salary Advance"}
+                    </DialogTitle>
+                    <DialogDescription className="text-slate-300 text-xs mt-1">
+                      Set up principal disbursement and monthly auto-recovery installment amount.
+                    </DialogDescription>
+                  </div>
+                  <form onSubmit={handleCreateLoan} className="p-6 space-y-5">
+                    <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border space-y-4">
+                      <div>
+                        <Label className="text-xs font-semibold">Employee *</Label>
+                        <div className="mt-1.5">
+                          <SearchableSelect
+                            options={(employees || []).map((emp) => ({
+                              value: emp.id,
+                              label: `${emp.firstName} ${emp.lastName} (${emp.employeeId})`,
+                              subLabel: `${emp.designation || "Staff"} • ${emp.department || "General"}`
+                            }))}
+                            value={loanForm.employeeId}
+                            onValueChange={(val) => setLoanForm({ ...loanForm, employeeId: val })}
+                            placeholder="Search & choose employee..."
+                            searchPlaceholder="Type employee name or ID..."
+                            className={loanErrors.employeeId ? 'border-red-500 border-2' : ''}
+                          />
                         </div>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label className="text-xs font-semibold">Type</Label>
-                        <Select
-                          value={loanForm.loanType}
-                          onValueChange={(val) => setLoanForm({ ...loanForm, loanType: val })}
-                        >
-                          <SelectTrigger className="rounded-xl mt-1.5 h-11"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="LOAN">Personal Loan</SelectItem>
-                            <SelectItem value="SALARY_ADVANCE">Salary Advance</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        {loanErrors.employeeId && (
+                          <div className="text-red-500 text-[11px] font-bold mt-1 pl-1">
+                            {loanErrors.employeeId}
+                          </div>
+                        )}
                       </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label className="text-xs font-semibold">Type</Label>
+                          <Select
+                            value={loanForm.loanType}
+                            onValueChange={(val) => setLoanForm({ ...loanForm, loanType: val })}
+                          >
+                            <SelectTrigger className="rounded-xl mt-1.5 h-11"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="LOAN">Personal Loan</SelectItem>
+                              <SelectItem value="SALARY_ADVANCE">Salary Advance</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label className="text-xs font-semibold">Principal Amount (₹)</Label>
+                          <Input
+                            type="number"
+                            value={loanForm.principalAmount}
+                            onChange={(e) => setLoanForm({ ...loanForm, principalAmount: e.target.value })}
+                            className={`rounded-xl mt-1.5 h-11 ${loanErrors.principalAmount ? 'border-red-500 border-2' : ''}`}
+                          />
+                          {loanErrors.principalAmount && (
+                            <div className="text-red-500 text-[11px] font-bold mt-1 pl-1">
+                              {loanErrors.principalAmount}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
                       <div>
-                        <Label className="text-xs font-semibold">Principal Amount (₹)</Label>
+                        <Label className="text-xs font-semibold">Monthly Recovery Installment (₹/mo)</Label>
                         <Input
                           type="number"
-                          value={loanForm.principalAmount}
-                          onChange={(e) => setLoanForm({ ...loanForm, principalAmount: e.target.value })}
-                          className={`rounded-xl mt-1.5 h-11 ${loanErrors.principalAmount ? 'border-red-500 border-2' : ''}`}
+                          value={loanForm.monthlyInstallment}
+                          onChange={(e) => setLoanForm({ ...loanForm, monthlyInstallment: e.target.value })}
+                          className={`rounded-xl mt-1.5 h-11 ${loanErrors.monthlyInstallment ? 'border-red-500 border-2' : ''}`}
                         />
-                        {loanErrors.principalAmount && (
+                        {loanErrors.monthlyInstallment && (
                           <div className="text-red-500 text-[11px] font-bold mt-1 pl-1">
-                            {loanErrors.principalAmount}
+                            {loanErrors.monthlyInstallment}
                           </div>
                         )}
                       </div>
                     </div>
 
-                    <div>
-                      <Label className="text-xs font-semibold">Monthly Recovery Installment (₹/mo)</Label>
-                      <Input
-                        type="number"
-                        value={loanForm.monthlyInstallment}
-                        onChange={(e) => setLoanForm({ ...loanForm, monthlyInstallment: e.target.value })}
-                        className={`rounded-xl mt-1.5 h-11 ${loanErrors.monthlyInstallment ? 'border-red-500 border-2' : ''}`}
-                      />
-                      {loanErrors.monthlyInstallment && (
-                        <div className="text-red-500 text-[11px] font-bold mt-1 pl-1">
-                          {loanErrors.monthlyInstallment}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <DialogFooter className="gap-3 pt-2">
-                    <Button type="button" variant="outline" className="rounded-xl h-11 px-5" onClick={() => setIsLoanOpen(false)}>Cancel</Button>
-                    <Button type="submit" className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl h-11 px-7 font-semibold">{loanForm.id ? "Save Loan Changes" : "Disburse Loan"}</Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
+                    <DialogFooter className="gap-3 pt-2">
+                      <Button type="button" variant="outline" className="rounded-xl h-11 px-5" onClick={() => setIsLoanOpen(false)}>Cancel</Button>
+                      <Button type="submit" className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl h-11 px-7 font-semibold">{loanForm.id ? "Save Loan Changes" : "Disburse Loan"}</Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            )}
           </div>
 
           <Card className="border rounded-2xl shadow-sm bg-white dark:bg-slate-900 p-6">

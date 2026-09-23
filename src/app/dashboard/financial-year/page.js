@@ -35,9 +35,9 @@ function FinancialYearContent() {
   const [loading, setLoading] = useState(true);
 
   // Permission guards
-  const canCreate = isSuperAdmin || can("create", "financial-year") || can("create", "financial_year") || can("create", "recruitment");
-  const canUpdate = isSuperAdmin || can("update", "financial-year") || can("update", "financial_year") || can("update", "recruitment");
-  const canDelete = isSuperAdmin || can("delete", "financial-year") || can("delete", "financial_year") || can("delete", "recruitment");
+  const canCreate = isSuperAdmin || can("create", "financial-year") || can("create", "financial_year");
+  const canUpdate = isSuperAdmin || can("update", "financial-year") || can("update", "financial_year");
+  const canDelete = isSuperAdmin || can("delete", "financial-year") || can("delete", "financial_year");
 
   // Server-side Data Handling state
   const [page, setPage] = useState(1);

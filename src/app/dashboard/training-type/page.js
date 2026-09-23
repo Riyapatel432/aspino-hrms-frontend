@@ -47,9 +47,9 @@ function TrainingTypesContent() {
   const [loading, setLoading] = useState(true);
 
   // Permission guards
-  const canCreate = isSuperAdmin || can("create", "training") || can("create", "performance") || can("create", "training-type") || can("create", "training_type");
-  const canUpdate = isSuperAdmin || can("update", "training") || can("update", "performance") || can("update", "training-type") || can("update", "training_type");
-  const canDelete = isSuperAdmin || can("delete", "training") || can("delete", "performance") || can("delete", "training-type") || can("delete", "training_type");
+  const canCreate = isSuperAdmin || can("create", "training") || can("create", "training-type") || can("create", "training_type");
+  const canUpdate = isSuperAdmin || can("update", "training") || can("update", "training-type") || can("update", "training_type");
+  const canDelete = isSuperAdmin || can("delete", "training") || can("delete", "training-type") || can("delete", "training_type");
 
   // Server-side Data Handling state
   const [page, setPage] = useState(1);

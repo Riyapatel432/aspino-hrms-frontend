@@ -68,8 +68,11 @@ import {
 
 
 export default function MonthlyRunTab() {
-  const { isEmployee, user } = usePermissions();
+  const { isEmployee, user, can } = usePermissions();
   const dispatch = useDispatch();
+
+  const canCreateMonthlyRun = can("create", "monthly_run") || can("create", "payroll");
+  const canApproveMonthlyRun = can("approve", "monthly_run") || can("update", "monthly_run") || can("update", "payroll") || can("create", "payroll");
   const {
     employees = [],
     salaryStructures = [],
@@ -634,10 +637,12 @@ export default function MonthlyRunTab() {
 
               {!isEmployee && (
                 <div className="flex items-center gap-3">
-                  <Button onClick={handleRunPayroll} className="bg-sky-600 hover:bg-sky-700 text-white rounded-xl gap-2 h-10 px-5 shadow-md">
-                    <RefreshCw className="size-4" /> Calculate & Preview Payroll
-                  </Button>
-                  {currentRun && currentRun.status === "PREVIEW" && (
+                  {canCreateMonthlyRun && (
+                    <Button onClick={handleRunPayroll} className="bg-sky-600 hover:bg-sky-700 text-white rounded-xl gap-2 h-10 px-5 shadow-md">
+                      <RefreshCw className="size-4" /> Calculate & Preview Payroll
+                    </Button>
+                  )}
+                  {canApproveMonthlyRun && currentRun && currentRun.status === "PREVIEW" && (
                     <Button onClick={handleApproveRun} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl gap-2 h-10 px-5 shadow-md">
                       <CheckCircle2 className="size-4" /> Approve & Lock Payroll
                     </Button>

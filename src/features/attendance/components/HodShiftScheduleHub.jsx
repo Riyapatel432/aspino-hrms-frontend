@@ -855,7 +855,7 @@ export default function HodShiftScheduleHub({
       sortable: false,
       render: (row) => (
         <div className="flex items-center gap-1.5">
-          {!isEmployee && (can("update", "shift_roster") || can("update", "attendance")) && (
+          {!isEmployee && can("update", "shift_roster") && (
             <Button
               type="button"
               variant="outline"
@@ -868,7 +868,7 @@ export default function HodShiftScheduleHub({
               Change Shift
             </Button>
           )}
-          {!isEmployee && (can("delete", "shift_roster") || can("delete", "attendance")) && (
+          {!isEmployee && can("delete", "shift_roster") && (
             <button
               onClick={() => setDeleteTarget({ id: row.id, name: `roster on ${formatDateDDMMYYYY(row.date)}`, type: "roster", label: "Shift Roster" })}
               className="p-1.5 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-rose-500 hover:text-white hover:border-rose-500 dark:hover:bg-rose-500 rounded-lg transition-all"
@@ -956,7 +956,7 @@ export default function HodShiftScheduleHub({
       sortable: false,
       render: (row) => (
         <div className="flex items-center gap-1.5">
-          {!isEmployee && (can("update", "shift") || can("update", "attendance")) && (
+          {!isEmployee && can("update", "shift") && (
             <button
               onClick={() => {
                 setShiftForm({
@@ -980,7 +980,7 @@ export default function HodShiftScheduleHub({
               <Edit className="w-3.5 h-3.5" />
             </button>
           )}
-          {!isEmployee && (can("delete", "shift") || can("delete", "attendance")) && (
+          {!isEmployee && can("delete", "shift") && (
             <button
               onClick={() => setDeleteTarget({ id: row.id, name: `shift "${row.name}"`, type: "shift", label: "Shift Master" })}
               className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-all"
@@ -1465,7 +1465,7 @@ export default function HodShiftScheduleHub({
                   {livePlannerPreview.length} Total Shift Slots
                 </Badge>
 
-                {!isEmployee && (can("create", "shift_roster") || can("create", "attendance")) && (
+                {!isEmployee && can("create", "shift_roster") && (
                   <Button
                     type="button"
                     onClick={handleExecuteBulkAssignment}
@@ -2571,7 +2571,7 @@ export default function HodShiftScheduleHub({
       {subTab === "masters" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Shift Master Form */}
-          {!isEmployee && (can("create", "shift") || can("create", "attendance")) && (
+          {!isEmployee && can("create", "shift") && (
             <div className="bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4 h-fit">
               <h3 className="font-extrabold text-slate-800 dark:text-white text-base flex items-center gap-2">
                 <Plus className="w-5 h-5 text-sky-500" />
@@ -2701,7 +2701,7 @@ export default function HodShiftScheduleHub({
           )}
 
           {/* Shift Master DataTable */}
-          <div className={(!isEmployee && (can("create", "shift") || can("create", "attendance"))) ? "lg:col-span-2 space-y-4" : "lg:col-span-3 space-y-4"}>
+          <div className={(!isEmployee && can("create", "shift")) ? "lg:col-span-2 space-y-4" : "lg:col-span-3 space-y-4"}>
             <DataTable
               title="Shift Master Catalog"
               lazy

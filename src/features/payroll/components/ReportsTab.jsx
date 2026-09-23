@@ -69,8 +69,10 @@ import { toast } from "sonner";
 
 
 export default function ReportsTab() {
-  const { isEmployee, user } = usePermissions();
+  const { isEmployee, user, can } = usePermissions();
   const dispatch = useDispatch();
+
+  const canExportReports = can("export", "reports") || can("read", "reports") || can("read", "payroll") || can("export", "payroll");
   const {
     employees = [],
     salaryStructures = [],
@@ -828,9 +830,9 @@ export default function ReportsTab() {
                 <p className="text-xs text-slate-500 mt-1">Generate bank upload CSV layout containing employee bank accounts, IFSC, and net salary for batch bank disbursement.</p>
               </div>
               <Button
-                disabled={exportingBank}
+                disabled={!canExportReports || exportingBank}
                 onClick={handleExportBankTransfer}
-                className="mt-6 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl gap-2 h-11 px-6 font-semibold shadow-md cursor-pointer transition-all hover:scale-[1.01] active:scale-95"
+                className="mt-6 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl gap-2 h-11 px-6 font-semibold shadow-md cursor-pointer transition-all hover:scale-[1.01] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {exportingBank ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />} Export Bank Upload File (.CSV)
               </Button>
@@ -848,25 +850,25 @@ export default function ReportsTab() {
               <div className="mt-6 flex gap-2">
                 <Button
                   variant="outline"
-                  disabled={exportingPf}
+                  disabled={!canExportReports || exportingPf}
                   onClick={handleExportPfEcr}
-                  className="flex-1 rounded-xl text-xs h-10 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer gap-1.5 font-bold"
+                  className="flex-1 rounded-xl text-xs h-10 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer gap-1.5 font-bold disabled:opacity-50"
                 >
                   {exportingPf ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />} PF ECR Report
                 </Button>
                 <Button
                   variant="outline"
-                  disabled={exportingEsi}
+                  disabled={!canExportReports || exportingEsi}
                   onClick={handleExportEsi}
-                  className="flex-1 rounded-xl text-xs h-10 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer gap-1.5 font-bold"
+                  className="flex-1 rounded-xl text-xs h-10 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer gap-1.5 font-bold disabled:opacity-50"
                 >
                   {exportingEsi ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />} ESI Return
                 </Button>
                 <Button
                   variant="outline"
-                  disabled={exportingPt}
+                  disabled={!canExportReports || exportingPt}
                   onClick={handleExportPt}
-                  className="flex-1 rounded-xl text-xs h-10 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer gap-1.5 font-bold"
+                  className="flex-1 rounded-xl text-xs h-10 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer gap-1.5 font-bold disabled:opacity-50"
                 >
                   {exportingPt ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />} PT Slab Report
                 </Button>

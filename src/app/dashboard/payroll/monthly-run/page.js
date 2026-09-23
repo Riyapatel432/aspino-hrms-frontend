@@ -1,12 +1,11 @@
 "use client";
-import { Suspense } from "react";
 import MonthlyRunTab from "@/features/payroll/components/MonthlyRunTab";
+import { RouteGuard } from "@/context/PermissionContext";
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="p-6">Loading monthly run...</div>}>
+    <RouteGuard subject="monthly_run" action="read">
       <MonthlyRunTab />
-    </Suspense>
+    </RouteGuard>
   );
 }
-
