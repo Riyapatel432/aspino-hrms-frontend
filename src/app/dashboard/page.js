@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   Users,
+  UserPlus,
   Briefcase,
   UserCheck,
   CalendarDays,
@@ -977,6 +978,17 @@ export default function DashboardOverview() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {[
+              {
+                href: "/dashboard/employees",
+                icon: UserPlus,
+                badge: "Staff Master & Profiles",
+                color: "from-blue-600 to-indigo-600",
+                title: "Employees Entry & Directory",
+                desc: "Register new employees, update banking details, generate ID badges, and track workforce rosters.",
+                count: `${stats.users} Staff Registered`,
+                subject: "onboarding",
+                action: "read",
+              },
               {
                 href: "/dashboard/recruitment",
                 icon: Briefcase,

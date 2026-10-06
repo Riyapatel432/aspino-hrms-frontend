@@ -34,22 +34,50 @@ export async function apiFetch(url, options = {}) {
   }
 }
 
-export async function getErrorMessage(res, defaultMsg = "An error occurred") {
-  try {
-    const clone = res.clone();
-    const data = await clone.json();
-    if (data && data.message) {
-      if (Array.isArray(data.message)) {
-        return data.message.join(", ");
-      }
-      return data.message;
-    }
-  } catch (e) {
-    try {
-      const clone = res.clone();
-      const text = await clone.text();
-      if (text) return text;
-    } catch (e2) {}
+export async function getErrorMessage(resOrError, defaultMsg = "An error occurred") {
+  if (!resOrError) return defaultMsg;
+
+  if (resOrError instanceof Error && resOrError.message) {
+    return resOrError.message;
   }
+
+  if (typeof resOrError === "string") {
+    return resOrError;
+  }
+
+  if (typeof resOrError === "object" && typeof resOrError.clone === "function") {
+    try {
+      const clone = resOrError.clone();
+      const data = await clone.json();
+      if (data) {
+        if (data.message) {
+          if (Array.isArray(data.message)) {
+            return data.message.join(", ");
+          }
+          return data.message;
+        }
+        if (data.error && typeof data.error === "string") {
+          return data.error;
+        }
+      }
+    } catch (e) {
+      try {
+        const clone = resOrError.clone();
+        const text = await clone.text();
+        if (text) return text;
+      } catch (e2) {}
+    }
+  }
+
+  if (typeof resOrError === "object") {
+    if (resOrError.message) {
+      return Array.isArray(resOrError.message) ? resOrError.message.join(", ") : resOrError.message;
+    }
+    if (resOrError.error && typeof resOrError.error === "string") {
+      return resOrError.error;
+    }
+  }
+
   return defaultMsg;
 }
+

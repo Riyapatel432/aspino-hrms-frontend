@@ -415,19 +415,25 @@ export function DataTable({
             ) : paginatedData.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={effectiveColumns.length} className="h-48">
-                  <div className="flex flex-col items-center justify-center gap-3 text-muted-foreground py-8">
-                    <div className="rounded-full bg-muted p-4">
-                      <PackageOpen className="h-8 w-8 text-muted-foreground/60" />
+                  {activeSearchQuery || typeof emptyMessage === "string" ? (
+                    <div className="flex flex-col items-center justify-center gap-3 text-muted-foreground py-8">
+                      <div className="rounded-full bg-muted p-4">
+                        <PackageOpen className="h-8 w-8 text-muted-foreground/60" />
+                      </div>
+                      <div className="text-center">
+                        <div className="font-medium text-slate-800 dark:text-slate-200">
+                          {activeSearchQuery
+                            ? `No results for "${activeSearchQuery}"`
+                            : emptyMessage}
+                        </div>
+                        {emptyDescription && (
+                          <div className="text-sm text-muted-foreground/70 mt-1">{emptyDescription}</div>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-center">
-                      <p className="font-medium">
-                        {activeSearchQuery
-                          ? `No results for "${activeSearchQuery}"`
-                          : emptyMessage}
-                      </p>
-                      <p className="text-sm text-muted-foreground/70">{emptyDescription}</p>
-                    </div>
-                  </div>
+                  ) : (
+                    emptyMessage
+                  )}
                 </TableCell>
               </TableRow>
             ) : (

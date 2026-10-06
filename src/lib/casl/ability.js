@@ -190,9 +190,22 @@ export function buildAbilityFor(permissions = [], user = null) {
           expandedSubjects.add("offer-letter");
           expandedSubjects.add("offer-letters");
         }
-        if (subj === "onboarding" || subj === "onboardings") {
+        if (
+          subj === "onboarding" ||
+          subj === "onboardings" ||
+          subj === "employee" ||
+          subj === "employees" ||
+          subj === "employee_entry" ||
+          subj === "employee-entry" ||
+          subj === "employees-entry"
+        ) {
           expandedSubjects.add("onboarding");
           expandedSubjects.add("onboardings");
+          expandedSubjects.add("employee");
+          expandedSubjects.add("employees");
+          expandedSubjects.add("employee_entry");
+          expandedSubjects.add("employee-entry");
+          expandedSubjects.add("employees-entry");
         }
         if (subj === "exit" || subj === "exits" || subj === "exit_process" || subj === "exit-process") {
           expandedSubjects.add("exit");

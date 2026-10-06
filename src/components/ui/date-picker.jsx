@@ -20,6 +20,10 @@ export function DatePicker({
   className,
   align = "start",
   disabled = false,
+  fromYear = 1950,
+  toYear = new Date().getFullYear() + 5,
+  captionLayout = "dropdown",
+  disabledMatcher,
 }) {
   // convert string YYYY-MM-DD or Date object safely
   const selectedDate = React.useMemo(() => {
@@ -54,6 +58,10 @@ export function DatePicker({
         <Calendar
           mode="single"
           selected={selectedDate || undefined}
+          captionLayout={captionLayout}
+          fromYear={fromYear}
+          toYear={toYear}
+          disabled={disabledMatcher}
           onSelect={(d) => {
             if (d) {
               const tzOffset = d.getTimezoneOffset() * 60000;

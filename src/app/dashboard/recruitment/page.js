@@ -44,7 +44,9 @@ import {
   AlertCircle,
   ChevronRight,
   X,
-  Filter
+  Filter,
+  IdCard,
+  CreditCard
 } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -302,7 +304,7 @@ function RecruitmentPageContent() {
     cnvExemptionReason: ""
   });
   // Candidate Form State
-  const [newCand, setNewCand] = useState({ name: "", email: "", phone: "", source: "", requisitionId: "", experienceYears: "", resumeUrl: "" });
+  const [newCand, setNewCand] = useState({ name: "", email: "", phone: "", aadharNumber: "", panNumber: "", dob: "", address: "", source: "", requisitionId: "", experienceYears: "", resumeUrl: "" });
   const [uploadingFile, setUploadingFile] = useState(false);
   // Schedule Form State
   const [newSched, setNewSched] = useState({ candidateId: "", interviewRoundId: "", roundName: "", scheduledAt: "", panelists: [] });
@@ -612,7 +614,7 @@ function RecruitmentPageContent() {
       }
     }
     
-    // Phone format & duplicate validation
+    // Phone format & duplicate validation (strict 10 digits)
     if (!newCand.phone?.trim()) {
       errs.phone = "Phone number is required.";
     } else if (!/^\d{10}$/.test(newCand.phone.trim())) {
@@ -625,6 +627,65 @@ function RecruitmentPageContent() {
       if (dupPhone) {
         errs.phone = "Candidate with this phone number already exists.";
       }
+    }
+
+    // Date of birth validation (Required)
+    if (!newCand.dob) {
+      errs.dob = "Date of Birth is required.";
+    } else {
+      const birthDate = new Date(newCand.dob);
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const m = today.getMonth() - birthDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      if (isNaN(birthDate.getTime())) {
+        errs.dob = "Please provide a valid date of birth.";
+      } else if (birthDate > today) {
+        errs.dob = "Date of birth cannot be in the future.";
+      } else if (age < 18) {
+        errs.dob = "Candidate must be at least 18 years old.";
+      }
+    }
+
+    // Residential Address validation (Required)
+    if (!newCand.address?.trim()) {
+      errs.address = "Residential address is required.";
+    } else if (newCand.address.trim().length < 5) {
+      errs.address = "Address must be at least 5 characters.";
+    } else if (newCand.address.trim().length > 255) {
+      errs.address = "Address cannot exceed 255 characters.";
+    }
+
+    // Aadhaar Card validation (Required, 12 digits)
+    if (!newCand.aadharNumber?.trim()) {
+      errs.aadharNumber = "Aadhaar Card Number is required.";
+    } else {
+      const cleanAadhaar = newCand.aadharNumber.replace(/\D/g, "");
+      if (cleanAadhaar.length !== 12) {
+        errs.aadharNumber = "Aadhaar Card Number must be exactly 12 digits.";
+      }
+    }
+
+    // PAN Card validation (Required, 10 chars format)
+    if (!newCand.panNumber?.trim()) {
+      errs.panNumber = "PAN Card Number is required.";
+    } else {
+      const cleanPan = newCand.panNumber.trim().toUpperCase();
+      const panRx = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+      if (!panRx.test(cleanPan)) {
+        errs.panNumber = "Please enter a valid 10-character PAN (e.g. ABCDE1234F).";
+      }
+    }
+
+    // Total Experience validation (Required, 0 for fresher)
+    if (newCand.experienceYears === "" || newCand.experienceYears === null || newCand.experienceYears === undefined) {
+      errs.experienceYears = "Total experience is required (enter 0 for Fresher).";
+    } else if (Number(newCand.experienceYears) < 0) {
+      errs.experienceYears = "Experience cannot be negative.";
+    } else if (Number(newCand.experienceYears) > 50) {
+      errs.experienceYears = "Experience cannot exceed 50 years.";
     }
 
     if (!newCand.requisitionId) errs.requisitionId = "Please select a Job Requisition.";
@@ -871,6 +932,10 @@ function RecruitmentPageContent() {
             name: newCand.name.trim(),
             email: newCand.email.toLowerCase().trim(),
             phone: newCand.phone.trim(),
+            aadharNumber: newCand.aadharNumber ? newCand.aadharNumber.replace(/\D/g, "") : null,
+            panNumber: newCand.panNumber?.trim()?.toUpperCase() || null,
+            dob: newCand.dob ? new Date(newCand.dob).toISOString() : null,
+            address: newCand.address?.trim() || null,
             source: newCand.source,
             requisitionId: newCand.requisitionId,
             experienceYears: newCand.experienceYears === "" || newCand.experienceYears === null ? 0 : Number(newCand.experienceYears),
@@ -886,7 +951,7 @@ function RecruitmentPageContent() {
             sortOrder: candSortOrder,
             status: candStatusFilter === "ALL" ? undefined : candStatusFilter,
           }));
-          setNewCand({ name: "", email: "", phone: "", source: "", requisitionId: "", experienceYears: "", resumeUrl: "" });
+          setNewCand({ name: "", email: "", phone: "", aadharNumber: "", panNumber: "", dob: "", address: "", source: "", requisitionId: "", experienceYears: "", resumeUrl: "" });
           setFormErrors({});
           toast.success("Candidate updated successfully");
         } else {
@@ -906,19 +971,25 @@ function RecruitmentPageContent() {
           name: newCand.name.trim(),
           email: newCand.email.toLowerCase().trim(),
           phone: newCand.phone.trim(),
+          aadharNumber: newCand.aadharNumber ? newCand.aadharNumber.replace(/\D/g, "") : undefined,
+          panNumber: newCand.panNumber?.trim()?.toUpperCase() || undefined,
+          dob: newCand.dob ? new Date(newCand.dob).toISOString() : undefined,
+          address: newCand.address?.trim() || undefined,
           experienceYears: newCand.experienceYears === "" || newCand.experienceYears === null ? 0 : Number(newCand.experienceYears),
           source: newCand.source || "Portal",
         })).unwrap();
+        setCandSearch("");
+        setCandStatusFilter("ALL");
         setCandPage(1);
         dispatch(fetchCandidates({
           page: 1,
           limit: candRows,
-          search: candSearch,
-          sortBy: candSortBy,
-          sortOrder: candSortOrder,
-          status: candStatusFilter === "ALL" ? undefined : candStatusFilter,
+          search: "",
+          sortBy: "createdAt",
+          sortOrder: "desc",
+          status: undefined,
         }));
-        setNewCand({ name: "", email: "", phone: "", source: "", requisitionId: "", experienceYears: "", resumeUrl: "" });
+        setNewCand({ name: "", email: "", phone: "", aadharNumber: "", panNumber: "", dob: "", address: "", source: "", requisitionId: "", experienceYears: "", resumeUrl: "" });
         setFormErrors({});
         const fileInput = document.getElementById("resume-upload-input");
         if (fileInput) fileInput.value = "";
@@ -944,7 +1015,7 @@ function RecruitmentPageContent() {
       });
       if (res.ok) {
         if (newCand.id === candId) {
-          setNewCand({ name: "", email: "", phone: "", requisitionId: "", resumeUrl: "", experienceYears: "", skills: "" });
+          setNewCand({ name: "", email: "", phone: "", aadharNumber: "", panNumber: "", dob: "", address: "", source: "Portal", requisitionId: "", resumeUrl: "", experienceYears: "" });
           setFormErrors({});
         }
         dispatch(fetchCandidates({
@@ -2742,7 +2813,9 @@ function RecruitmentPageContent() {
                 </h3>
                 <form onSubmit={handleSubmitCandidate} className="space-y-3" noValidate>
                   <div className="space-y-1">
-                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Full Name</Label>
+                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                      Full Name <span className="text-rose-500">*</span>
+                    </Label>
                     <Input
                       placeholder="John Doe"
                       value={newCand.name}
@@ -2751,11 +2824,14 @@ function RecruitmentPageContent() {
                         setNewCand({ ...newCand, name: val });
                         if (formErrors.name) setFormErrors({ ...formErrors, name: null });
                       }}
+                      className={formErrors.name ? "border-rose-500" : ""}
                     />
                     {formErrors.name && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.name}</span>}
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Email Address</Label>
+                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                      Email Address <span className="text-rose-500">*</span>
+                    </Label>
                     <Input
                       type="email"
                       placeholder="john@example.com"
@@ -2764,30 +2840,127 @@ function RecruitmentPageContent() {
                         setNewCand({ ...newCand, email: e.target.value });
                         if (formErrors.email) setFormErrors({ ...formErrors, email: null });
                       }}
+                      className={formErrors.email ? "border-rose-500" : ""}
                     />
                     {formErrors.email && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.email}</span>}
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Phone</Label>
-                    <Input
-                      placeholder="Enter 10-digit mobile number"
-                      value={newCand.phone}
-                      maxLength={10}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, "").slice(0, 10);
-                        setNewCand({ ...newCand, phone: val });
-                        if (formErrors.phone) setFormErrors({ ...formErrors, phone: null });
-                      }}
-                    />
-                    {formErrors.phone && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.phone}</span>}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                        Mobile Number <span className="text-rose-500">*</span>
+                      </Label>
+                      <Input
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={10}
+                        placeholder="10-digit mobile number"
+                        value={newCand.phone}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, "").slice(0, 10);
+                          setNewCand({ ...newCand, phone: val });
+                          if (formErrors.phone) setFormErrors({ ...formErrors, phone: null });
+                        }}
+                        className={formErrors.phone ? "border-rose-500" : ""}
+                      />
+                      {formErrors.phone && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.phone}</span>}
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                        Date of Birth (DOB) <span className="text-rose-500">*</span>
+                      </Label>
+                      <DatePicker
+                        date={newCand.dob}
+                        setDate={(d) => {
+                          setNewCand({ ...newCand, dob: d });
+                          if (formErrors.dob) setFormErrors({ ...formErrors, dob: null });
+                        }}
+                        placeholder="Select Date of Birth"
+                        fromYear={1950}
+                        toYear={new Date().getFullYear()}
+                        className={formErrors.dob ? "border-rose-500" : ""}
+                      />
+                      {formErrors.dob && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.dob}</span>}
+                    </div>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Job Requisition</Label>
+                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                      Residential Address <span className="text-rose-500">*</span>
+                    </Label>
+                    <Textarea
+                      placeholder="e.g. 102, Shivalik Arcade, Ahmedabad"
+                      value={newCand.address || ""}
+                      onChange={(e) => {
+                        setNewCand({ ...newCand, address: e.target.value });
+                        if (formErrors.address) setFormErrors({ ...formErrors, address: null });
+                      }}
+                      className={formErrors.address ? "border-rose-500 text-xs" : "text-xs"}
+                      rows={2}
+                    />
+                    {formErrors.address && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.address}</span>}
+                  </div>
+
+                  {/* Identity Credentials (Aadhaar & PAN) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200/80 dark:border-slate-800">
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                          <IdCard className="w-3.5 h-3.5 text-sky-500" />
+                          Aadhaar Card <span className="text-rose-500">*</span>
+                        </Label>
+                        <span className={`text-[10px] font-mono ${(newCand.aadharNumber || "").replace(/\D/g, "").length === 12 ? "text-emerald-500 font-semibold" : "text-slate-400"}`}>
+                          {newCand.aadharNumber ? `${newCand.aadharNumber.replace(/\D/g, "").length}/12` : "12 digits"}
+                        </span>
+                      </div>
+                      <Input
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={14}
+                        placeholder="e.g. 1234 5678 9012"
+                        value={newCand.aadharNumber ? newCand.aadharNumber.replace(/\D/g, "").replace(/(\d{4})(?=\d)/g, "$1 ").trim() : ""}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/\D/g, "").slice(0, 12);
+                          setNewCand({ ...newCand, aadharNumber: raw });
+                          if (formErrors.aadharNumber) setFormErrors({ ...formErrors, aadharNumber: null });
+                        }}
+                        className={`font-mono text-xs ${formErrors.aadharNumber ? "border-rose-500" : ""}`}
+                      />
+                      {formErrors.aadharNumber && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.aadharNumber}</span>}
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                          <CreditCard className="w-3.5 h-3.5 text-sky-500" />
+                          PAN Card <span className="text-rose-500">*</span>
+                        </Label>
+                        <span className={`text-[10px] font-mono ${(newCand.panNumber || "").length === 10 ? "text-emerald-500 font-semibold" : "text-slate-400"}`}>
+                          {newCand.panNumber ? `${newCand.panNumber.length}/10` : "10 chars"}
+                        </span>
+                      </div>
+                      <Input
+                        type="text"
+                        maxLength={10}
+                        placeholder="e.g. ABCDE1234F"
+                        value={newCand.panNumber || ""}
+                        onChange={(e) => {
+                          const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
+                          setNewCand({ ...newCand, panNumber: val });
+                          if (formErrors.panNumber) setFormErrors({ ...formErrors, panNumber: null });
+                        }}
+                        className={`font-mono uppercase text-xs ${formErrors.panNumber ? "border-rose-500" : ""}`}
+                      />
+                      {formErrors.panNumber && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.panNumber}</span>}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                      Job Requisition <span className="text-rose-500">*</span>
+                    </Label>
                     <Select value={newCand.requisitionId} onValueChange={(val) => {
                       setNewCand({ ...newCand, requisitionId: val });
                       if (formErrors.requisitionId) setFormErrors({ ...formErrors, requisitionId: null });
                     }}>
-                      <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
+                      <SelectTrigger className={`h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border ${formErrors.requisitionId ? "border-rose-500" : "border-slate-200 dark:border-slate-800"} w-full`}>
                         <SelectValue placeholder="Select..." />
                       </SelectTrigger>
                       <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
@@ -2815,12 +2988,14 @@ function RecruitmentPageContent() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Sourcing Source</Label>
+                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                        Sourcing Source <span className="text-rose-500">*</span>
+                      </Label>
                       <Select value={newCand.source} onValueChange={(val) => {
                         setNewCand({ ...newCand, source: val });
                         if (formErrors.source) setFormErrors({ ...formErrors, source: null });
                       }}>
-                        <SelectTrigger className="h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full">
+                        <SelectTrigger className={`h-10 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border ${formErrors.source ? "border-rose-500" : "border-slate-200 dark:border-slate-800"} w-full`}>
                           <SelectValue placeholder="Select..." />
                         </SelectTrigger>
                         <SelectContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
@@ -2832,7 +3007,9 @@ function RecruitmentPageContent() {
                       {formErrors.source && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.source}</span>}
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Total Exp (Yrs)</Label>
+                      <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                        Total Exp (Yrs) <span className="text-rose-500">*</span>
+                      </Label>
                       <Input
                         type="number"
                         step="0.5"
@@ -2842,12 +3019,17 @@ function RecruitmentPageContent() {
                         onChange={(e) => {
                           const val = e.target.value === "" ? "" : Number(e.target.value);
                           setNewCand({ ...newCand, experienceYears: val });
+                          if (formErrors.experienceYears) setFormErrors({ ...formErrors, experienceYears: null });
                         }}
+                        className={formErrors.experienceYears ? "border-rose-500" : ""}
                       />
+                      {formErrors.experienceYears && <span className="text-rose-500 text-[10.5px] font-bold block mt-0.5">{formErrors.experienceYears}</span>}
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">Resume / CV (PDF)</Label>
+                    <Label className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                      Resume / CV (PDF) <span className="text-rose-500">*</span>
+                    </Label>
                     {newCand.id && newCand.resumeUrl && (
                       <div className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 mb-1">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-rose-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
@@ -2879,7 +3061,7 @@ function RecruitmentPageContent() {
                         type="button" 
                         variant="outline" 
                         onClick={() => {
-                          setNewCand({ name: "", email: "", phone: "", source: "Portal", requisitionId: "", experienceYears: "", resumeUrl: "" });
+                          setNewCand({ name: "", email: "", phone: "", aadharNumber: "", panNumber: "", dob: "", address: "", source: "Portal", requisitionId: "", experienceYears: "", resumeUrl: "" });
                           setFormErrors({});
                         }}
                         className="w-1/3 rounded-xl font-bold"
@@ -2974,6 +3156,7 @@ function RecruitmentPageContent() {
                       label: "Candidate",
                       render: (row) => {
                         const reHist = getReInterviewHistory(row);
+                        const dobStr = row.dob ? new Date(row.dob).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : null;
                         return (
                           <div className="space-y-0.5 max-w-[200px]">
                             <div className="flex items-center gap-1.5 flex-wrap">
@@ -2985,7 +3168,34 @@ function RecruitmentPageContent() {
                               )}
                             </div>
                             <span className="text-xs text-slate-500 block truncate">{row.email}</span>
-                            <span className="text-[10px] text-slate-400 font-mono block">{row.phone || "No phone"}</span>
+                            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
+                              <span>{row.phone || "No phone"}</span>
+                              {dobStr && (
+                                <>
+                                  <span>•</span>
+                                  <span>DOB: {dobStr}</span>
+                                </>
+                              )}
+                            </div>
+                            {row.address && (
+                              <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[190px]" title={row.address}>
+                                📍 {row.address}
+                              </div>
+                            )}
+                            {(row.aadharNumber || row.panNumber) && (
+                              <div className="flex flex-wrap items-center gap-1.5 text-[9.5px] font-mono text-slate-500 dark:text-slate-400 mt-0.5">
+                                {row.aadharNumber && (
+                                  <span className="bg-slate-100 dark:bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700" title="Aadhaar Card Number">
+                                    🪪 {row.aadharNumber.replace(/(\d{4})(?=\d)/g, "$1 ")}
+                                  </span>
+                                )}
+                                {row.panNumber && (
+                                  <span className="bg-slate-100 dark:bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-semibold" title="PAN Card Number">
+                                    PAN: {row.panNumber}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       },
@@ -3094,6 +3304,10 @@ function RecruitmentPageContent() {
                                     name: row.name,
                                     email: row.email,
                                     phone: row.phone || "",
+                                    aadharNumber: row.aadharNumber || "",
+                                    panNumber: row.panNumber || "",
+                                    dob: row.dob ? new Date(row.dob).toISOString().split("T")[0] : "",
+                                    address: row.address || "",
                                     source: row.source,
                                     requisitionId: String(row.requisitionId || row.requisition?.id || ""),
                                     experienceYears: row.experienceYears ?? "",

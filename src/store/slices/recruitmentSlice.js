@@ -239,7 +239,7 @@ const recruitmentSlice = createSlice({
       .addCase(fetchCandidates.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
       .addCase(createCandidate.fulfilled, (state, action) => {
         if (action.payload) {
-          state.candidates.unshift(action.payload);
+          state.candidates = [action.payload, ...state.candidates.filter(c => c.id !== action.payload.id)];
           state.totalCandidates = (state.totalCandidates || 0) + 1;
         }
       })

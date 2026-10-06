@@ -340,11 +340,11 @@ function OnboardingPageContent() {
       label: "Bank Details",
       render: (row) => (
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-          row.bankName && row.accountNumber && row.ifscCode && row.panNumber
+          row.bankName && row.accountNumber && row.ifscCode && (row.panNumber || row.aadharNumber)
             ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
             : "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
         }`}>
-          {row.bankName && row.accountNumber && row.ifscCode && row.panNumber ? "Verified" : "Pending"}
+          {row.bankName && row.accountNumber && row.ifscCode && (row.panNumber || row.aadharNumber) ? "Verified" : "Pending"}
         </span>
       ),
     },

@@ -40,6 +40,7 @@ import {
   Landmark,
   ListChecks,
   KeyRound,
+  UserPlus,
   Users,
 } from "lucide-react";
 
@@ -117,6 +118,14 @@ const menuItems = [
   {
     group: "Core HR",
     items: [
+      {
+        title: "Employees",
+        href: "/dashboard/employees",
+        icon: UserPlus,
+        subject: "onboarding",
+        action: "read",
+        sidebarPermission: "sidebar-onboarding",
+      },
       {
         title: "Recruitment",
         href: "/dashboard/recruitment",
