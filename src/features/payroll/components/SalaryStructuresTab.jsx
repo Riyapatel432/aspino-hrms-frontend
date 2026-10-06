@@ -241,9 +241,32 @@ export default function SalaryStructuresTab() {
     accountNumber: "",
     ifscCode: "",
     panNumber: "",
+    _panAutoFetched: false,
   };
   const [structForm, setStructForm] = useState(defaultStructForm);
   const [structErrors, setStructErrors] = useState({});
+
+  const selectedEmployee = useMemo(() => {
+    if (!structForm.employeeId) return null;
+    return (
+      rawEmpList.find((emp) => String(emp.id) === String(structForm.employeeId) || String(emp.employeeId) === String(structForm.employeeId)) ||
+      salaryStructures.find((s) => String(s.employeeId) === String(structForm.employeeId))?.employee ||
+      null
+    );
+  }, [structForm.employeeId, rawEmpList, salaryStructures]);
+
+  const isPanDisabled = useMemo(() => {
+    const hasEmpPan = Boolean(
+      (selectedEmployee?.panNumber || selectedEmployee?.pan) &&
+      String(selectedEmployee.panNumber || selectedEmployee.pan).trim().length > 0
+    );
+    const hasAutoFetchedPan = Boolean(
+      structForm._panAutoFetched &&
+      structForm.panNumber &&
+      String(structForm.panNumber).trim().length > 0
+    );
+    return hasEmpPan || hasAutoFetchedPan;
+  }, [selectedEmployee, structForm._panAutoFetched, structForm.panNumber]);
 
   const resetStructForm = () => {
     setStructForm(defaultStructForm);
@@ -935,6 +958,7 @@ export default function SalaryStructuresTab() {
                     accountNumber: row.employee?.accountNumber || "",
                     ifscCode: row.employee?.ifscCode || "",
                     panNumber: row.employee?.panNumber || "",
+                    _panAutoFetched: Boolean(row.employee?.panNumber),
                   });
                   setIsStructureOpen(true);
                 }}
@@ -1093,7 +1117,7 @@ export default function SalaryStructuresTab() {
               Salary Transfer
             </Button>
 
-            <Button className="bg-sky-600 hover:bg-sky-700 text-white rounded-xl h-10 px-6 font-semibold shadow-md gap-2" onClick={() => { resetStructForm(); setIsStructureOpen(true); }}>
+            <Button className="bg-sky-600 hover:bg-sky-700 text-white rounded-xl h-10 px-6 font-semibold shadow-md gap-2" onClick={() => { resetStructForm(); dispatch(fetchPayrollEmployees()); setIsStructureOpen(true); }}>
               <Plus className="size-4" /> Assign / Update Structure
             </Button>
           </div>
@@ -1132,22 +1156,79 @@ export default function SalaryStructuresTab() {
                           <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Select Direct Employee *</Label>
                           <div className="mt-1.5">
                             <SearchableSelect
-                              options={(employees || []).map((emp) => ({
+                              options={rawEmpList.map((emp) => ({
                                 value: emp.id,
-                                label: `${emp.firstName} ${emp.lastName} (${emp.employeeId})`,
-                                subLabel: `${emp.designation || "Staff"} • ${emp.department || "General"}`
+                                label: `${emp.firstName} ${emp.lastName} (${emp.employeeId || emp.employeeCode || "N/A"})`,
+                                subLabel: `${emp.designation || "Staff"} • ${emp.department?.name || emp.department || "General"}`
                               }))}
                               value={structForm.employeeId}
-                              onValueChange={(val) => {
-                                const selectedEmp = (employees || []).find((emp) => emp.id === val);
+                              onValueChange={async (val) => {
+                                const selectedEmp = rawEmpList.find(
+                                  (emp) => String(emp.id) === String(val) || String(emp.employeeId) === String(val)
+                                );
+                                const empPan = selectedEmp?.panNumber || selectedEmp?.pan || "";
+                                const empBankId = selectedEmp?.bankId
+                                  ? Number(selectedEmp.bankId)
+                                  : selectedEmp?.bank?.id
+                                  ? Number(selectedEmp.bank.id)
+                                  : "";
+                                const empAccNum = selectedEmp?.accountNumber !== undefined && selectedEmp.accountNumber !== null ? selectedEmp.accountNumber : "";
+                                const empIfsc = selectedEmp?.ifscCode !== undefined && selectedEmp.ifscCode !== null ? selectedEmp.ifscCode : "";
+
                                 setStructForm((prev) => ({
                                   ...prev,
                                   employeeId: val,
-                                  bankId: selectedEmp?.bankId ? Number(selectedEmp.bankId) : (selectedEmp?.bank?.id ? Number(selectedEmp.bank.id) : prev.bankId),
-                                  accountNumber: selectedEmp?.accountNumber !== undefined && selectedEmp.accountNumber !== null ? selectedEmp.accountNumber : prev.accountNumber,
-                                  ifscCode: selectedEmp?.ifscCode !== undefined && selectedEmp.ifscCode !== null ? selectedEmp.ifscCode : prev.ifscCode,
-                                  panNumber: selectedEmp?.panNumber !== undefined && selectedEmp.panNumber !== null ? selectedEmp.panNumber : prev.panNumber,
+                                  bankId: empBankId || prev.bankId,
+                                  accountNumber: empAccNum || prev.accountNumber,
+                                  ifscCode: empIfsc || prev.ifscCode,
+                                  panNumber: empPan || "",
+                                  _panAutoFetched: Boolean(empPan),
                                 }));
+
+                                if (empPan) {
+                                  setStructErrors((prev) => ({ ...prev, panNumber: undefined }));
+                                }
+
+                                if (val) {
+                                  try {
+                                    let res = await apiFetch(`/staff-hrms/onboarding/employees/${val}`);
+                                    if (!res.ok) {
+                                      res = await apiFetch(`/staff-hrms/payroll/employees`);
+                                    }
+                                    if (res.ok) {
+                                      const fullData = await res.json();
+                                      const fullEmp = fullData?.id ? fullData : (Array.isArray(fullData) ? fullData.find(e => String(e.id) === String(val) || String(e.employeeId) === String(val)) : fullData?.data?.find?.(e => String(e.id) === String(val)));
+                                      if (fullEmp) {
+                                        const freshPan = fullEmp.panNumber || fullEmp.pan || "";
+                                        const freshBankId = fullEmp.bankId
+                                          ? Number(fullEmp.bankId)
+                                          : fullEmp.bank?.id
+                                          ? Number(fullEmp.bank.id)
+                                          : "";
+                                        const freshAccNum = fullEmp.accountNumber !== undefined && fullEmp.accountNumber !== null ? fullEmp.accountNumber : "";
+                                        const freshIfsc = fullEmp.ifscCode !== undefined && fullEmp.ifscCode !== null ? fullEmp.ifscCode : "";
+
+                                        setStructForm((prev) => {
+                                          if (String(prev.employeeId) !== String(val)) return prev;
+                                          return {
+                                            ...prev,
+                                            bankId: freshBankId || prev.bankId,
+                                            accountNumber: freshAccNum || prev.accountNumber,
+                                            ifscCode: freshIfsc || prev.ifscCode,
+                                            panNumber: freshPan || prev.panNumber,
+                                            _panAutoFetched: Boolean(freshPan || empPan),
+                                          };
+                                        });
+
+                                        if (freshPan) {
+                                          setStructErrors((prev) => ({ ...prev, panNumber: undefined }));
+                                        }
+                                      }
+                                    }
+                                  } catch (e) {
+                                    console.warn("Could not fetch live employee details:", e);
+                                  }
+                                }
                               }}
                               placeholder="Search and select employee..."
                               searchPlaceholder="Type employee name, ID, designation, or department..."
@@ -1481,7 +1562,14 @@ export default function SalaryStructuresTab() {
                           </div>
                           <div>
                             <div className="flex items-center justify-between">
-                              <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">PAN Number *</Label>
+                              <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                PAN Number *
+                                {isPanDisabled && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded-md">
+                                    <Lock className="w-2.5 h-2.5" /> Auto-fetched
+                                  </span>
+                                )}
+                              </Label>
                               <span className={`text-[10px] font-mono ${structForm.panNumber?.length === 10 ? 'text-emerald-500 font-semibold' : 'text-slate-400'}`}>
                                 {structForm.panNumber ? `${structForm.panNumber.length}/10 chars` : "10 chars"}
                               </span>
@@ -1491,16 +1579,24 @@ export default function SalaryStructuresTab() {
                               placeholder="e.g. ABCDE1234F"
                               value={structForm.panNumber || ""}
                               maxLength={10}
+                              disabled={isPanDisabled}
                               onChange={(e) => {
+                                if (isPanDisabled) return;
                                 const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
                                 setStructForm({ ...structForm, panNumber: val });
                                 if (structErrors.panNumber) {
                                   setStructErrors((prev) => ({ ...prev, panNumber: undefined }));
                                 }
                               }}
-                              className={`rounded-xl mt-1.5 h-11 uppercase font-mono tracking-wider ${structErrors.panNumber ? 'border-red-500 border-2 focus-visible:ring-red-500' : ''}`}
+                              className={`rounded-xl mt-1.5 h-11 uppercase font-mono tracking-wider ${
+                                isPanDisabled
+                                  ? 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 font-medium cursor-not-allowed border-slate-200 dark:border-slate-700 opacity-90 select-none'
+                                  : structErrors.panNumber
+                                    ? 'border-red-500 border-2 focus-visible:ring-red-500'
+                                    : ''
+                              }`}
                             />
-                            {structErrors.panNumber && (
+                            {structErrors.panNumber && !isPanDisabled && (
                               <div className="text-red-500 text-[11px] font-bold mt-1 pl-1">
                                 {structErrors.panNumber}
                               </div>
