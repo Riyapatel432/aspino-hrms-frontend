@@ -986,7 +986,7 @@ export default function DashboardOverview() {
                 title: "Employees Entry & Directory",
                 desc: "Register new employees, update banking details, generate ID badges, and track workforce rosters.",
                 count: `${stats.users} Staff Registered`,
-                subject: "onboarding",
+                subject: "employees",
                 action: "read",
               },
               {

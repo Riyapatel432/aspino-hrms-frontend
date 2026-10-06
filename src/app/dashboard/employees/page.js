@@ -49,7 +49,7 @@ import {
 
 export default function EmployeesPage() {
   return (
-    <RouteGuard subject="onboarding" action="read">
+    <RouteGuard subject="employees" action="read">
       <EmployeesPageContent />
     </RouteGuard>
   );
@@ -57,9 +57,10 @@ export default function EmployeesPage() {
 
 function EmployeesPageContent() {
   const { can, isSuperAdmin } = usePermissions();
-  const canCreate = isSuperAdmin || can("create", "onboarding") || can("create", "employee");
-  const canUpdate = isSuperAdmin || can("update", "onboarding") || can("update", "employee");
-  const canDelete = isSuperAdmin || can("delete", "onboarding") || can("delete", "employee");
+  const canCreate = isSuperAdmin || can("create", "employees") || can("create", "employee");
+  const canUpdate = isSuperAdmin || can("update", "employees") || can("update", "employee") || can("edit", "employees") || can("edit", "employee");
+  const canDelete = isSuperAdmin || can("delete", "employees") || can("delete", "employee");
+  const canExport = isSuperAdmin || can("export", "employees") || can("export", "employee");
 
   const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -577,6 +578,10 @@ function EmployeesPageContent() {
   // Submit Handler (Create / Update)
   const handleSubmit = async (e) => {
     e?.preventDefault();
+    if (isEditing ? !canUpdate : !canCreate) {
+      toast.error("You do not have permission to perform this action.");
+      return;
+    }
     if (!validateForm()) {
       toast.error("Please resolve highlighted form validation errors.");
       return;
@@ -662,6 +667,10 @@ function EmployeesPageContent() {
   // Delete Handler
   const handleDelete = async () => {
     if (!deleteTarget) return;
+    if (!canDelete) {
+      toast.error("You do not have permission to delete employee records.");
+      return;
+    }
     setDeleting(true);
     try {
       const res = await apiFetch(`${backendUrl}/staff-hrms/onboarding/employees/${deleteTarget.id}`, {
@@ -687,6 +696,10 @@ function EmployeesPageContent() {
 
   // Export CSV
   const handleExportCSV = () => {
+    if (!canExport) {
+      toast.error("You do not have permission to export employee data.");
+      return;
+    }
     if (!employees.length) {
       toast.info("No employee records to export.");
       return;
@@ -999,14 +1012,16 @@ function EmployeesPageContent() {
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0">
-          <Button
-            variant="outline"
-            onClick={handleExportCSV}
-            className="border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
-          >
-            <Download className="w-4 h-4 mr-1.5 text-slate-500" />
-            Export CSV
-          </Button>
+          {canExport && (
+            <Button
+              variant="outline"
+              onClick={handleExportCSV}
+              className="border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
+            >
+              <Download className="w-4 h-4 mr-1.5 text-slate-500" />
+              Export CSV
+            </Button>
+          )}
 
           {canCreate && (
             <Button

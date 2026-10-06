@@ -74,7 +74,24 @@ export function PermissionProvider({ children }) {
         // Resolve role to a string regardless of whether it comes back as an object
         const resolvedRole = typeof data.role === "object" ? data.role?.name : data.role;
         if (resolvedRole) setRole(resolvedRole);
-        if (data.user) setUser(data.user);
+        if (data.user) {
+          const freshUser = {
+            ...data.user,
+            role: resolvedRole || data.user.role,
+            roleRelation: typeof data.role === "object" ? data.role : data.user.roleRelation,
+            permissions: perms,
+          };
+          setUser(freshUser);
+          if (typeof document !== "undefined") {
+            try {
+              const freshUserStr = JSON.stringify(freshUser);
+              document.cookie = `hrUser=${encodeURIComponent(freshUserStr)}; path=/; max-age=86400; SameSite=Lax`;
+              localStorage.setItem("hrUser", freshUserStr);
+            } catch (e) {
+              console.error("Failed to sync fresh hrUser storage", e);
+            }
+          }
+        }
       }
     } catch (err) {
       console.error("Error fetching permissions:", err);
@@ -85,11 +102,42 @@ export function PermissionProvider({ children }) {
 
   useEffect(() => {
     fetchPermissions();
+
+    const handlePermUpdate = () => {
+      fetchPermissions();
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("permissions-updated", handlePermUpdate);
+      window.addEventListener("focus", handlePermUpdate);
+      return () => {
+        window.removeEventListener("permissions-updated", handlePermUpdate);
+        window.removeEventListener("focus", handlePermUpdate);
+      };
+    }
   }, [fetchPermissions]);
 
   const ability = useMemo(() => {
     return buildAbilityFor(permissions, user);
   }, [permissions, user]);
+
+  useEffect(() => {
+    if (permissions && permissions.length > 0) {
+      const employeePermissions = permissions.filter(
+        (p) =>
+          (typeof p === "string" && (p.includes("emp") || p.includes("employee"))) ||
+          (p?.module && String(p.module).includes("emp")) ||
+          (p?.name && String(p.name).includes("emp"))
+      );
+      console.log("Employee permissions from DB:", employeePermissions);
+    }
+    if (ability && ability.rules) {
+      const employeeRules = ability.rules.filter(
+        (r) => String(r.subject).includes("emp") || String(r.action).includes("emp")
+      );
+      console.log("Employee CASL rules:", employeeRules);
+    }
+  }, [permissions, ability]);
 
   const isSuperAdmin = useMemo(() => {
     // Derive role name from the state, prioritising the backend's resolved string
@@ -100,22 +148,9 @@ export function PermissionProvider({ children }) {
       ""
     ).toUpperCase().trim();
 
-    // Trust the backend-computed isSuperAdmin flag first (most reliable)
-    if (user?.isSuperAdmin === true) return true;
-
     // Strict role name check — only SUPER_ADMIN qualifies
-    if (rName === "SUPER_ADMIN") return true;
-
-    // Explicit all:manage permission from the DB
-    if (
-      Array.isArray(permissions) &&
-      permissions.some(
-        (p) => typeof p === "object" && p?.module === "all" && p?.action === "manage"
-      )
-    ) return true;
-
-    return false;
-  }, [permissions, role, user]);
+    return rName === "SUPER_ADMIN";
+  }, [role, user]);
 
   const isEmployee = useMemo(() => {
     const extractRoleName = (r) => {
@@ -140,137 +175,188 @@ export function PermissionProvider({ children }) {
       if (!ability) return false;
       if (isSuperAdmin) return true;
       if (subject) {
-        const act = String(action).toLowerCase().trim();
-        const subj = String(subject).toLowerCase().trim();
+        const actLower = String(action).toLowerCase().trim();
+        const rawSubj = String(subject).toLowerCase().trim();
+        const cleanSubj = rawSubj.replace(/^sidebar-/, "");
 
-        const aliases = [subj, subj.replace(/-/g, "_"), subj.replace(/_/g, "-")];
-        if (subj === "recruitment" || subj === "recruitments") {
+        const actAliases = [actLower];
+        if (actLower === "edit" || actLower === "update") {
+          actAliases.push("edit", "update");
+        } else if (actLower === "view" || actLower === "read") {
+          actAliases.push("view", "read");
+        } else if (actLower === "add" || actLower === "create") {
+          actAliases.push("add", "create");
+        } else if (actLower === "delete" || actLower === "remove") {
+          actAliases.push("delete", "remove");
+        }
+
+        const aliases = Array.from(
+          new Set([
+            rawSubj,
+            cleanSubj,
+            rawSubj.replace(/-/g, "_"),
+            rawSubj.replace(/_/g, "-"),
+            cleanSubj.replace(/-/g, "_"),
+            cleanSubj.replace(/_/g, "-"),
+          ])
+        );
+
+        if (cleanSubj === "recruitment" || cleanSubj === "recruitments") {
           aliases.push("recruitment", "recruitments");
         } else if (
-          subj === "requisitions" ||
-          subj === "requisition" ||
-          subj === "job_requisitions" ||
-          subj === "job_requisition" ||
-          subj === "job-requisitions" ||
-          subj === "job-requisition"
+          cleanSubj === "requisitions" ||
+          cleanSubj === "requisition" ||
+          cleanSubj === "job_requisitions" ||
+          cleanSubj === "job_requisition" ||
+          cleanSubj === "job-requisitions" ||
+          cleanSubj === "job-requisition"
         ) {
           aliases.push("requisition", "requisitions", "job_requisitions", "job-requisitions", "job_requisition", "job-requisition");
-        } else if (subj === "candidates" || subj === "candidate") {
+        } else if (cleanSubj === "candidates" || cleanSubj === "candidate") {
           aliases.push("candidates", "candidate");
         } else if (
-          subj === "interviews" ||
-          subj === "interview" ||
-          subj === "interview_scheduling" ||
-          subj === "interview-scheduling" ||
-          subj === "schedules" ||
-          subj === "schedule"
+          cleanSubj === "interviews" ||
+          cleanSubj === "interview" ||
+          cleanSubj === "interview_scheduling" ||
+          cleanSubj === "interview-scheduling" ||
+          cleanSubj === "schedules" ||
+          cleanSubj === "schedule"
         ) {
           aliases.push("interview", "interviews", "interview_scheduling", "interview-scheduling", "schedules", "schedule");
         } else if (
-          subj === "offers" ||
-          subj === "offer" ||
-          subj === "offer_letters" ||
-          subj === "offer_letter" ||
-          subj === "offer-letters" ||
-          subj === "offer-letter"
+          cleanSubj === "offers" ||
+          cleanSubj === "offer" ||
+          cleanSubj === "offer_letters" ||
+          cleanSubj === "offer_letter" ||
+          cleanSubj === "offer-letters" ||
+          cleanSubj === "offer-letter"
         ) {
           aliases.push("offer", "offers", "offer_letter", "offer_letters", "offer-letter", "offer-letters");
-        } else if (subj === "onboarding" || subj === "onboardings") {
+        } else if (
+          cleanSubj === "employee" ||
+          cleanSubj === "employees" ||
+          cleanSubj === "employee_entry" ||
+          cleanSubj === "employee-entry" ||
+          cleanSubj === "employees_entry" ||
+          cleanSubj === "employees-entry"
+        ) {
+          aliases.push(
+            "employee",
+            "employees",
+            "employee_entry",
+            "employee-entry",
+            "employees_entry",
+            "employees-entry"
+          );
+        } else if (cleanSubj === "onboarding" || cleanSubj === "onboardings") {
           aliases.push("onboarding", "onboardings");
-        } else if (subj === "exit" || subj === "exits" || subj === "exit_process" || subj === "exit-process") {
+        } else if (cleanSubj === "roles" || cleanSubj === "role" || cleanSubj === "permissions" || cleanSubj === "permission") {
+          aliases.push("roles", "role", "permissions", "permission");
+        } else if (cleanSubj === "exit" || cleanSubj === "exits" || cleanSubj === "exit_process" || cleanSubj === "exit-process") {
           aliases.push("exit", "exits", "exit_process", "exit-process");
         } else if (
-          subj === "resignation" ||
-          subj === "clearance" ||
-          subj === "resignation_clearance" ||
-          subj === "resignation-clearance"
+          cleanSubj === "resignation" ||
+          cleanSubj === "clearance" ||
+          cleanSubj === "resignation_clearance" ||
+          cleanSubj === "resignation-clearance"
         ) {
           aliases.push("resignation", "clearance", "resignation_clearance", "resignation-clearance");
         } else if (
-          subj === "settlement" ||
-          subj === "settlements" ||
-          subj === "fnf_settlement" ||
-          subj === "fnf-settlement" ||
-          subj === "fnf"
+          cleanSubj === "settlement" ||
+          cleanSubj === "settlements" ||
+          cleanSubj === "fnf_settlement" ||
+          cleanSubj === "fnf-settlement" ||
+          cleanSubj === "fnf"
         ) {
           aliases.push("settlement", "settlements", "fnf_settlement", "fnf-settlement", "fnf");
         } else if (
-          subj === "letter" ||
-          subj === "letters" ||
-          subj === "relieving_letters" ||
-          subj === "relieving-letters" ||
-          subj === "relieving_letter" ||
-          subj === "relieving-letter"
+          cleanSubj === "letter" ||
+          cleanSubj === "letters" ||
+          cleanSubj === "relieving_letters" ||
+          cleanSubj === "relieving-letters" ||
+          cleanSubj === "relieving_letter" ||
+          cleanSubj === "relieving-letter"
         ) {
           aliases.push("letter", "letters", "relieving_letter", "relieving-letter", "relieving_letters", "relieving-letters");
         } else if (
-          subj === "salary_structures" ||
-          subj === "salary-structures" ||
-          subj === "salary_structure" ||
-          subj === "salary-structure"
+          cleanSubj === "salary_structures" ||
+          cleanSubj === "salary-structures" ||
+          cleanSubj === "salary_structure" ||
+          cleanSubj === "salary-structure"
         ) {
           aliases.push("salary_structures", "salary-structures", "salary_structure", "salary-structure");
         } else if (
-          subj === "hra_tax" ||
-          subj === "hra-tax" ||
-          subj === "hratax" ||
-          subj === "tax"
+          cleanSubj === "hra_tax" ||
+          cleanSubj === "hra-tax" ||
+          cleanSubj === "hratax" ||
+          cleanSubj === "tax"
         ) {
           aliases.push("hra_tax", "hra-tax", "hratax", "tax");
         } else if (
-          subj === "loans" ||
-          subj === "loan" ||
-          subj === "advances" ||
-          subj === "advance"
+          cleanSubj === "loans" ||
+          cleanSubj === "loan" ||
+          cleanSubj === "advances" ||
+          cleanSubj === "advance"
         ) {
           aliases.push("loans", "loan", "advances", "advance");
         } else if (
-          subj === "monthly_run" ||
-          subj === "monthly-run" ||
-          subj === "payroll_run" ||
-          subj === "payroll-run"
+          cleanSubj === "monthly_run" ||
+          cleanSubj === "monthly-run" ||
+          cleanSubj === "payroll_run" ||
+          cleanSubj === "payroll-run"
         ) {
           aliases.push("monthly_run", "monthly-run", "payroll_run", "payroll-run");
         } else if (
-          subj === "payslips" ||
-          subj === "payslip"
+          cleanSubj === "payslips" ||
+          cleanSubj === "payslip"
         ) {
           aliases.push("payslips", "payslip");
         } else if (
-          subj === "reports" ||
-          subj === "report" ||
-          subj === "payroll_reports" ||
-          subj === "payroll-reports"
+          cleanSubj === "reports" ||
+          cleanSubj === "report" ||
+          cleanSubj === "payroll_reports" ||
+          cleanSubj === "payroll-reports"
         ) {
           aliases.push("reports", "report", "payroll_reports", "payroll-reports");
         }
 
-        for (const s of aliases) {
-          if (ability.can(act, s) || ability.can("manage", s)) return true;
+        for (const act of actAliases) {
+          for (const s of aliases) {
+            if (
+              ability.can(act, s) ||
+              ability.can("manage", s)
+            ) {
+              return true;
+            }
+          }
         }
 
         if (Array.isArray(permissions)) {
           const directNames = [];
-          for (const s of aliases) {
-            directNames.push(
-              `${act}-${s}`,
-              `${act}_${s}`,
-              `${act}:${s}`,
-              `${s}:${act}`,
-              `${s}-${act}`
-            );
+          for (const act of actAliases) {
+            for (const s of aliases) {
+              directNames.push(
+                `${act}-${s}`,
+                `${act}_${s}`,
+                `${act}:${s}`,
+                `${s}:${act}`,
+                `${s}-${act}`
+              );
+            }
           }
 
           if (
             permissions.some((p) => {
-              const pName = (p.name || "").toLowerCase().trim();
-              const pMod = (p.module || "").toLowerCase().trim();
-              const pAct = (p.action || "").toLowerCase().trim();
+              if (typeof p === "string") {
+                const pName = p.toLowerCase().trim();
+                return directNames.includes(pName);
+              }
+              const pName = (p?.name || "").toLowerCase().trim();
+              const pMod = (p?.module || "").toLowerCase().trim();
+              const pAct = (p?.action || "").toLowerCase().trim();
               return (
                 directNames.includes(pName) ||
-                pName === act ||
-                (pAct === act && aliases.includes(pMod)) ||
-                (pAct === "manage" && aliases.includes(pMod))
+                (actAliases.includes(pAct) && aliases.includes(pMod))
               );
             })
           ) {
@@ -283,7 +369,10 @@ export function PermissionProvider({ children }) {
         const actLower = action.toLowerCase().trim();
         if (
           Array.isArray(permissions) &&
-          permissions.some((p) => (p.name || "").toLowerCase().trim() === actLower)
+          permissions.some((p) => {
+            const pName = typeof p === "string" ? p.toLowerCase().trim() : (p?.name || "").toLowerCase().trim();
+            return pName === actLower;
+          })
         ) {
           return true;
         }
@@ -343,8 +432,8 @@ export function Can({ I: action, a: subject, do: altAction, on: altSubject, fall
   return can(act, subj) ? <>{children}</> : fallback;
 }
 
-export function RouteGuard({ action = "read", subject, permissionKey, fallback, children }) {
-  const { can, loading } = usePermissions();
+export function RouteGuard({ action = "read", subject, sidebarPermission, permissionKey, fallback, children }) {
+  const { can, loading, isSuperAdmin } = usePermissions();
   const router = useRouter();
   const targetSubject = subject || permissionKey;
 
@@ -357,7 +446,11 @@ export function RouteGuard({ action = "read", subject, permissionKey, fallback, 
     );
   }
 
-  if (targetSubject && !can(action, targetSubject)) {
+  const hasRead = !targetSubject || can(action, targetSubject);
+  const hasSidebar = !targetSubject || can("sidebar", targetSubject);
+  const isAllowed = isSuperAdmin || (hasRead && hasSidebar);
+
+  if (!isAllowed) {
     if (fallback) return fallback;
 
     return (
@@ -367,7 +460,7 @@ export function RouteGuard({ action = "read", subject, permissionKey, fallback, 
         </div>
         <h2 className="text-2xl font-bold tracking-tight">Access Restricted</h2>
         <p className="mt-2 max-w-md text-sm text-muted-foreground">
-          You do not have the required permission (<code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{subject}:{action}</code>) to access this page. Please contact your system administrator.
+          You do not have the required permission (<code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{targetSubject}:{action}</code>) to access this page. Please contact your system administrator.
         </p>
         <div className="mt-6 flex gap-3">
           <Button variant="outline" onClick={() => router.back()}>

@@ -122,9 +122,9 @@ const menuItems = [
         title: "Employees",
         href: "/dashboard/employees",
         icon: UserPlus,
-        subject: "onboarding",
+        subject: "employees",
         action: "read",
-        sidebarPermission: "sidebar-onboarding",
+        sidebarPermission: "sidebar-employees",
       },
       {
         title: "Recruitment",
@@ -274,14 +274,10 @@ export function AppSidebar() {
 
             if (item.sidebarPermission) {
               const mod = item.sidebarPermission.replace(/^sidebar-/, "");
-              if (
+              return (
                 can("sidebar", mod) ||
-                can("read", item.sidebarPermission) ||
-                can("sidebar", item.sidebarPermission) ||
-                can("view", item.sidebarPermission)
-              ) {
-                return true;
-              }
+                can("sidebar", item.sidebarPermission)
+              );
             }
             if (!item.subject) return true;
             return can(item.action || "read", item.subject);

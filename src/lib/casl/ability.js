@@ -19,16 +19,8 @@ export function buildAbilityFor(permissions = [], user = null) {
 
   const roleName = extractRoleName(user).toUpperCase();
 
-  // Super Admin bypass: ONLY for SUPER_ADMIN role or explicit all:manage permission
-  const hasFullAccess =
-    roleName === "SUPER_ADMIN" ||
-    (Array.isArray(permissions) &&
-      permissions.some((p) => {
-        if (typeof p === "object" && p !== null) {
-          return p.module === "all" && p.action === "manage";
-        }
-        return false;
-      }));
+  // Super Admin bypass: ONLY for SUPER_ADMIN role
+  const hasFullAccess = roleName === "SUPER_ADMIN";
 
   if (hasFullAccess) {
     can("manage", "all");
@@ -39,11 +31,31 @@ export function buildAbilityFor(permissions = [], user = null) {
   permissions.forEach((perm) => {
     if (!perm) return;
 
-    if (typeof perm === "object") {
-      const rawAction = (perm.action || "").trim().toLowerCase();
-      const rawModule = (perm.module || "").trim().toLowerCase();
-      const rawName = (perm.name || "").trim().toLowerCase();
+    let rawAction = "";
+    let rawModule = "";
+    let rawName = "";
 
+    if (typeof perm === "string") {
+      rawName = perm.trim().toLowerCase();
+      if (rawName.includes("-")) {
+        const parts = rawName.split("-");
+        rawAction = parts[0];
+        rawModule = parts.slice(1).join("-");
+      } else if (rawName.includes(":")) {
+        const parts = rawName.split(":");
+        rawAction = parts[0];
+        rawModule = parts.slice(1).join(":");
+      } else {
+        rawAction = "read";
+        rawModule = rawName;
+      }
+    } else if (typeof perm === "object" && perm !== null) {
+      rawAction = (perm.action || "").trim().toLowerCase();
+      rawModule = (perm.module || "").trim().toLowerCase();
+      rawName = (perm.name || "").trim().toLowerCase();
+    }
+
+    if (rawAction || rawModule || rawName) {
       // Collect all subjects this permission applies to
       const subjects = new Set();
       if (rawModule) subjects.add(rawModule);
@@ -68,6 +80,14 @@ export function buildAbilityFor(permissions = [], user = null) {
       }
 
       const allActions = new Set([rawAction, nameAction].filter(Boolean));
+      if (allActions.has("update")) allActions.add("edit");
+      if (allActions.has("edit")) allActions.add("update");
+      if (allActions.has("read")) allActions.add("view");
+      if (allActions.has("view")) allActions.add("read");
+      if (allActions.has("create")) allActions.add("add");
+      if (allActions.has("add")) allActions.add("create");
+      if (allActions.has("delete")) allActions.add("remove");
+      if (allActions.has("remove")) allActions.add("delete");
 
       // For every subject in subjects, generate aliases
       const expandedSubjects = new Set();
@@ -191,21 +211,27 @@ export function buildAbilityFor(permissions = [], user = null) {
           expandedSubjects.add("offer-letters");
         }
         if (
-          subj === "onboarding" ||
-          subj === "onboardings" ||
           subj === "employee" ||
           subj === "employees" ||
           subj === "employee_entry" ||
           subj === "employee-entry" ||
           subj === "employees-entry"
         ) {
-          expandedSubjects.add("onboarding");
-          expandedSubjects.add("onboardings");
           expandedSubjects.add("employee");
           expandedSubjects.add("employees");
           expandedSubjects.add("employee_entry");
           expandedSubjects.add("employee-entry");
           expandedSubjects.add("employees-entry");
+        }
+        if (subj === "onboarding" || subj === "onboardings") {
+          expandedSubjects.add("onboarding");
+          expandedSubjects.add("onboardings");
+        }
+        if (subj === "roles" || subj === "role" || subj === "permissions" || subj === "permission") {
+          expandedSubjects.add("roles");
+          expandedSubjects.add("role");
+          expandedSubjects.add("permissions");
+          expandedSubjects.add("permission");
         }
         if (subj === "exit" || subj === "exits" || subj === "exit_process" || subj === "exit-process") {
           expandedSubjects.add("exit");

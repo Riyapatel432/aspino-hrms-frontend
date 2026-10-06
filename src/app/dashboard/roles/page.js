@@ -352,7 +352,12 @@ export function RolesManagerContent() {
       setSelectedPermissionIds(crudIds);
       toast.success(`Applied Standard CRUD preset (${crudIds.size} active rules)`);
     } else if (presetType === "FULL") {
-      const allIds = new Set(list.map((p) => p.id));
+      const isSuper = (selectedRole?.name || "").toUpperCase() === "SUPER_ADMIN";
+      const allIds = new Set(
+        list
+          .filter((p) => isSuper || (p.name !== "manage-all" && p.module !== "all"))
+          .map((p) => p.id)
+      );
       setSelectedPermissionIds(allIds);
       toast.success(`Applied Full Access preset (${allIds.size} active rules)`);
     } else if (presetType === "CLEAR") {
@@ -444,6 +449,9 @@ export function RolesManagerContent() {
       toast.success("Role permissions updated successfully!");
       await fetchData(selectedRoleId);
       await refreshPermissions();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("permissions-updated"));
+      }
     } catch (err) {
       toast.error(err.message || "Failed to save permissions");
     } finally {
