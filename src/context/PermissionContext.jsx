@@ -318,6 +318,22 @@ export function PermissionProvider({ children }) {
           cleanSubj === "payroll-reports"
         ) {
           aliases.push("reports", "report", "payroll_reports", "payroll-reports");
+        } else if (
+          cleanSubj === "activity_logs" ||
+          cleanSubj === "activity-logs" ||
+          cleanSubj === "activity_log" ||
+          cleanSubj === "activity-log" ||
+          cleanSubj === "audit" ||
+          cleanSubj === "audits"
+        ) {
+          aliases.push(
+            "activity_logs",
+            "activity-logs",
+            "activity_log",
+            "activity-log",
+            "audit",
+            "audits"
+          );
         }
 
         for (const act of actAliases) {

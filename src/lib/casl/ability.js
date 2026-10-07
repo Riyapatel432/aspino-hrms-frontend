@@ -340,6 +340,21 @@ export function buildAbilityFor(permissions = [], user = null) {
           expandedSubjects.add("payroll_reports");
           expandedSubjects.add("payroll-reports");
         }
+        if (
+          subj === "activity_logs" ||
+          subj === "activity-logs" ||
+          subj === "activity_log" ||
+          subj === "activity-log" ||
+          subj === "audit" ||
+          subj === "audits"
+        ) {
+          expandedSubjects.add("activity_logs");
+          expandedSubjects.add("activity-logs");
+          expandedSubjects.add("activity_log");
+          expandedSubjects.add("activity-log");
+          expandedSubjects.add("audit");
+          expandedSubjects.add("audits");
+        }
       });
 
       allActions.forEach((act) => {

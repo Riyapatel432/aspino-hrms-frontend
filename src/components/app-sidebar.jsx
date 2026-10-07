@@ -241,7 +241,7 @@ const menuItems = [
         title: "Activity Logs",
         href: "/dashboard/activity-logs",
         icon: History,
-        subject: "audit",
+        subject: "activity-logs",
         action: "read",
         sidebarPermission: "sidebar-activity-logs",
       },

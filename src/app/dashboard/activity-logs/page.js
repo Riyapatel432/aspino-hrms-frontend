@@ -33,7 +33,7 @@ import {
 
 export default function ActivityLogsPage() {
   return (
-    <RouteGuard subject="audit" action="read">
+    <RouteGuard subject="activity-logs" action="read">
       <ActivityLogsContent />
     </RouteGuard>
   );

@@ -239,9 +239,14 @@ export function RolesManagerContent() {
         groups[key] = [];
       }
 
+      let permName = (perm.name || "").toLowerCase().trim();
+      if (permName === "read-audit") {
+        permName = "read-activity-logs";
+      }
+
       // Check if permission with same name already exists in this group
       const existing = groups[key].find(
-        (p) => (p.name || "").toLowerCase().trim() === (perm.name || "").toLowerCase().trim()
+        (p) => (p.name || "").toLowerCase().trim() === permName
       );
 
       if (existing) {
@@ -250,6 +255,7 @@ export function RolesManagerContent() {
       } else {
         groups[key].push({
           ...perm,
+          name: permName,
           allIds: [perm.id],
         });
       }
