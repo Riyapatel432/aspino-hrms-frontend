@@ -390,21 +390,6 @@ export default function AttendanceLeavePage() {
 
     list.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    // Fallback official standard company calendar holidays if database has few or none
-    if (list.length === 0) {
-      const standardHolidays = [
-        { id: "std_1", name: "Gandhi Jayanti", date: "2026-10-02", type: "National Holiday" },
-        { id: "std_2", name: "Dussehra (Vijayadashami)", date: "2026-10-20", type: "Gazetted Festival" },
-        { id: "std_3", name: "Diwali (Deepavali)", date: "2026-11-08", type: "Gazetted Festival" },
-        { id: "std_4", name: "Govardhan Puja", date: "2026-11-09", type: "Restricted Holiday" },
-        { id: "std_5", name: "Guru Nanak Jayanti", date: "2026-11-24", type: "Gazetted Holiday" },
-        { id: "std_6", name: "Christmas Day", date: "2026-12-25", type: "National Holiday" },
-        { id: "std_7", name: "New Year's Day", date: "2027-01-01", type: "Public Holiday" },
-        { id: "std_8", name: "Republic Day", date: "2027-01-26", type: "National Holiday" },
-      ];
-      list = standardHolidays.filter(h => new Date(h.date) >= today);
-    }
-
     return list.map(h => {
       const hDate = new Date(h.date);
       const diffDays = Math.ceil((hDate - today) / (1000 * 60 * 60 * 24));
