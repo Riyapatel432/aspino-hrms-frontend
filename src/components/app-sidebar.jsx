@@ -44,6 +44,14 @@ import {
   Users,
 } from "lucide-react";
 
+/**
+ * Sidebar menu items.
+ *
+ * sidebarPermission: "module:sidebar" key (must exist as a DB permission with
+ *   module = <module> and action = "sidebar").
+ *
+ * If sidebarPermission is omitted, the item is always visible (e.g. Dashboard).
+ */
 const menuItems = [
   {
     group: "Overview",
@@ -52,7 +60,7 @@ const menuItems = [
         title: "Dashboard",
         href: "/dashboard",
         icon: LayoutDashboard,
-        sidebarPermission: "sidebar-dashboard",
+        // Dashboard is always visible — no permission required
       },
     ],
   },
@@ -63,9 +71,7 @@ const menuItems = [
         title: "Roles & Permissions",
         href: "/dashboard/roles",
         icon: KeyRound,
-        subject: "roles",
-        action: "read",
-        sidebarPermission: "sidebar-roles",
+        sidebarPermission: "roles:sidebar",
       },
     ],
   },
@@ -76,42 +82,32 @@ const menuItems = [
         title: "Department Master",
         href: "/dashboard/departments",
         icon: Building2,
-        subject: "department",
-        action: "read",
-        sidebarPermission: "sidebar-departments",
+        sidebarPermission: "department:sidebar",
       },
       {
         title: "Financial Year Master",
         href: "/dashboard/financial-year",
         icon: Calendar,
-        subject: "financial-year",
-        action: "read",
-        sidebarPermission: "sidebar-financial-year",
+        sidebarPermission: "financial_year:sidebar",
       },
       {
         title: "Training Type",
         href: "/dashboard/training-type",
         icon: GraduationCap,
-        subject: "training-type",
-        action: "read",
-        sidebarPermission: "sidebar-training-type",
+        sidebarPermission: "training_type:sidebar",
       },
       {
         title: "Leave Master",
         href: "/dashboard/leave-master",
         icon: CalendarOff,
-        subject: "leave-master",
-        action: "read",
-        sidebarPermission: "sidebar-leave-master",
+        sidebarPermission: "leave_master:sidebar",
         hideForEmployee: true,
       },
       {
         title: "Interview Round Master",
         href: "/dashboard/interview-rounds",
         icon: ListChecks,
-        subject: "interview-rounds",
-        action: "read",
-        sidebarPermission: "sidebar-interview-rounds",
+        sidebarPermission: "interview_rounds:sidebar",
       },
     ],
   },
@@ -122,33 +118,25 @@ const menuItems = [
         title: "Employees",
         href: "/dashboard/employees",
         icon: UserPlus,
-        subject: "employees",
-        action: "read",
-        sidebarPermission: "sidebar-employees",
+        sidebarPermission: "employee:sidebar",
       },
       {
         title: "Recruitment",
         href: "/dashboard/recruitment",
         icon: Briefcase,
-        subject: "recruitment",
-        action: "read",
-        sidebarPermission: "sidebar-recruitment",
+        sidebarPermission: "recruitment:sidebar",
       },
       {
         title: "Onboarding",
         href: "/dashboard/onboarding",
         icon: UserCheck,
-        subject: "onboarding",
-        action: "read",
-        sidebarPermission: "sidebar-onboarding",
+        sidebarPermission: "onboarding:sidebar",
       },
       {
         title: "Exit Process",
         href: "/dashboard/exit",
         icon: UserMinus,
-        subject: "exit",
-        action: "read",
-        sidebarPermission: "sidebar-exit",
+        sidebarPermission: "exit:sidebar",
       },
     ],
   },
@@ -159,25 +147,19 @@ const menuItems = [
         title: "Attendance & Logs",
         href: "/dashboard/attendance-leave?tab=attendance",
         icon: Clock,
-        subject: "attendance",
-        action: "read",
-        sidebarPermission: "sidebar-attendance-leave",
+        sidebarPermission: "attendance:sidebar",
       },
       {
         title: "Apply Leave",
         href: "/dashboard/attendance-leave?tab=leaves",
         icon: FileCheck,
-        subject: "leave",
-        action: "read",
-        sidebarPermission: "sidebar-attendance-leave",
+        sidebarPermission: "leave:sidebar",
       },
       {
         title: "Performance & Training",
         href: "/dashboard/performance-training",
         icon: Award,
-        subject: "performance",
-        action: "read",
-        sidebarPermission: "sidebar-performance-training",
+        sidebarPermission: "performance:sidebar",
       },
     ],
   },
@@ -188,49 +170,37 @@ const menuItems = [
         title: "Salary Structures",
         href: "/dashboard/payroll/salary-structures",
         icon: Calculator,
-        subject: "salary_structures",
-        action: "read",
-        sidebarPermission: "sidebar-salary-structures",
+        sidebarPermission: "salary_structures:sidebar",
       },
       {
         title: "HRA & Tax Exemption",
         href: "/dashboard/payroll/hra-tax",
         icon: ShieldCheck,
-        subject: "hra_tax",
-        action: "read",
-        sidebarPermission: "sidebar-hra-tax",
+        sidebarPermission: "hra_tax:sidebar",
       },
       {
         title: "Loans & Advances",
         href: "/dashboard/payroll/loans",
         icon: Landmark,
-        subject: "loans",
-        action: "read",
-        sidebarPermission: "sidebar-loans",
+        sidebarPermission: "loans:sidebar",
       },
       {
         title: "Monthly Payroll Run",
         href: "/dashboard/payroll/monthly-run",
         icon: RefreshCw,
-        subject: "monthly_run",
-        action: "read",
-        sidebarPermission: "sidebar-monthly-run",
+        sidebarPermission: "monthly_run:sidebar",
       },
       {
         title: "Payslips & Self-Service",
         href: "/dashboard/payroll/payslips",
         icon: FileText,
-        subject: "payslips",
-        action: "read",
-        sidebarPermission: "sidebar-payslips",
+        sidebarPermission: "payslips:sidebar",
       },
       {
         title: "Reports & Form 16",
         href: "/dashboard/payroll/reports",
         icon: FileCheck,
-        subject: "reports",
-        action: "read",
-        sidebarPermission: "sidebar-reports",
+        sidebarPermission: "reports:sidebar",
       },
     ],
   },
@@ -241,9 +211,7 @@ const menuItems = [
         title: "Activity Logs",
         href: "/dashboard/activity-logs",
         icon: History,
-        subject: "activity-logs",
-        action: "read",
-        sidebarPermission: "sidebar-activity-logs",
+        sidebarPermission: "activity_logs:sidebar",
       },
     ],
   },
@@ -260,27 +228,19 @@ export function AppSidebar() {
     setMounted(true);
   }, []);
 
-  // Filter menu items based on CASL ability and sidebar permissions once mounted
+  // Filter menu items based on sidebar permissions
   const filteredMenuItems = mounted
     ? menuItems
         .map((group) => {
           const visibleItems = group.items.filter((item) => {
-            // Always hide items configured not for employees (like master setups)
-            if (isEmployee && (item.hideForEmployee || item.href === "/dashboard/leave-master")) {
-              return false;
-            }
+            // Hide employee-restricted items
+            if (isEmployee && item.hideForEmployee) return false;
 
-            if (isSuperAdmin) return true;
+            // No permission required → always show
+            if (!item.sidebarPermission) return true;
 
-            if (item.sidebarPermission) {
-              const mod = item.sidebarPermission.replace(/^sidebar-/, "");
-              return (
-                can("sidebar", mod) ||
-                can("sidebar", item.sidebarPermission)
-              );
-            }
-            if (!item.subject) return true;
-            return can(item.action || "read", item.subject);
+            // Check sidebar permission: "module:sidebar" or exact key
+            return can(item.sidebarPermission);
           });
           return { ...group, items: visibleItems };
         })
@@ -320,7 +280,10 @@ export function AppSidebar() {
           </div>
         ) : (
           filteredMenuItems.map((group) => (
-            <SidebarGroup key={group.group} className="px-2 py-1 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:py-1">
+            <SidebarGroup
+              key={group.group}
+              className="px-2 py-1 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:py-1"
+            >
               <SidebarGroupLabel className="text-[10px] uppercase tracking-widest font-semibold text-muted-foreground/70 px-2 mb-1 group-data-[collapsible=icon]:hidden">
                 {group.group}
               </SidebarGroupLabel>
@@ -333,23 +296,32 @@ export function AppSidebar() {
                         isActive = currentTab === "leaves";
                       } else if (item.href.includes("tab=attendance")) {
                         isActive = !currentTab || currentTab === "attendance";
-                      } else {
-                        isActive = false;
                       }
                     } else {
-                      isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`));
+                      isActive =
+                        pathname === item.href ||
+                        (item.href !== "/dashboard" &&
+                          pathname.startsWith(`${item.href}/`));
                     }
                     return (
-                      <SidebarMenuItem key={item.href} className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:w-full">
+                      <SidebarMenuItem
+                        key={item.href}
+                        className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:w-full"
+                      >
                         <SidebarMenuButton
                           asChild
                           isActive={isActive}
                           tooltip={item.title}
                           className="h-10 rounded-xl transition-all duration-200 group-data-[collapsible=icon]:size-10 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:items-center"
                         >
-                          <Link href={item.href} className="flex items-center justify-start group-data-[collapsible=icon]:justify-center gap-3">
+                          <Link
+                            href={item.href}
+                            className="flex items-center justify-start group-data-[collapsible=icon]:justify-center gap-3"
+                          >
                             <item.icon className="h-5 w-5 shrink-0" />
-                            <span className="font-medium text-sm group-data-[collapsible=icon]:hidden">{item.title}</span>
+                            <span className="font-medium text-sm group-data-[collapsible=icon]:hidden">
+                              {item.title}
+                            </span>
                             {item.badge && (
                               <Badge
                                 variant={item.badge === "New" ? "default" : "secondary"}
@@ -381,4 +353,3 @@ export function AppSidebar() {
     </Sidebar>
   );
 }
-

@@ -128,11 +128,19 @@ export default function HRLoginPage() {
         localStorage.setItem("hrUser", userObj);
       }
 
-      setSuccessMsg("Login successful! Redirecting to Dashboard...");
+      const resolvedRole = (data.role?.name || (typeof data.role === "string" ? data.role : user.role) || "").toUpperCase();
 
-      setTimeout(() => {
-        window.location.href = "/dashboard";
-      }, 400);
+      if (resolvedRole === "TRANSPORTER") {
+        setSuccessMsg("Transporter verified! Redirecting to Logistics portal...");
+        setTimeout(() => {
+          window.location.href = "http://localhost:3000";
+        }, 400);
+      } else {
+        setSuccessMsg("Login successful! Redirecting to Dashboard...");
+        setTimeout(() => {
+          window.location.href = "/dashboard";
+        }, 400);
+      }
     } catch (err) {
       if (err.name === "TypeError" && (err.message === "Failed to fetch" || err.message.includes("fetch"))) {
         setApiError("Unable to connect to backend server at http://localhost:5000. Please ensure the backend server is running.");
