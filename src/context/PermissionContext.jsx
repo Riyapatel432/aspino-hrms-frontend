@@ -59,7 +59,7 @@ export function PermissionProvider({ children }) {
         return;
       }
 
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
       const response = await fetch(`${backendUrl}/auth/permissions`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -94,7 +94,7 @@ export function PermissionProvider({ children }) {
         }
       }
     } catch (err) {
-      console.error("Error fetching permissions:", err);
+      console.warn("Unable to reach backend permissions service (http://localhost:5001). Please verify the backend is running.", err?.message || err);
     } finally {
       setLoading(false);
     }

@@ -27,6 +27,10 @@ import {
   bulkImportSalaryStructures,
 } from "@/features/payroll/store/payrollSlice";
 import BulkSalaryMatrixModal from "./BulkSalaryMatrixModal";
+import {
+  buildSalaryReportData,
+  exportSalaryReportToExcel,
+} from "@/features/payroll/utils/salaryReportExport";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -359,6 +363,7 @@ export default function SalaryStructuresTab() {
   const [parsedSalaryRecords, setParsedSalaryRecords] = useState([]);
   const [importingSalary, setImportingSalary] = useState(false);
   const [salaryImportResult, setSalaryImportResult] = useState(null);
+  const [exportingReport, setExportingReport] = useState(false);
 
   const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -849,6 +854,53 @@ export default function SalaryStructuresTab() {
     window.open(`${backendUrl}/staff-hrms/payroll/export/bank-transfer?month=${selectedMonth}&year=${selectedYear}`, "_blank");
   };
 
+  const handleExportSalaryReportExcel = async () => {
+    setExportingReport(true);
+    try {
+      let allStructs = Array.isArray(salaryStructures?.data) ? salaryStructures.data : Array.isArray(salaryStructures) ? salaryStructures : [];
+      let allEmps = Array.isArray(employees?.data) ? employees.data : Array.isArray(employees) ? employees : [];
+
+      try {
+        const res = await apiFetch(`${backendUrl}/staff-hrms/payroll/salary-structure/all?limit=2000&month=${selectedMonth}&year=${selectedYear}`);
+        if (res.ok) {
+          const data = await res.json();
+          const list = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+          if (list.length > 0) allStructs = list;
+        }
+      } catch (e) {}
+
+      try {
+        const empRes = await apiFetch("/staff-hrms/onboarding/employees?page=1&limit=2000");
+        if (empRes.ok) {
+          const empData = await empRes.json();
+          const list = Array.isArray(empData?.data) ? empData.data : Array.isArray(empData) ? empData : [];
+          if (list.length > 0) allEmps = list;
+        }
+      } catch (e) {}
+
+      const report = buildSalaryReportData({
+        salaryStructures: allStructs,
+        employees: allEmps,
+        banks,
+        selectedMonth,
+        selectedYear,
+      });
+
+      const mName = new Date(2026, Number(selectedMonth) - 1, 1).toLocaleString("default", { month: "long" });
+      exportSalaryReportToExcel(report, {
+        monthName: mName,
+        year: selectedYear,
+        filename: `Aspino_Employee_Salary_and_Bank_Report_${selectedYear}_${mName}.xlsx`,
+      });
+      toast.success(`Exported Excel salary report for ${report.items.length} employees.`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate Excel report.");
+    } finally {
+      setExportingReport(false);
+    }
+  };
+
   const handleOpenForm16 = async (employeeId) => {
     const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
     const res = await fetch(`${backendUrl}/staff-hrms/payroll/export/form16/${employeeId}?financialYear=2026-2027`);
@@ -908,7 +960,7 @@ export default function SalaryStructuresTab() {
       },
       {
         key: "bankDetails",
-        label: "Bank Account & PAN",
+        label: "Bank & Statutory IDs",
         sortable: false,
         render: (row) => (
           <div className="text-xs space-y-0.5">
@@ -918,7 +970,7 @@ export default function SalaryStructuresTab() {
                   {row.employee?.bank?.name || row.employee?.bankName || (banks.find(b => b.id === row.employee?.bankId)?.name) || "Bank"} {row.employee?.accountNumber ? `(•••${row.employee.accountNumber.slice(-4)})` : ""}
                 </div>
                 <div className="text-[10px] text-slate-500 font-mono">
-                  IFSC: {row.employee?.ifscCode || "N/A"} | PAN: {row.employee?.panNumber || "N/A"}
+                  IFSC: {row.employee?.ifscCode || "N/A"} | PAN: {row.employee?.panNumber || "N/A"}{(row.pfNumber || row.employee?.pfNumber) ? ` | PF: ${row.pfNumber || row.employee?.pfNumber}` : ''}{(row.uanNumber || row.employee?.uanNumber) ? ` | UAN: ${row.uanNumber || row.employee?.uanNumber}` : ''}
                 </div>
               </>
             ) : (
@@ -1107,6 +1159,17 @@ export default function SalaryStructuresTab() {
 
         {canManageSalary && (
           <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 rounded-xl h-10 px-4 font-semibold gap-2 cursor-pointer transition-all"
+              onClick={handleExportSalaryReportExcel}
+              disabled={exportingReport}
+              title="Export Employee Salary & Bank Report in Excel (.xlsx)"
+            >
+              {exportingReport ? <Loader2 className="size-4 animate-spin" /> : <FileSpreadsheet className="size-4 text-emerald-500" />}
+              Export Report (.XLSX)
+            </Button>
+
             <Button
               variant="outline"
               className="border-indigo-500/30 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 rounded-xl h-10 px-4 font-semibold gap-2 cursor-pointer transition-all"
@@ -1430,7 +1493,7 @@ export default function SalaryStructuresTab() {
                       {/* Card 4: Employee Bank & PAN Details */}
                       <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border shadow-sm space-y-4">
                         <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                          <Building2 className="size-4 text-sky-500" /> Bank Account & PAN Information
+                          <Building2 className="size-4 text-sky-500" /> Bank Account & Statutory Information (PAN, PF, UAN)
                         </h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
@@ -1601,6 +1664,59 @@ export default function SalaryStructuresTab() {
                                 {structErrors.panNumber}
                               </div>
                             )}
+                          </div>
+
+                          {/* PF Number field */}
+                          <div>
+                            <div className="flex items-center justify-between">
+                              <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                PF Number (Member ID)
+                                {structForm._pfAutoFetched && structForm.pfNumber && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded-md">
+                                    <Lock className="w-2.5 h-2.5" /> Auto-fetched
+                                  </span>
+                                )}
+                              </Label>
+                              <span className="text-[10px] font-mono text-slate-400">EPFO Code</span>
+                            </div>
+                            <Input
+                              type="text"
+                              placeholder="e.g. MH/BAN/0012345/000/0000001"
+                              value={structForm.pfNumber || ""}
+                              onChange={(e) => {
+                                const val = e.target.value.toUpperCase();
+                                setStructForm({ ...structForm, pfNumber: val });
+                              }}
+                              className="rounded-xl mt-1.5 h-11 uppercase font-mono tracking-wider"
+                            />
+                          </div>
+
+                          {/* UAN / UN Number field */}
+                          <div>
+                            <div className="flex items-center justify-between">
+                              <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                UAN / UN Number
+                                {structForm._uanAutoFetched && structForm.uanNumber && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded-md">
+                                    <Lock className="w-2.5 h-2.5" /> Auto-fetched
+                                  </span>
+                                )}
+                              </Label>
+                              <span className={`text-[10px] font-mono ${structForm.uanNumber?.length === 12 ? 'text-emerald-500 font-semibold' : 'text-slate-400'}`}>
+                                {structForm.uanNumber ? `${structForm.uanNumber.length}/12 digits` : "12 digits"}
+                              </span>
+                            </div>
+                            <Input
+                              type="text"
+                              placeholder="e.g. 100904123456"
+                              maxLength={12}
+                              value={structForm.uanNumber || ""}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/\D/g, '').slice(0, 12);
+                                setStructForm({ ...structForm, uanNumber: val });
+                              }}
+                              className="rounded-xl mt-1.5 h-11 font-mono tracking-wider"
+                            />
                           </div>
                         </div>
                       </div>

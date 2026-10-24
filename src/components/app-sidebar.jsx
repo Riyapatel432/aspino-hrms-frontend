@@ -42,6 +42,7 @@ import {
   KeyRound,
   UserPlus,
   Users,
+  FileSpreadsheet,
 } from "lucide-react";
 
 const menuItems = [
@@ -223,6 +224,14 @@ const menuItems = [
         subject: "payslips",
         action: "read",
         sidebarPermission: "sidebar-payslips",
+      },
+      {
+        title: "Salary Reports",
+        href: "/dashboard/payroll/salary-reports",
+        icon: FileSpreadsheet,
+        subject: "reports",
+        action: "read",
+        sidebarPermission: "sidebar-reports",
       },
       {
         title: "Reports & Form 16",

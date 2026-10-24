@@ -1,4 +1,4 @@
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
 
 export async function apiFetch(url, options = {}) {
   const normalizedUrl = url.startsWith("http") ? url : `${API_URL}${url.startsWith("/") ? "" : "/"}${url}`;
