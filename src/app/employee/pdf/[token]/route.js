@@ -6,7 +6,7 @@ export async function GET(request, { params }) {
   const token = resolvedParams.token;
   
   // Use the standard backend API URL (resolved server-side directly to localhost:5000)
-  const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+  const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
   
   try {
     const res = await fetch(`${backendUrl}/employees/pdf/${token}`, { cache: 'no-store' });

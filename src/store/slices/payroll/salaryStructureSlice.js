@@ -1,7 +1,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { apiFetch } from "@/lib/api";
 
-const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
 
 async function getErrorMsg(res, defaultMsg) {
   try {

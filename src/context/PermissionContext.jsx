@@ -145,7 +145,7 @@ export function PermissionProvider({ children }) {
         }
       }
     } catch (err) {
-      // Silent catch — loading state will be set to false below
+      console.warn("Unable to reach backend permissions service (http://localhost:5001). Please verify the backend is running.", err?.message || err);
     } finally {
       setLoading(false);
     }

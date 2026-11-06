@@ -45,6 +45,7 @@ import {
   Check,
   X,
   Loader2,
+  Lock,
 } from "lucide-react";
 
 export default function EmployeesPage() {
@@ -62,7 +63,7 @@ function EmployeesPageContent() {
   const canDelete = isSuperAdmin || can("delete", "employees") || can("delete", "employee");
   const canExport = isSuperAdmin || can("export", "employees") || can("export", "employee");
 
-  const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+  const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
 
   // Table & List State
   const [employees, setEmployees] = useState([]);
@@ -107,10 +108,17 @@ function EmployeesPageContent() {
   const initialFormState = {
     employeeId: "",
     firstName: "",
+    middleName: "",
     lastName: "",
     email: "",
     phone: "",
+    alternatePhone: "",
     dob: "",
+    gender: "",
+    bloodGroup: "",
+    employeeGrade: "",
+    presentAddress: "",
+    residentAddress: "",
     address: "",
     totalExperienceYears: "0",
     photoUrl: "",
@@ -127,6 +135,8 @@ function EmployeesPageContent() {
     ifscCode: "",
     panNumber: "",
     aadharNumber: "",
+    pfNumber: "",
+    uanNumber: "",
     resumeUrl: "",
     systemAccess: {
       erpLogin: true,
@@ -245,11 +255,18 @@ function EmployeesPageContent() {
       setFormData({
         employeeId: fullEmp.employeeId || "",
         firstName: fullEmp.firstName || "",
+        middleName: fullEmp.middleName || "",
         lastName: fullEmp.lastName || "",
         email: fullEmp.email || "",
         phone: fullEmp.phone || "",
+        alternatePhone: fullEmp.alternatePhone || "",
         dob: fullEmp.dob ? fullEmp.dob.split("T")[0] : "",
-        address: fullEmp.address || "",
+        gender: fullEmp.gender || "",
+        bloodGroup: fullEmp.bloodGroup || "",
+        employeeGrade: fullEmp.employeeGrade || "",
+        presentAddress: fullEmp.presentAddress || "",
+        residentAddress: fullEmp.residentAddress || fullEmp.address || "",
+        address: fullEmp.residentAddress || fullEmp.address || "",
         totalExperienceYears: String(fullEmp.totalExperienceYears ?? "0"),
         photoUrl: photoUrl || "",
         resumeUrl: resumeUrl || "",
@@ -266,6 +283,8 @@ function EmployeesPageContent() {
         ifscCode: fullEmp.ifscCode || "",
         panNumber: fullEmp.panNumber || "",
         aadharNumber: fullEmp.aadharNumber || "",
+        pfNumber: fullEmp.pfNumber || "",
+        uanNumber: fullEmp.uanNumber || "",
         systemAccess: {
           erpLogin: fullEmp.systemAccess?.erpLogin ?? true,
           email: fullEmp.systemAccess?.email ?? true,
@@ -592,11 +611,18 @@ function EmployeesPageContent() {
       const payload = {
         employeeId: formData.employeeId?.trim() || undefined,
         firstName: formData.firstName.trim(),
+        middleName: formData.middleName?.trim() || null,
         lastName: formData.lastName.trim(),
         email: formData.email.trim().toLowerCase(),
         phone: formData.phone?.trim() || null,
+        alternatePhone: formData.alternatePhone?.trim() || null,
+        gender: formData.gender?.trim() || null,
+        bloodGroup: formData.bloodGroup?.trim() || null,
+        employeeGrade: formData.employeeGrade?.trim() || null,
         dob: formData.dob || undefined,
-        address: formData.address?.trim() || null,
+        presentAddress: formData.presentAddress?.trim() || null,
+        residentAddress: formData.residentAddress?.trim() || formData.address?.trim() || null,
+        address: formData.residentAddress?.trim() || formData.address?.trim() || null,
         totalExperienceYears: parseFloat(formData.totalExperienceYears) || 0,
         departmentId: formData.departmentId,
         designation: formData.designation.trim(),
@@ -708,9 +734,17 @@ function EmployeesPageContent() {
     const headers = [
       "Employee ID",
       "Full Name",
+      "First Name",
+      "Middle Name",
+      "Last Name",
+      "Gender",
+      "Blood Group",
+      "Employee Grade",
       "Email",
-      "Phone",
+      "Contact Number",
+      "Alternate Contact Number",
       "Date of Birth",
+      "Present Address",
       "Residential Address",
       "Department",
       "Designation",
@@ -726,11 +760,19 @@ function EmployeesPageContent() {
 
     const csvRows = employees.map((emp) => [
       `"${emp.employeeId || ""}"`,
-      `"${emp.firstName || ""} ${emp.lastName || ""}"`,
+      `"${[emp.firstName, emp.middleName, emp.lastName].filter(Boolean).join(" ")}"`,
+      `"${emp.firstName || ""}"`,
+      `"${emp.middleName || ""}"`,
+      `"${emp.lastName || ""}"`,
+      `"${emp.gender || ""}"`,
+      `"${emp.bloodGroup || ""}"`,
+      `"${emp.employeeGrade || ""}"`,
       `"${emp.email || ""}"`,
       `"${emp.phone || ""}"`,
+      `"${emp.alternatePhone || ""}"`,
       `"${emp.dob ? new Date(emp.dob).toLocaleDateString() : ""}"`,
-      `"${(emp.address || "").replace(/"/g, '""')}"`,
+      `"${(emp.presentAddress || "").replace(/"/g, '""')}"`,
+      `"${(emp.residentAddress || emp.address || "").replace(/"/g, '""')}"`,
       `"${emp.department?.name || ""}"`,
       `"${emp.designation || ""}"`,
       `"${emp.dateOfJoining ? new Date(emp.dateOfJoining).toLocaleDateString() : ""}"`,
@@ -832,7 +874,7 @@ function EmployeesPageContent() {
                   onClick={() => handleOpenDetails(rowData)}
                   className="font-semibold text-slate-900 dark:text-white hover:text-sky-600 dark:hover:text-sky-400 transition-colors text-sm text-left truncate block"
                 >
-                  {rowData.firstName} {rowData.lastName}
+                  {rowData.fullName || [rowData.firstName, rowData.middleName, rowData.lastName].filter(Boolean).join(" ")}
                 </button>
                 <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 truncate">
                   <span
@@ -1408,7 +1450,7 @@ function EmployeesPageContent() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="space-y-1">
                       <Label className="text-xs font-semibold">
                         First Name <span className="text-rose-500">*</span>
@@ -1418,7 +1460,9 @@ function EmployeesPageContent() {
                         value={formData.firstName}
                         onChange={(e) => {
                           const val = e.target.value.replace(/\d/g, "");
-                          setFormData({ ...formData, firstName: val });
+                          const nextFirst = val;
+                          const nextFull = [nextFirst, formData.middleName, formData.lastName].filter(Boolean).join(" ");
+                          setFormData({ ...formData, firstName: nextFirst, fullName: nextFull });
                           if (formErrors.firstName) setFormErrors({ ...formErrors, firstName: null });
                         }}
                         className={formErrors.firstName ? "border-rose-500" : ""}
@@ -1426,6 +1470,20 @@ function EmployeesPageContent() {
                       {formErrors.firstName && (
                         <p className="text-[11px] text-rose-500 font-medium">{formErrors.firstName}</p>
                       )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Middle Name</Label>
+                      <Input
+                        placeholder="e.g. Robert"
+                        value={formData.middleName}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\d/g, "");
+                          const nextMiddle = val;
+                          const nextFull = [formData.firstName, nextMiddle, formData.lastName].filter(Boolean).join(" ");
+                          setFormData({ ...formData, middleName: nextMiddle, fullName: nextFull });
+                        }}
+                      />
                     </div>
 
                     <div className="space-y-1">
@@ -1437,7 +1495,9 @@ function EmployeesPageContent() {
                         value={formData.lastName}
                         onChange={(e) => {
                           const val = e.target.value.replace(/\d/g, "");
-                          setFormData({ ...formData, lastName: val });
+                          const nextLast = val;
+                          const nextFull = [formData.firstName, formData.middleName, nextLast].filter(Boolean).join(" ");
+                          setFormData({ ...formData, lastName: nextLast, fullName: nextFull });
                           if (formErrors.lastName) setFormErrors({ ...formErrors, lastName: null });
                         }}
                         className={formErrors.lastName ? "border-rose-500" : ""}
@@ -1448,7 +1508,63 @@ function EmployeesPageContent() {
                     </div>
                   </div>
 
+                  {/* Auto-derived Full Name field */}
+                  <div className="space-y-1 bg-slate-50/80 dark:bg-slate-900/40 p-3 rounded-lg border border-slate-200/80 dark:border-slate-800">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <span>Full Name</span>
+                        <span className="text-[11px] font-normal text-slate-400">
+                          (Auto-fetched from First Name + Middle Name + Last Name)
+                        </span>
+                      </Label>
+                      <span className="text-[10px] font-semibold tracking-wide uppercase px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 dark:bg-sky-950/80 dark:text-sky-300 border border-sky-200 dark:border-sky-800">
+                        ⚡ Auto-Generated
+                      </span>
+                    </div>
+                    <Input
+                      readOnly
+                      placeholder="e.g. John Robert Doe"
+                      value={[formData.firstName, formData.middleName, formData.lastName].filter(Boolean).join(" ")}
+                      className="bg-white dark:bg-slate-950 font-medium text-slate-900 dark:text-slate-100 cursor-not-allowed border-dashed focus:ring-0"
+                    />
+                  </div>
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Gender</Label>
+                      <select
+                        value={formData.gender}
+                        onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                        className="w-full h-9 rounded-md border border-slate-200 dark:border-slate-800 bg-transparent px-3 py-1 text-sm shadow-xs focus:outline-hidden focus:ring-1 focus:ring-sky-500"
+                      >
+                        <option value="">Select Gender</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Blood Group</Label>
+                      <select
+                        value={formData.bloodGroup}
+                        onChange={(e) => setFormData({ ...formData, bloodGroup: e.target.value })}
+                        className="w-full h-9 rounded-md border border-slate-200 dark:border-slate-800 bg-transparent px-3 py-1 text-sm shadow-xs focus:outline-hidden focus:ring-1 focus:ring-sky-500"
+                      >
+                        <option value="">Select Blood Group</option>
+                        <option value="A+">A+</option>
+                        <option value="A-">A-</option>
+                        <option value="B+">B+</option>
+                        <option value="B-">B-</option>
+                        <option value="O+">O+</option>
+                        <option value="O-">O-</option>
+                        <option value="AB+">AB+</option>
+                        <option value="AB-">AB-</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="space-y-1">
                       <Label className="text-xs font-semibold">
                         Official Work Email <span className="text-rose-500">*</span>
@@ -1470,13 +1586,13 @@ function EmployeesPageContent() {
 
                     <div className="space-y-1">
                       <Label className="text-xs font-semibold">
-                        Mobile Contact Number (10 Digits) <span className="text-rose-500">*</span>
+                        Contact Number (10 Digits) <span className="text-rose-500">*</span>
                       </Label>
                       <Input
                         type="tel"
                         inputMode="numeric"
                         maxLength={10}
-                        placeholder="Enter 10-digit mobile number"
+                        placeholder="10-digit mobile"
                         value={formData.phone}
                         onChange={(e) => {
                           const val = e.target.value.replace(/\D/g, "").slice(0, 10);
@@ -1488,6 +1604,21 @@ function EmployeesPageContent() {
                       {formErrors.phone && (
                         <p className="text-[11px] text-rose-500 font-medium">{formErrors.phone}</p>
                       )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Alternate Contact Number</Label>
+                      <Input
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={10}
+                        placeholder="Alternate 10-digit mobile"
+                        value={formData.alternatePhone}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, "").slice(0, 10);
+                          setFormData({ ...formData, alternatePhone: val });
+                        }}
+                      />
                     </div>
                   </div>
 
@@ -1594,25 +1725,85 @@ function EmployeesPageContent() {
                         <p className="text-[10px] text-slate-400">10-character Permanent Account Number.</p>
                       )}
                     </div>
+                  
+                    {/* PF Number */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-semibold flex items-center gap-1.5">
+                          <ShieldCheck className="w-3.5 h-3.5 text-sky-500" />
+                          PF Number (Member ID)
+                        </Label>
+                        <span className="text-[10px] font-mono text-slate-400">EPFO Code</span>
+                      </div>
+                      <Input
+                        type="text"
+                        placeholder="e.g. MH/BAN/0012345/000/0000001"
+                        value={formData.pfNumber || ""}
+                        onChange={(e) => {
+                          const val = e.target.value.toUpperCase();
+                          setFormData({ ...formData, pfNumber: val });
+                        }}
+                        className="font-mono uppercase tracking-wider"
+                      />
+                      <p className="text-[10px] text-slate-400">Provident fund establishment & member ID.</p>
+                    </div>
+
+                    {/* UAN Number */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-semibold flex items-center gap-1.5">
+                          <Lock className="w-3.5 h-3.5 text-sky-500" />
+                          UAN / UN Number
+                        </Label>
+                        <span className={`text-[10px] font-mono ${(formData.uanNumber || "").length === 12 ? "text-emerald-500 font-semibold" : "text-slate-400"}`}>
+                          {formData.uanNumber ? `${formData.uanNumber.length}/12 digits` : "12 digits"}
+                        </span>
+                      </div>
+                      <Input
+                        type="text"
+                        maxLength={12}
+                        placeholder="e.g. 100904123456"
+                        value={formData.uanNumber || ""}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, "").slice(0, 12);
+                          setFormData({ ...formData, uanNumber: val });
+                        }}
+                        className="font-mono tracking-wider"
+                      />
+                      <p className="text-[10px] text-slate-400">12-digit Universal Account Number.</p>
+                    </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <Label className="text-xs font-semibold">
-                      Residential / Communication Address <span className="text-rose-500">*</span>
-                    </Label>
-                    <Textarea
-                      rows={2}
-                      placeholder="e.g. Plot No. 42, GIDC Industrial Estate, Ankleshwar, Gujarat - 393002"
-                      value={formData.address}
-                      onChange={(e) => {
-                        setFormData({ ...formData, address: e.target.value });
-                        if (formErrors.address) setFormErrors({ ...formErrors, address: null });
-                      }}
-                      className={`text-sm ${formErrors.address ? "border-rose-500" : ""}`}
-                    />
-                    {formErrors.address && (
-                      <p className="text-[11px] text-rose-500 font-medium">{formErrors.address}</p>
-                    )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Present Address</Label>
+                      <Textarea
+                        rows={2}
+                        placeholder="Current living address (e.g. Flat 101, City Park, Mumbai)"
+                        value={formData.presentAddress}
+                        onChange={(e) => setFormData({ ...formData, presentAddress: e.target.value })}
+                        className="text-sm"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">
+                        Resident / Permanent Address <span className="text-rose-500">*</span>
+                      </Label>
+                      <Textarea
+                        rows={2}
+                        placeholder="e.g. Plot No. 42, GIDC Industrial Estate, Ankleshwar, Gujarat - 393002"
+                        value={formData.residentAddress || formData.address}
+                        onChange={(e) => {
+                          setFormData({ ...formData, residentAddress: e.target.value, address: e.target.value });
+                          if (formErrors.address) setFormErrors({ ...formErrors, address: null });
+                        }}
+                        className={`text-sm ${formErrors.address ? "border-rose-500" : ""}`}
+                      />
+                      {formErrors.address && (
+                        <p className="text-[11px] text-rose-500 font-medium">{formErrors.address}</p>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1711,6 +1902,17 @@ function EmployeesPageContent() {
                     </div>
 
                     <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Employee Grade</Label>
+                      <Input
+                        placeholder="e.g. Grade A, L1, Senior, Executive"
+                        value={formData.employeeGrade}
+                        onChange={(e) => setFormData({ ...formData, employeeGrade: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
                       <Label className="text-xs font-semibold">Reporting Manager</Label>
                       <select
                         value={formData.managerId}
@@ -1722,7 +1924,7 @@ function EmployeesPageContent() {
                           .filter((e) => !editingEmployeeId || e.id !== editingEmployeeId)
                           .map((m) => (
                             <option key={m.id} value={m.id}>
-                              {m.firstName} {m.lastName} ({m.designation})
+                              {[m.firstName, m.middleName, m.lastName].filter(Boolean).join(" ")} ({m.designation})
                             </option>
                           ))}
                       </select>
@@ -1929,7 +2131,7 @@ function EmployeesPageContent() {
                 </div>
                 <div>
                   <h2 className="text-lg font-bold">
-                    {selectedEmployee.firstName} {selectedEmployee.lastName}
+                    {[selectedEmployee.firstName, selectedEmployee.middleName, selectedEmployee.lastName].filter(Boolean).join(" ")}
                   </h2>
                   <div className="flex items-center gap-2 text-xs text-sky-200/80">
                     <span className="font-mono bg-sky-900/60 px-1.5 py-0.5 rounded text-[11px]">
@@ -2036,8 +2238,24 @@ function EmployeesPageContent() {
                         <span className="font-medium text-slate-700 dark:text-slate-300">{selectedEmployee.email}</span>
                       </div>
                       <div>
-                        <span className="text-slate-400 block">Phone</span>
+                        <span className="text-slate-400 block">Contact Number</span>
                         <span className="font-medium text-slate-700 dark:text-slate-300">{selectedEmployee.phone || "—"}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block">Alternate Contact Number</span>
+                        <span className="font-medium text-slate-700 dark:text-slate-300">{selectedEmployee.alternatePhone || "—"}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block">Gender</span>
+                        <span className="font-medium text-slate-700 dark:text-slate-300">{selectedEmployee.gender || "—"}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block">Blood Group</span>
+                        <span className="font-medium text-slate-700 dark:text-slate-300">{selectedEmployee.bloodGroup || "—"}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block">Employee Grade</span>
+                        <span className="font-medium text-slate-700 dark:text-slate-300">{selectedEmployee.employeeGrade || "—"}</span>
                       </div>
                       <div>
                         <span className="text-slate-400 block">Date of Birth (DOB)</span>
@@ -2057,10 +2275,16 @@ function EmployeesPageContent() {
                           {selectedEmployee.aadharNumber ? selectedEmployee.aadharNumber.replace(/(\d{4})(?=\d)/g, "$1 ") : "—"}
                         </span>
                       </div>
-                      <div className="sm:col-span-2">
-                        <span className="text-slate-400 block">Residential Address</span>
+                      <div>
+                        <span className="text-slate-400 block">Present Address</span>
                         <span className="font-medium text-slate-700 dark:text-slate-300">
-                          {selectedEmployee.address || "—"}
+                          {selectedEmployee.presentAddress || "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block">Resident / Permanent Address</span>
+                        <span className="font-medium text-slate-700 dark:text-slate-300">
+                          {selectedEmployee.residentAddress || selectedEmployee.address || "—"}
                         </span>
                       </div>
                       {(() => {
@@ -2278,18 +2502,26 @@ function EmployeesPageContent() {
                   {/* Physical ID Card Preview Box */}
                   <div className="mx-auto w-[240px] bg-white text-slate-900 rounded-2xl shadow-xl border border-slate-300 overflow-hidden text-left">
                     {/* Dark Navy Header */}
-                    <div className="bg-[#0b1329] p-3 text-center border-b-2 border-emerald-500">
-                      <div className="text-emerald-400 font-extrabold text-sm tracking-wider">
-                        ASPINO HRMS
-                      </div>
-                      <div className="text-[9px] text-slate-300 uppercase tracking-widest">
-                        Official ID Card
+                    <div className="bg-[#0b1329] p-3 text-center border-b-2 border-[#1e90cf]">
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-white p-1 flex items-center justify-center shadow-xs">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src="/aspino-icon.png" alt="Aspino Logo" className="w-full h-full object-contain" />
+                        </div>
+                        <div className="text-left">
+                          <div className="text-white font-extrabold text-xs tracking-wider leading-tight">
+                            ASPINO
+                          </div>
+                          <div className="text-[7.5px] font-bold text-[#1e90cf] tracking-wider">
+                            HRMS SYSTEM
+                          </div>
+                        </div>
                       </div>
                     </div>
 
                     {/* Avatar Ring */}
                     <div className="pt-4 pb-2 text-center">
-                      <div className="relative inline-block w-16 h-16 rounded-full ring-2 ring-emerald-500 p-0.5 bg-white shadow-md overflow-hidden">
+                      <div className="relative inline-block w-16 h-16 rounded-full ring-2 ring-[#1e90cf] p-0.5 bg-white shadow-md overflow-hidden">
                         {selectedEmployee.documents?.find((d) => d.documentType === "Photo" && d.fileUrl)?.fileUrl ? (
                           /* eslint-disable-next-line @next/next/no-img-element */
                           <img
@@ -2308,7 +2540,7 @@ function EmployeesPageContent() {
                       <div className="font-bold text-xs text-slate-900 mt-2">
                         {selectedEmployee.firstName} {selectedEmployee.lastName}
                       </div>
-                      <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">
+                      <div className="text-[10px] font-bold text-[#1e90cf] uppercase tracking-wider">
                         {selectedEmployee.designation}
                       </div>
                     </div>
@@ -2329,11 +2561,19 @@ function EmployeesPageContent() {
                           {selectedEmployee.dateOfJoining ? new Date(selectedEmployee.dateOfJoining).toLocaleDateString() : "—"}
                         </span>
                       </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-bold">PHONE:</span>
+                        <span className="font-semibold text-slate-800">{selectedEmployee.phone || "—"}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-bold">BLOOD GRP:</span>
+                        <span className="font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/40 px-1 rounded">{selectedEmployee.bloodGroup || "—"}</span>
+                      </div>
                     </div>
 
                     {/* Footer */}
-                    <div className="bg-[#0b1329] p-2.5 text-center text-white border-t border-emerald-500">
-                      <div className="text-[9px] font-bold text-emerald-400">
+                    <div className="bg-[#0b1329] p-2.5 text-center text-white border-t border-[#1e90cf]">
+                      <div className="text-[9px] font-bold text-[#1e90cf]">
                         ✓ VERIFIED DIGITAL ID
                       </div>
                       <div className="text-[7.5px] text-slate-400 tracking-wider mt-0.5">
